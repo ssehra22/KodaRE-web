@@ -1,0 +1,1320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KodaRE — Interactive Prototype</title>
+<style>
+  :root{
+    --bg:#eef1f5; --panel:#ffffff; --panel2:#f4f6f9; --line:#dce3ec;
+    --ink:#15202b; --muted:#5a6a7c; --faint:#8a99aa;
+    --cg:#0e9aa3; --os:#2563c9; --sa:#7c3fd6; --sys:#1f9d40; --ext:#d2701a; --ten:#c2306f;
+    --red:#cf3a32; --amber:#c9880c; --green:#1f9d40; --blue:#2563c9;
+    --shadow:0 1px 3px rgba(20,40,70,.10),0 6px 24px rgba(20,40,70,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  button{font:inherit;cursor:pointer}
+  a{color:var(--os);text-decoration:none}
+  .hidden{display:none !important}
+
+  /* ---- prototype top bar / switcher ---- */
+  .protobar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;
+    background:#0f1722;color:#fff;padding:8px 16px}
+  .protobar .brand{font-weight:800;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+  .protobar .brand .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--os),var(--sa));
+    display:flex;align-items:center;justify-content:center;font-size:13px}
+  .protobar .tag{font-size:11px;color:#9fb0c4;border:1px solid #2a3a4d;border-radius:999px;padding:2px 9px}
+  .switch{margin-left:auto;display:flex;gap:6px;background:#1b2836;border-radius:10px;padding:4px}
+  .switch button{background:transparent;border:0;color:#b7c5d6;border-radius:7px;padding:6px 12px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:7px}
+  .switch button.active{background:#fff;color:#0f1722}
+  .switch button .rc{width:9px;height:9px;border-radius:50%}
+
+  /* ---- desktop app shell ---- */
+  #desktop{display:grid;grid-template-columns:232px 1fr;min-height:calc(100vh - 41px)}
+  .side{background:#101a27;color:#c7d2df;padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+  .side .who{display:flex;align-items:center;gap:10px;padding:8px 8px 14px;border-bottom:1px solid #22303f;margin-bottom:10px}
+  .side .avatar{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
+  .side .who .nm{font-weight:700;color:#fff;font-size:13px}
+  .side .who .rl{font-size:11px;color:#8ea0b4}
+  .nav{background:transparent;border:0;color:#c7d2df;text-align:left;border-radius:9px;padding:9px 11px;display:flex;align-items:center;gap:11px;font-size:13.5px;font-weight:600}
+  .nav .ic{width:20px;text-align:center;font-size:15px}
+  .nav .ct{margin-left:auto;font-size:11px;background:#22303f;border-radius:999px;padding:1px 8px;color:#9fb2c6}
+  .nav:hover{background:#1a2634;color:#fff}
+  .nav.active{background:linear-gradient(90deg,rgba(37,99,201,.28),rgba(124,63,214,.18));color:#fff;box-shadow:inset 3px 0 0 var(--os)}
+  .side .foot{margin-top:auto;font-size:11px;color:#6f8296;padding:10px 8px 0;border-top:1px solid #22303f}
+
+  .main{display:flex;flex-direction:column;min-width:0}
+  .topbar{position:sticky;top:41px;z-index:20;background:rgba(255,255,255,.86);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:12px 24px}
+  .topbar h1{font-size:18px;margin:0}
+  .topbar .crumb{color:var(--faint);font-size:12.5px}
+  .search{margin-left:auto;position:relative}
+  .search input{border:1px solid var(--line);border-radius:9px;padding:8px 12px 8px 32px;width:250px;background:var(--panel2);font:inherit}
+  .search .mag{position:absolute;left:10px;top:8px;color:var(--faint)}
+  .content{padding:22px 24px 60px;max-width:1600px;width:100%}
+
+  /* ---- generic components ---- */
+  .row{display:flex;gap:16px;flex-wrap:wrap}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+  .kpi .lab{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+  .kpi .val{font-size:27px;font-weight:800;margin-top:4px;letter-spacing:-.02em}
+  .kpi .sub{font-size:12px;color:var(--faint)}
+  .kpi.red .val{color:var(--red)} .kpi.amber .val{color:var(--amber)} .kpi.green .val{color:var(--green)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+  .card h3{margin:0;padding:14px 16px;border-bottom:1px solid var(--line);font-size:14.5px;display:flex;align-items:center;gap:10px}
+  .card h3 .link{margin-left:auto;font-size:12.5px;font-weight:600}
+  .card .body{padding:14px 16px}
+  .grid2{display:grid;grid-template-columns:2fr 1fr;gap:16px;align-items:start}
+  .grid-props{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr.clickable:hover{background:var(--panel2);cursor:pointer}
+  tbody tr:last-child td{border-bottom:0}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;border:1px solid transparent;white-space:nowrap}
+  .b-new{background:#eaf0fb;color:#1d4ea0;border-color:#cfe0fb}
+  .b-triage{background:#eef4fd;color:#1d4ea0;border-color:#d7e6fb}
+  .b-assigned{background:#fff4e6;color:#a8550f;border-color:#f6ddbb}
+  .b-progress{background:#fef7e0;color:#8a610a;border-color:#f2e4a8}
+  .b-parts{background:#f0ecfb;color:#5a2ca6;border-color:#ddd0f6}
+  .b-resolved{background:#eaf7ee;color:#157032;border-color:#c4e8ce}
+  .b-closed{background:#eef1f5;color:#5a6a7c;border-color:#dce3ec}
+  .b-red{background:#fdecea;color:#b02f28;border-color:#f6cfcb}
+  .u-emergency{background:#fdecea;color:#b02f28;border-color:#f3b7b1}
+  .u-high{background:#fff4e6;color:#a8550f;border-color:#f6d3a6}
+  .u-normal{background:#eef1f5;color:#5a6a7c;border-color:#dce3ec}
+  .u-low{background:#f4f6f9;color:#8a99aa;border-color:#e6ebf1}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .dotc{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .owned{color:var(--sys)} .leased{color:var(--ten)}
+
+  .btn{background:var(--os);color:#fff;border:0;border-radius:9px;padding:9px 15px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{filter:brightness(1.06)}
+  .btn.sec{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+  .btn.ghost{background:transparent;color:var(--os);padding:6px 10px}
+  .btn.green{background:var(--green)} .btn.red{background:var(--red)} .btn.amber{background:var(--amber)} .btn.purple{background:var(--sa)}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--muted)}
+  .chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  select,input[type=text],textarea{font:inherit;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel);color:var(--ink)}
+  label.f{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 5px}
+  .field{margin-bottom:14px}
+
+  .sectitle{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:800;margin:22px 0 10px}
+
+  /* drawer */
+  .scrim{position:fixed;inset:0;background:rgba(15,23,34,.42);z-index:60;display:flex;justify-content:flex-end}
+  .drawer{width:560px;max-width:94vw;background:var(--bg);height:100%;overflow:auto;box-shadow:-8px 0 40px rgba(0,0,0,.2);animation:slide .18s ease}
+  @keyframes slide{from{transform:translateX(30px);opacity:.6}to{transform:none;opacity:1}}
+  .drawer .dhead{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--line);padding:16px 20px;display:flex;align-items:flex-start;gap:12px;z-index:2}
+  .drawer .dhead .x{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:8px;width:32px;height:32px;font-size:16px;color:var(--muted)}
+  .drawer .dbody{padding:18px 20px}
+  .timeline{list-style:none;margin:0;padding:0}
+  .timeline li{position:relative;padding:0 0 16px 22px;border-left:2px solid var(--line);margin-left:5px}
+  .timeline li:last-child{border-left-color:transparent}
+  .timeline li .tdot{position:absolute;left:-7px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--os);border:2px solid #fff}
+  .timeline li .tt{font-weight:700;font-size:13px}
+  .timeline li .tm{font-size:12px;color:var(--muted)}
+  .kv{display:grid;grid-template-columns:130px 1fr;gap:8px 14px;font-size:13px}
+  .kv .k{color:var(--muted)}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
+  .tab{background:transparent;border:0;padding:10px 14px;font-weight:700;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}
+  .tab.active{color:var(--os);border-bottom-color:var(--os)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:90;box-shadow:var(--shadow);animation:pop .2s ease}
+  @keyframes pop{from{transform:translate(-50%,10px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+  .progress{height:7px;background:var(--panel2);border-radius:99px;overflow:hidden}
+  .progress > i{display:block;height:100%;background:var(--os);border-radius:99px}
+  .avatarsm{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:11px}
+  .muted{color:var(--muted)} .faint{color:var(--faint)} .b{font-weight:700} .right{text-align:right} .mono{font-variant-numeric:tabular-nums}
+
+  /* ---- mobile ---- */
+  #mobile{display:flex;justify-content:center;padding:26px 12px 60px;background:
+    radial-gradient(1200px 400px at 50% -160px, #dbe3ee, transparent);min-height:calc(100vh - 41px)}
+  .phone{width:390px;max-width:96vw;height:820px;max-height:86vh;background:#0b1220;border-radius:44px;padding:12px;box-shadow:0 30px 70px rgba(15,23,34,.4);position:relative}
+  .screen{background:#f2f5f9;border-radius:34px;height:100%;overflow:hidden;display:flex;flex-direction:column;position:relative}
+  .statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;font-weight:700;color:#0b1220;flex:0 0 auto}
+  .notch{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:120px;height:26px;background:#0b1220;border-radius:0 0 16px 16px;z-index:5}
+  .mhead{background:linear-gradient(135deg,var(--cg),#0b7b83);color:#fff;padding:12px 18px 16px;flex:0 0 auto}
+  .mhead .hi{font-size:12.5px;opacity:.9}
+  .mhead .nm{font-size:19px;font-weight:800}
+  .mbody{flex:1;overflow:auto;padding:16px}
+  .mnav{flex:0 0 auto;display:flex;border-top:1px solid #e2e8f0;background:#fff}
+  .mnav button{flex:1;background:transparent;border:0;padding:9px 0 12px;font-size:10.5px;font-weight:700;color:var(--faint);display:flex;flex-direction:column;align-items:center;gap:3px}
+  .mnav button .mi{font-size:19px}
+  .mnav button.active{color:var(--cg)}
+  .mcard{background:#fff;border:1px solid #e6ecf3;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,70,.05)}
+  .bigbtn{width:100%;background:linear-gradient(135deg,var(--cg),#0b7b83);color:#fff;border:0;border-radius:16px;padding:18px;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 8px 22px rgba(14,154,163,.35)}
+  .optgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .opt{border:1.5px solid #e2e8f0;background:#fff;border-radius:14px;padding:14px 10px;font-weight:700;font-size:13px;text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center;color:var(--ink)}
+  .opt .oi{font-size:22px}
+  .opt.sel{border-color:var(--cg);background:#e9f7f8;color:#0b7b83}
+  .mstep{font-size:11px;font-weight:800;color:var(--cg);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+  .mtitle{font-size:20px;font-weight:800;margin:0 0 14px}
+  .mfield{margin-bottom:14px}
+  .mfield label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}
+  .mfield input,.mfield textarea,.mfield select{width:100%;border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;font:inherit;background:#fff}
+  .photo{border:2px dashed #cbd6e2;border-radius:14px;padding:22px;text-align:center;color:var(--faint);font-weight:700}
+  .mrow{display:flex;justify-content:space-between;align-items:center;gap:10px}
+
+  @media(max-width:900px){
+    #desktop{grid-template-columns:1fr}
+    .side{flex-direction:row;flex-wrap:wrap;align-items:center;min-height:unset}
+    .side .who,.side .foot{display:none}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .grid2,.grid-props{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div class="protobar">
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Interactive Prototype · v0.3 · + licensing & client expense placeholders</span></div>
+  <div class="switch" id="switch">
+    <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
+    <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
+    <button data-role="caregiver"><span class="rc" style="background:var(--cg)"></span>Caregiver · Mobile</button>
+  </div>
+  <button onclick="resetDemo()" title="Reset all sample data to the original demo" style="background:#1b2836;color:#b7c5d6;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-left:8px">↺ Reset demo</button>
+</div>
+
+<!-- ============ DESKTOP ============ -->
+<div id="desktop">
+  <aside class="side">
+    <div class="who">
+      <div class="avatar" id="sideAvatar" style="background:var(--os)">DC</div>
+      <div><div class="nm" id="sideName">Dana Cruz</div><div class="rl" id="sideRole">Office Staff</div></div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="foot" id="footStatus">KodaRE — Property Management Platform<br>Prototype for team review · not live data</div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <div><h1 id="viewTitle">Dashboard</h1><div class="crumb" id="crumb">Overview</div></div>
+      <div class="search"><span class="mag">⌕</span><input type="text" placeholder="Search properties, tickets, vendors…" oninput="globalSearch(this.value)"></div>
+    </div>
+    <div class="content" id="view"></div>
+  </div>
+</div>
+
+<!-- ============ MOBILE ============ -->
+<div id="mobile" class="hidden">
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span>KodaRE</span><span>●●● ▮</span></div>
+      <div id="mobileApp" style="flex:1;display:flex;flex-direction:column;min-height:0"></div>
+    </div>
+  </div>
+</div>
+
+<div id="drawerRoot"></div>
+<div id="toastRoot"></div>
+<div id="authGate" class="hidden" style="position:fixed;inset:0;background:#0b1220;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:inherit">
+  <div style="background:#fff;border-radius:14px;padding:32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="font-size:19px;font-weight:800;margin-bottom:4px">KodaRE</div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:18px">Sign in to your team's live workspace</div>
+    <div class="field"><label class="f">Email</label><input type="email" id="authEmail" style="width:100%" placeholder="you@company.com"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Password</label><input type="password" id="authPassword" style="width:100%" placeholder="••••••••"></div>
+    <div id="authError" style="color:var(--red,#c0392b);font-size:12.5px;margin-top:8px;min-height:16px"></div>
+    <button class="btn" style="width:100%;margin-top:14px" onclick="authSignIn()">Sign in</button>
+  </div>
+</div>
+
+<!-- Supabase client (only loaded/used when config.js has real project values — see config.js) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script>
+/* ===== Supabase live-data layer (Phase 1: Maintenance module only) =====
+   Everything else in this file still runs on the original in-browser sample data
+   until it gets its own migration phase. See kodare-web/supabase/schema.sql and
+   GO_LIVE_INSTRUCTIONS.md for setup. */
+const SUPA_CONFIGURED = typeof SUPABASE_URL!=='undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR_')
+  && typeof SUPABASE_ANON_KEY!=='undefined' && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('YOUR_');
+const sb = SUPA_CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+function daysAgoLabel(ts){const d=Math.max(0,Math.round((new Date()-new Date(ts))/864e5));return d===0?'today':d+'d ago';}
+function logAge(l){return typeof l[2]==='number' ? (l[2]===0?'today':l[2]+'d ago') : daysAgoLabel(l[2]);}
+
+function rowToTicket(row){
+  const acts=(row.maintenance_ticket_activity||[]).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  return {
+    id: row.id, _backend:'supabase',
+    prop: row.property_id, title: row.title, desc: row.description||'', notes: row.notes||'',
+    urgency: row.urgency, status: row.status, svc: row.service_category, svctype: row.service_type,
+    vendor: row.vendor, cost: row.cost!=null?Number(row.cost):null,
+    invoice: row.invoice_number, invoiceFileUrl: row.invoice_file_url, invoiceFileName: row.invoice_file_name,
+    invoiceTotal: row.invoice_total!=null?Number(row.invoice_total):null, payment: row.payment_status,
+    reporter: row.reporter, created: new Date(row.created_at),
+    log: acts.map(a=>[a.action, a.detail, a.created_at])
+  };
+}
+async function dbUpdateTicket(id,patch){
+  const {error}=await sb.from('maintenance_tickets').update(patch).eq('id',id);
+  if(error){toast('Save failed: '+error.message);return false;}
+  return true;
+}
+async function dbLogActivity(ticketId,action,detail){
+  const {error}=await sb.from('maintenance_ticket_activity').insert({ticket_id:ticketId,action,detail});
+  if(error)console.error('activity log failed',error);
+}
+function pushActivity(t,action,detail){
+  if(t._backend==='supabase'){dbLogActivity(t.id,action,detail);t.log.push([action,detail,new Date().toISOString()]);}
+  else t.log.push([action,detail,0]);
+}
+async function loadRealProperties(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('properties').select('id,name').order('name');
+  if(error){toast('Could not load properties: '+error.message);return;}
+  (data||[]).forEach(row=>{if(!PROPS.find(p=>p.id===row.id))PROPS.push({id:row.id,name:row.name,_backend:'supabase'});});
+}
+async function loadRealTickets(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('maintenance_tickets').select('*, maintenance_ticket_activity(action,detail,created_at)').order('created_at',{ascending:false});
+  if(error){toast('Could not load tickets: '+error.message);return;}
+  TICKETS.length=0;(data||[]).forEach(row=>TICKETS.push(rowToTicket(row)));
+  refreshTickets();
+}
+async function authSignIn(){
+  const email=document.getElementById('authEmail').value.trim();
+  const password=document.getElementById('authPassword').value;
+  const errEl=document.getElementById('authError');errEl.textContent='';
+  if(!email||!password){errEl.textContent='Enter your email and password.';return;}
+  const {error}=await sb.auth.signInWithPassword({email,password});
+  if(error){errEl.textContent=error.message;return;}
+  await enterLiveApp();
+}
+async function authSignOut(){if(sb){await sb.auth.signOut();}location.reload();}
+async function enterLiveApp(){
+  document.getElementById('authGate').classList.add('hidden');
+  const foot=document.getElementById('footStatus');
+  if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Maintenance data is real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
+  await loadRealProperties();
+  await loadRealTickets();
+}
+async function initLiveMode(){
+  if(!SUPA_CONFIGURED)return;
+  const {data:{session}}=await sb.auth.getSession();
+  if(session){await enterLiveApp();}
+  else{document.getElementById('authGate').classList.remove('hidden');}
+}
+
+/* KodaRE prototype v0.3 — data from Maintenance Items Sample 1; adds Licensing & Client Expense (Phase 2) placeholders */
+const VENDORS = [{"name": "Saylor Heating", "trade": "HVAC", "ytd": 1470, "primary": "Primary", "pricing": "Time & materials", "area": "Harrisburg / Mechanicsburg, PA", "metro": "Harrisburg", "afterHours": "Yes", "contact": "Dave Saylor", "phone": "(717) 555-0112", "email": "dave@saylorheating.example", "portal": "—", "login": "—", "licenses": "HVAC-PA-88213", "licExp": "2027-04-01", "insExp": "2026-12-01", "w9": "Yes", "referredBy": "—", "quality": "Excel"},
+{"name": "Fair Fix", "trade": "General repair", "ytd": 481, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2026-10-15", "w9": "Yes", "referredBy": "Keira", "quality": "Fair"},
+{"name": "Monti - Rent Café", "trade": "Property mgmt", "ytd": 0, "primary": "Secondary", "pricing": "Per management agreement", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "rentcafe.example.com", "login": "reshab_monti", "licenses": "—", "licExp": "—", "insExp": "—", "w9": "No", "referredBy": "—", "quality": "Fair"},
+{"name": "Boushab Services", "trade": "General repair", "ytd": 615, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2026-11-01", "w9": "Yes", "referredBy": "—", "quality": "Fair"},
+{"name": "Iconic Monti", "trade": "Property mgmt", "ytd": 825, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "—", "w9": "No", "referredBy": "—", "quality": "Fair"},
+{"name": "Lawn Love", "trade": "Landscaping", "ytd": 0, "primary": "Primary", "pricing": "Seasonal contract", "area": "Harrisburg / Mechanicsburg / Middletown, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "(888) 606-0611", "email": "support@lawnlove.example", "portal": "lawnlove.example.com", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2027-01-01", "w9": "Yes", "referredBy": "—", "quality": "Excel"}];
+const PROPS = [{"id": "p1", "name": "Fox-1", "addr": "400 Fox Street, Flr 1, Harrisburg, PA 17109", "own": "leased", "beds": null, "status": "Active", "health": "green", "compliance": null, "landlord": "—", "rent": null, "leaseType": "ResHab", "metro": "Harrisburg", "county": "Dauphin", "bedrooms": 4, "bathrooms": 2, "sqft": 1650, "levels": 1, "parkingType": "Off-street lot", "mgmtAssocName": "—", "mgmtContactPhone": "—", "mgmtPortal": "—", "mgmtPortalLogin": "—", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
+{"id": "p2", "name": "Fox-2", "addr": "400 Fox Street, Flr 2, Harrisburg, PA 17109", "own": "leased", "beds": null, "status": "Active", "health": "green", "compliance": null, "landlord": "—", "rent": null, "leaseType": "ResHab", "metro": "Harrisburg", "county": "Dauphin", "bedrooms": 3, "bathrooms": 1, "sqft": 1400, "levels": 1, "parkingType": "Off-street lot", "mgmtAssocName": "—", "mgmtContactPhone": "—", "mgmtPortal": "—", "mgmtPortalLogin": "—", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
+{"id": "p3", "name": "Highlands", "addr": "6206 N. Highlands Ct, Harrisburg, PA 17111", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Highlands Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Highlands Holdings LLC", "purchaseDate": "2021-03-15", "settlementDate": "2021-03-15", "purchasePrice": 248000, "totalBuyerCosts": 9800, "loanInitial": 292000, "loanRemaining": 268400, "bedrooms": 4, "bathrooms": 2, "sqft": 1980, "yearBuilt": 1994, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-041-062", "mls": "PACB2011245", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Mohammed (House Manager)"},
+{"id": "p4", "name": "Monticello", "addr": "2767 Monticello Lane, Harrisburg PA 17112", "own": "leased", "beds": null, "status": "Active", "health": "green", "compliance": null, "landlord": "MH Townhomes, LLC", "rent": 2650, "leaseType": "Corp", "metro": "Harrisburg", "county": "Dauphin", "bedrooms": 4, "bathrooms": 2.5, "sqft": 2100, "levels": 3, "parkingType": "Driveway", "mgmtAssocName": "MH Townhomes, LLC", "mgmtContactPhone": "(717) 555-0199", "mgmtPortal": "mhtownhomes-portal.example.com", "mgmtPortalLogin": "reshab_monticello", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Sonia S. (Office Staff)"},
+{"id": "p5", "name": "Progress", "addr": "4520 N. Progress Ave, Harrisburg, PA 17110", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Progress Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Progress Holdings LLC", "purchaseDate": "2020-07-10", "settlementDate": "2020-07-10", "purchasePrice": 205000, "totalBuyerCosts": 8100, "loanInitial": 210000, "loanRemaining": 190500, "bedrooms": 3, "bathrooms": 1.5, "sqft": 1520, "yearBuilt": 1988, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Brick", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Susquehanna Township", "schoolDistrict": "Central Dauphin School District", "taxId": "62-018-114", "mls": "PACB2009982", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Seth (House Manager)"},
+{"id": "p6", "name": "Country Hill", "addr": "1109 Country Hill Dr, Harrisburg PA 17111", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Country Hill Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Country Hill Holdings LLC", "purchaseDate": "2022-01-20", "settlementDate": "2022-01-20", "purchasePrice": 239000, "totalBuyerCosts": 9400, "loanInitial": 240000, "loanRemaining": 228900, "bedrooms": 4, "bathrooms": 2, "sqft": 1875, "yearBuilt": 1999, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "Yes", "hoaFee": 45, "hoaAssocName": "Country Hill HOA", "hoaAssocContact": "(717) 555-0166", "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-052-091", "mls": "PACB2010877", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
+{"id": "p7", "name": "Nassau", "addr": "6114 Nassau Rd, Harrisburg PA 17112", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Nassau Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Nassau Holdings LLC", "purchaseDate": "2019-09-05", "settlementDate": "2019-09-05", "purchasePrice": 202000, "totalBuyerCosts": 7900, "loanInitial": 205000, "loanRemaining": 178200, "bedrooms": 3, "bathrooms": 2, "sqft": 1610, "yearBuilt": 1985, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-039-027", "mls": "PACB2008714", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
+{"id": "p8", "name": "Winston", "addr": "133 Winston Dr, Mechanicsburg PA 17055", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Winston Holdings LLC", "value": null, "rent": null, "metro": "Mechanicsburg", "county": "Cumberland", "buyerLLC": "Winston Holdings LLC", "purchaseDate": "2026-02-27", "settlementDate": "2026-02-27", "purchasePrice": 239500, "totalBuyerCosts": 10200, "loanInitial": 236170, "loanRemaining": 236170, "bedrooms": 4, "bathrooms": 2, "sqft": 1840, "yearBuilt": 2001, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Upper Allen Township", "schoolDistrict": "Cumberland Valley School District", "taxId": "40-027-155", "mls": "PACB2013390", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
+{"id": "p9", "name": "Nissley", "addr": "27 Nissley Dr, Middletown PA 17057", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Nissley Holdings LLC", "value": null, "rent": null, "metro": "Middletown", "county": "Dauphin", "buyerLLC": "Nissley Holdings LLC", "purchaseDate": "2021-11-12", "settlementDate": "2021-11-12", "purchasePrice": 189000, "totalBuyerCosts": 7500, "loanInitial": 185000, "loanRemaining": 172400, "bedrooms": 3, "bathrooms": 1.5, "sqft": 1480, "yearBuilt": 1978, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Brick", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Middletown Borough", "schoolDistrict": "Middletown Area School District", "taxId": "42-014-039", "mls": "PACB2007561", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Mohammed (House Manager)"},
+{"id": "p10", "name": "Corporate", "addr": "Corporate office", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Corporate Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Corporate Holdings LLC", "purchaseDate": "—", "settlementDate": "—", "purchasePrice": null, "totalBuyerCosts": null, "loanInitial": null, "loanRemaining": null, "bedrooms": null, "bathrooms": null, "sqft": null, "yearBuilt": null, "levels": null, "parkingType": "—", "typeStyle": "Office", "constructionMaterial": "—", "zoning": "Commercial", "propertyType": "Corporate office", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "—", "schoolDistrict": "—", "taxId": "—", "mls": "—", "operatingProgram": "Corporate / administrative", "houseManager": "—"},
+{"id": "p11", "name": "Medinah", "addr": "6 Medinah Ct, Greensburg, PA 15601", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "CHS Property 5 LLC", "value": null, "rent": null, "metro": "Greensburg", "county": "Westmoreland", "buyerLLC": "CHS Property 5 LLC", "purchaseDate": null, "settlementDate": null, "purchasePrice": null, "totalBuyerCosts": null, "loanInitial": null, "loanRemaining": null, "bedrooms": null, "bathrooms": null, "sqft": null, "yearBuilt": null, "levels": null, "parkingType": null, "typeStyle": null, "constructionMaterial": null, "zoning": null, "propertyType": null, "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Greensburg", "schoolDistrict": null, "taxId": null, "mls": null, "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": null},
+{"id": "p12", "name": "Lakeview", "addr": "1104 Lakeview Dr, Latrobe, PA 15650", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "CHS Property 9 LLC", "value": null, "rent": null, "metro": "Latrobe", "county": "Westmoreland", "buyerLLC": "CHS Property 9 LLC", "purchaseDate": null, "settlementDate": null, "purchasePrice": null, "totalBuyerCosts": null, "loanInitial": null, "loanRemaining": null, "bedrooms": null, "bathrooms": null, "sqft": null, "yearBuilt": null, "levels": null, "parkingType": null, "typeStyle": null, "constructionMaterial": null, "zoning": null, "propertyType": null, "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Latrobe", "schoolDistrict": null, "taxId": null, "mls": null, "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": null}];
+let TID = 148;
+const TICKETS = [{"id": "T-101", "prop": "p1", "title": "HVAC annual inspection/maintenance", "desc": "HVAC annual inspection/maintenance", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 120, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete · $120", 59]],"created":new Date("2026-05-01")},
+{"id": "T-102", "prop": "p2", "title": "HVAC annual inspection/maintenance", "desc": "HVAC annual inspection/maintenance", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 120, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete · $120", 59]],"created":new Date("2026-05-01")},
+{"id": "T-103", "prop": "p3", "title": "HVAC annual inspection/maintenance", "desc": "HVAC annual inspection/maintenance", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 120, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete · $120", 59]],"created":new Date("2026-05-01")},
+{"id": "T-104", "prop": "p4", "title": "HVAC annual inspection/maintenance", "desc": "HVAC annual inspection/maintenance", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 150, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete · $150", 59]],"created":new Date("2026-05-01")},
+{"id": "T-105", "prop": "p5", "title": "HVAC annual inspection/maintenance", "desc": "HVAC annual inspection/maintenance", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 120, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete · $120", 59]],"created":new Date("2026-05-01")},
+{"id": "T-106", "prop": "p6", "title": "HVAC annual inspection/maintenance", "desc": "HVAC annual inspection/maintenance", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 150, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete · $150", 59]],"created":new Date("2026-05-01")},
+{"id": "T-107", "prop": "p7", "title": "HVAC annual inspection/maintenance", "desc": "HVAC annual inspection/maintenance", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 150, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete · $150", 59]],"created":new Date("2026-05-01")},
+{"id": "T-108", "prop": "p8", "title": "HVAC annual inspection/maintenance> No HVAC inspection bc ne", "desc": "HVAC annual inspection/maintenance> No HVAC inspection bc new system (4/2 install)", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 0, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete", 59]],"created":new Date("2026-05-01")},
+{"id": "T-109", "prop": "p9", "title": "HVAC annual inspection/maintenance", "desc": "HVAC annual inspection/maintenance", "notes": "", "urgency": "Low", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Routine/Prevent.", "vendor": "Saylor Heating", "cost": 150, "invoice": "No inv #", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 61], ["Completed", "Work complete · $150", 59]],"created":new Date("2026-05-01")},
+{"id": "T-110", "prop": "p9", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Fair Fix", "cost": 90.1, "invoice": "Inv 1283", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 54], ["Completed", "Work complete · $90", 52]],"created":new Date("2026-05-08")},
+{"id": "T-111", "prop": "p7", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Fair Fix", "cost": 90.1, "invoice": "Inv 1285", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 54], ["Completed", "Work complete · $90", 52]],"created":new Date("2026-05-08")},
+{"id": "T-112", "prop": "p8", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Fair Fix", "cost": 90.1, "invoice": "Inv 1284", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 54], ["Completed", "Work complete · $90", 52]],"created":new Date("2026-05-08")},
+{"id": "T-113", "prop": "p4", "title": "Fire alarm is coming out the wall on the 2nd floor>removed, ", "desc": "Fire alarm is coming out the wall on the 2nd floor>removed, Keira said not needed because another one very close by", "notes": "Keira will visit tomorrow>Keira saw, removed (not needed), another one very close by", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "Other", "vendor": null, "cost": 0, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 42], ["Completed", "Work complete", 40]],"created":new Date("2026-05-20")},
+{"id": "T-114", "prop": "p4", "title": "Sink pipe under kitchen sink is leaking> fixed by Monti", "desc": "Sink pipe under kitchen sink is leaking> fixed by Monti", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Plumbing", "svctype": "Repair", "vendor": "Monti - Rent Café", "cost": 0, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 42], ["Completed", "Work complete", 40]],"created":new Date("2026-05-20")},
+{"id": "T-115", "prop": "p6", "title": "MD Bed room door knob and latch needs adjusted so door will ", "desc": "MD Bed room door knob and latch needs adjusted so door will shut completely>Keira fixed", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "Other", "vendor": null, "cost": 0, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 41], ["Completed", "Work complete", 39]],"created":new Date("2026-05-21")},
+{"id": "T-116", "prop": "p6", "title": "Holes in kitchen wall, upstairs wall, kitchen door way", "desc": "Holes in kitchen wall, upstairs wall, kitchen door way", "notes": "", "urgency": "Emergency", "status": "Completed", "svc": "Other/Miscel", "svctype": "Repair", "vendor": "Boushab Services", "cost": 370.81, "invoice": "Invoice #2", "payment": "Match Proposed", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 41], ["Completed", "Work complete · $370", 39]],"created":new Date("2026-05-21")},
+{"id": "T-117", "prop": "p5", "title": "Repair small leakage on pipe to HVAC", "desc": "Repair small leakage on pipe to HVAC", "notes": "fridgerant put in, still need to fix by seth", "urgency": "Urgent", "status": "Completed", "svc": "HVAC/Furnace", "svctype": "Repair", "vendor": "Saylor Heating", "cost": 390, "invoice": "6.17.26 4520", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 40], ["Completed", "Work complete · $390", 38]],"created":new Date("2026-05-22")},
+{"id": "T-118", "prop": "p3", "title": "Wire hanging from side of the house", "desc": "Wire hanging from side of the house", "notes": "done>mohammed completed", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "Repair", "vendor": "Boushab Services", "cost": 50, "invoice": "Invoice #3", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 34], ["Completed", "Work complete · $50", 32]],"created":new Date("2026-05-28")},
+{"id": "T-119", "prop": "p4", "title": "Door pad lock needs to be removed from office door and added", "desc": "Door pad lock needs to be removed from office door and added to bedroom door on 3rd level", "notes": "", "urgency": "Low", "status": "Completed", "svc": "Other/Miscel", "svctype": "Other", "vendor": "Boushab Services", "cost": 45, "invoice": "Invoice #1", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 34], ["Completed", "Work complete · $45", 32]],"created":new Date("2026-05-28")},
+{"id": "T-120", "prop": "p4", "title": "Shower wall is broken from the moisture and needs repaired, ", "desc": "Shower wall is broken from the moisture and needs repaired, has tons of moisture stains on the ceiling wall", "notes": "Sonia sent email to Monti, Monti repairing", "urgency": "Emergency", "status": "Completed", "svc": "Other/Miscel", "svctype": "Repair", "vendor": "Iconic Monti", "cost": 0, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 27], ["Completed", "Work complete", 25]],"created":new Date("2026-06-04")},
+{"id": "T-121", "prop": "p4", "title": "Master bathroom wall has a hole, behind the door in the bath", "desc": "Master bathroom wall has a hole, behind the door in the bathroom (3rd floor), add stopper, wall protector", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "Repair", "vendor": null, "cost": 79.5, "invoice": "Invoice no.: 1294, mult items", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 27], ["Completed", "Work complete · $79", 25]],"created":new Date("2026-06-04")},
+{"id": "T-122", "prop": "p4", "title": "Office wall, behind the bathroom door has a hole (1st floor)", "desc": "Office wall, behind the bathroom door has a hole (1st floor), add stopper needed, wall protector", "notes": "new", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "Repair", "vendor": null, "cost": 0, "invoice": "Invoice no.: 1294, mult items", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 27], ["Completed", "Work complete", 25]],"created":new Date("2026-06-04")},
+{"id": "T-123", "prop": "p7", "title": "Replace carpeting in LR, DR and stairs - it is dirty and rip", "desc": "Replace carpeting in LR, DR and stairs - it is dirty and rippled", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Other/Miscel", "svctype": "Replacement", "vendor": null, "cost": null, "invoice": "Empire scheduled for Aug 6", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 20]],"created":new Date("2026-06-11")},
+{"id": "T-124", "prop": "p7", "title": "Both bedroom closet doors need attached> no longer need, Fai", "desc": "Both bedroom closet doors need attached> no longer need, Fair Fix removed", "notes": "Potentially", "urgency": "Urgent", "status": "Closed", "svc": "Other/Miscel", "svctype": "Other", "vendor": null, "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 19], ["Completed", "Work complete", 17]],"created":new Date("2026-06-12")},
+{"id": "T-125", "prop": "p5", "title": "Hang mini blind for the door", "desc": "Hang mini blind for the door", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "Replacement", "vendor": "Fair Fix", "cost": 79.5, "invoice": "Invoice no.: 1293, mult items", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 19], ["Completed", "Work complete · $79", 17]],"created":new Date("2026-06-12")},
+{"id": "T-126", "prop": "p5", "title": "Change smart lock on front door", "desc": "Change smart lock on front door", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "Replacement", "vendor": "Fair Fix", "cost": 0, "invoice": "Invoice no.: 1293, mult items", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 19], ["Completed", "Work complete", 17]],"created":new Date("2026-06-12")},
+{"id": "T-127", "prop": "p1", "title": "Screen door/frame detached from the door>fixed", "desc": "Screen door/frame detached from the door>fixed", "notes": "", "urgency": "Emergency", "status": "Open", "svc": "Other/Miscel", "svctype": "", "vendor": null, "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 16]],"created":new Date("2026-06-15")},
+{"id": "T-128", "prop": "p3", "title": "On the wall behind the toilet in JRs bathroom, dry wall need", "desc": "On the wall behind the toilet in JRs bathroom, dry wall needs to be replaced.", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "", "vendor": "Fair Fix", "cost": 132.5, "invoice": "Invoice no.: 1297", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 15], ["Completed", "Work complete · $132", 13]],"created":new Date("2026-06-16")},
+{"id": "T-129", "prop": "p6", "title": "MD's bedroom door will not lock properly>fixed", "desc": "MD's bedroom door will not lock properly>fixed", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Other/Miscel", "svctype": "", "vendor": null, "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 15]],"created":new Date("2026-06-16")},
+{"id": "T-130", "prop": "p2", "title": "Deck warping", "desc": "Deck warping", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Other/Miscel", "svctype": "", "vendor": "Fair Fix", "cost": null, "invoice": "F", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 14]],"created":new Date("2026-06-17")},
+{"id": "T-131", "prop": "p2", "title": "Lock for JC Door> not done, fair fix knows (keira need to ge", "desc": "Lock for JC Door> not done, fair fix knows (keira need to get lock there)", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Other/Miscel", "svctype": "", "vendor": null, "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 14]],"created":new Date("2026-06-17")},
+{"id": "T-132", "prop": "p7", "title": "Stones Broken on front walkway path>keira will order pavers", "desc": "Stones Broken on front walkway path>keira will order pavers", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Other/Miscel", "svctype": "", "vendor": null, "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 13]],"created":new Date("2026-06-18")},
+{"id": "T-133", "prop": "p4", "title": "Fire alarm batteries need changed in living room>Monti or st", "desc": "Fire alarm batteries need changed in living room>Monti or staff completed", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Other/Miscel", "svctype": "Routine/Prevent.", "vendor": "Iconic Monti", "cost": 825, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 12], ["Completed", "Work complete · $825", 10]],"created":new Date("2026-06-19")},
+{"id": "T-134", "prop": "p1", "title": "The toilet handle is very loose", "desc": "The toilet handle is very loose", "notes": "", "urgency": "Urgent", "status": "In progress", "svc": "Other/Miscel", "svctype": "", "vendor": "Fair Fix", "cost": null, "invoice": "New - Keira reaching out to brother", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 8]],"created":new Date("2026-06-23")},
+{"id": "T-135", "prop": "p4", "title": "Office desk & chair needs to be moved to Nissley dr", "desc": "Office desk & chair needs to be moved to Nissley dr", "notes": "", "urgency": "Low", "status": "Open", "svc": "Other/Miscel", "svctype": "", "vendor": null, "cost": null, "invoice": "New - Keira reaching out to brother", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 7]],"created":new Date("2026-06-24")},
+{"id": "T-136", "prop": "p9", "title": "Office supplies need to be assembled and hung on wall>DO NOT", "desc": "Office supplies need to be assembled and hung on wall>DO NOT need to do because moving from desk and chair from Monti", "notes": "", "urgency": "Low", "status": "Closed", "svc": "Other/Miscel", "svctype": "Setup", "vendor": "Fair Fix", "cost": null, "invoice": "New", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 7], ["Completed", "Work complete", 5]],"created":new Date("2026-06-24")},
+{"id": "T-137", "prop": "p9", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Boushab Services", "cost": 50, "invoice": "Invoice #5", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 27], ["Completed", "Work complete · $50", 25]],"created":new Date("2026-06-04")},
+{"id": "T-138", "prop": "p7", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Boushab Services", "cost": 50, "invoice": "Invoice #6", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 27], ["Completed", "Work complete · $50", 25]],"created":new Date("2026-06-04")},
+{"id": "T-139", "prop": "p8", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Completed", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Boushab Services", "cost": 50, "invoice": "Invoice #4", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 27], ["Completed", "Work complete · $50", 25]],"created":new Date("2026-06-04")},
+{"id": "T-140", "prop": "p9", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Fair Fix", "cost": null, "invoice": "New", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 6]],"created":new Date("2026-06-25")},
+{"id": "T-141", "prop": "p7", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": null, "cost": null, "invoice": "New", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 6]],"created":new Date("2026-06-25")},
+{"id": "T-142", "prop": "p8", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Fair Fix", "cost": null, "invoice": "New", "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 6]],"created":new Date("2026-06-25")},
+{"id": "T-143", "prop": "p9", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": null, "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 0]],"created":new Date("2026-07-10")},
+{"id": "T-144", "prop": "p7", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": null, "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 0]],"created":new Date("2026-07-10")},
+{"id": "T-145", "prop": "p8", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": null, "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 0]],"created":new Date("2026-07-10")},
+{"id": "T-146", "prop": "p9", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Lawn Love", "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 0]],"created":new Date("2026-07-25")},
+{"id": "T-147", "prop": "p7", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Lawn Love", "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 0]],"created":new Date("2026-07-25")},
+{"id": "T-148", "prop": "p8", "title": "Lawn mowing", "desc": "Lawn mowing", "notes": "", "urgency": "Urgent", "status": "Open", "svc": "Outdoor lawn/snow", "svctype": "Routine/Prevent.", "vendor": "Lawn Love", "cost": null, "invoice": null, "reporter": "Office Staff", "log": [["Logged", "Entered in maintenance tracker", 0]],"created":new Date("2026-07-25")}];
+const LEASES = [
+{"id":"p1","prop":"p1","landlord":"—","rent":null,"term":"—","start":"—","end":"—","next":null,"status":"Active","escalated":false},
+{"id":"p2","prop":"p2","landlord":"—","rent":null,"term":"—","start":"—","end":"—","next":null,"status":"Active","escalated":false},
+{"id":"p4","prop":"p4","landlord":"MH Townhomes, LLC","rent":2650,"term":"12 mo","start":"Jun 2026","end":"May 2027","next":new Date(2026,6,1),"status":"Active","escalated":false,"lease":{"tenant":"Maxcare HCBS LLC dba Complete Homecare PA","address":"2767 Monticello Lane, Harrisburg PA 17112","deposit":2750,"dueDay":"1st of the month","late":"$50 + $10/day after the 5th","nsf":"$35 returned-check fee","payTo":"841 West Trindle Rd, Mechanicsburg PA 17055","renewal":"Auto-renews 12 mo unless 30-day written notice; rent may rise 1%+ annually","tenantUtil":"Electric, gas, water, cable/internet; reimburse quarterly sewer & trash; driveway snow removal","landlordUtil":"Sewer & pump-station maintenance, HOA fees, common-area lawn care, private street/sidewalk snow removal","appliances":"Landlord provides & repairs: stove, fridge, washer, dryer, dishwasher, HVAC, water heater, microwave"}}
+];
+const RECON = {"weekly": {"signed": false, "groups": [{"vendor": "Saylor Heating", "prop": "Multiple", "tickets": ["T-101", "T-102", "T-103"], "koda": 1470, "ledger": 1470, "status": "auto"}, {"vendor": "Iconic Monti", "prop": "Monticello", "tickets": ["T-133"], "koda": 825, "ledger": 825, "status": "auto"}, {"vendor": "Boushab Services", "prop": "Multiple", "tickets": ["T-116", "T-118", "T-119"], "koda": 615, "ledger": 635, "status": "review"}], "exceptions": [{"vendor": "Boushab Services", "reason": "Ledger line has no matching KodaRE ticket group", "ledger": 510, "koda": 0}]}, "monthly": {"signed": false, "groups": [{"vendor": "Saylor Heating", "prop": "Multiple", "tickets": ["T-101", "T-102", "T-103"], "koda": 1470, "ledger": 1470, "status": "auto"}, {"vendor": "Iconic Monti", "prop": "Monticello", "tickets": ["T-133"], "koda": 825, "ledger": 825, "status": "auto"}, {"vendor": "Boushab Services", "prop": "Multiple", "tickets": ["T-116", "T-118", "T-119"], "koda": 615, "ledger": 615, "status": "auto"}], "exceptions": [{"vendor": "Fair Fix", "reason": "Bundled invoice (1293/1294) — split across properties needed", "ledger": 238.5, "koda": 159}]}};
+
+/* ===== helpers ===== */
+const CAT={'HVAC/Furnace':'❄️','Plumbing':'🚰','Electrical':'💡','Outdoor lawn/snow':'🌿','Appliance':'🔌','Structural':'🧱','Safety':'🚨','Other/Miscel':'🛠️'};
+const money=n=>'$'+(n==null?'—':Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}));
+const today=new Date(2026,6,1);
+function fdate(d){return d?new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';}
+function initials(name){return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();}
+const STAFF={office:{name:'Sonia S.',role:'Office Staff',color:'var(--os)'},admin:{name:'Morgan Patel',role:'Senior Admin',color:'var(--sa)'},caregiver:{name:'Alex Rivera',role:'Caregiver',color:'var(--cg)'}};
+const propById=id=>PROPS.find(p=>p.id===id)||{name:'—',addr:''};
+function mkTicket(o){return Object.assign({id:'T-'+(++TID),photos:0,log:[]},o);}
+
+const SB={'Open':'b-new','Triage':'b-triage','Assigned':'b-assigned','In progress':'b-progress','Awaiting parts':'b-parts','Escalated':'b-red','Completed':'b-resolved','Resolved':'b-resolved','Closed':'b-closed'};
+const UB={'Emergency':'u-emergency','Urgent':'u-high','High':'u-high','Normal':'u-normal','Low':'u-low'};
+const badge=t=>`<span class="badge ${SB[t.status]||'b-new'}">${t.status}</span>`;
+const ubadge=u=>`<span class="badge ${UB[u]||'u-normal'}">${u==='Emergency'?'🚨 ':''}${u}</span>`;
+const OPEN=['Open','In progress','Triage','Assigned','Awaiting parts','Escalated'];
+const isOpen=t=>OPEN.includes(t.status);
+const vName=x=>x||'—';
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+function updateNote(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const prev=t.notes;t.notes=val;
+  if(t._backend==='supabase')dbUpdateTicket(id,{notes:val}).then(ok=>{if(!ok){t.notes=prev;refreshTickets();}});
+  else saveState();
+  toast('Note saved');}
+function paySelect(t){return `<select onchange="updatePayment('${t.id}',this.value)" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${t.payment==='Paid'?'#eaf7ee':t.payment==='Ready for Payment'?'#fff4e6':t.payment==='Match Proposed'?'#fef7e0':'#fff'}"><option value=""${!t.payment?' selected':''}>—</option><option value="Match Proposed"${t.payment==='Match Proposed'?' selected':''}>⚠ Match Proposed</option><option value="Ready for Payment"${t.payment==='Ready for Payment'?' selected':''}>Ready for Payment</option><option value="Paid"${t.payment==='Paid'?' selected':''}>Paid</option></select>`;}
+function refreshTickets(){if(VIEW==='tickets'&&MAINT_TAB==='items')renderTickets(document.getElementById('view'));}
+function invoiceGroups(list){
+  const map={};
+  list.forEach(t=>{
+    if(t.invoice&&t.invoiceTotal!=null){
+      const k=t.invoice;
+      if(!map[k])map[k]={invoice:k,total:t.invoiceTotal,sum:0,ids:[],url:t.invoiceFileUrl};
+      map[k].sum+=(t.cost||0);
+      map[k].ids.push(t.id);
+    }
+  });
+  return Object.values(map).map(g=>Object.assign(g,{diff:Math.round((g.sum-g.total)*100)/100}));
+}
+function updatePayment(id,val){
+  const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  if(val==='Ready for Payment'&&t.invoice&&t.invoiceTotal!=null){
+    const group=invoiceGroups(TICKETS).find(g=>g.invoice===t.invoice);
+    if(group&&Math.abs(group.diff)>0.01){
+      const ok=confirm('Heads up: tickets attached to "'+group.invoice+'" total '+money(group.sum)+' but the invoice total is '+money(group.total)+' (off by '+money(Math.abs(group.diff))+'). Set to Ready for Payment anyway?');
+      if(!ok)return;
+    }
+  }
+  const prev=t.payment;t.payment=val;
+  if(t._backend==='supabase'){
+    dbUpdateTicket(id,{payment_status:val||null}).then(ok=>{if(!ok){t.payment=prev;refreshTickets();}});
+    dbLogActivity(id,val||'Payment cleared','Updated from Maintenance table');
+  } else saveState();
+  toast(val?('Payment: '+val):'Payment cleared');refreshTickets();
+}
+const STATUS_OPTS=['Open','In progress','Completed','Closed'];
+const STATUS_BG={'Open':'#eaf0fb','In progress':'#fef7e0','Completed':'#eaf7ee','Closed':'#eef1f5'};
+function statusSelect(t){return `<select onchange="setStatus('${t.id}',this.value,'Updated from Maintenance table')" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${STATUS_BG[t.status]||'#fff'}">${STATUS_OPTS.map(s=>`<option value="${s}"${t.status===s?' selected':''}>${s}</option>`).join('')}</select>`;}
+function updateCost(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const v=val.trim();const prev=t.cost;
+  if(v===''){t.cost=null;}else{const n=Number(v);if(!isNaN(n))t.cost=n;}
+  if(t._backend==='supabase')dbUpdateTicket(id,{cost:t.cost}).then(ok=>{if(!ok){t.cost=prev;refreshTickets();}});
+  else saveState();
+  toast('Cost updated');refreshTickets();}
+function updateInvoice(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const prev=t.invoice;t.invoice=val;
+  if(t._backend==='supabase')dbUpdateTicket(id,{invoice_number:val}).then(ok=>{if(!ok){t.invoice=prev;refreshTickets();}});
+  else saveState();
+  toast('Invoice updated');refreshTickets();}
+/* ===== drag-and-drop invoice attach (single ticket or multi-select) — Scope §4.10 ===== */
+function promptInvoiceTotal(){
+  const raw=prompt('Invoice total for this file, as read by the platform (leave blank to skip the reconciliation check):','');
+  if(raw==null||raw.trim()==='')return null;
+  const n=Number(raw.trim());
+  return isNaN(n)?null:n;
+}
+async function attachInvoiceFile(t,file,invoiceTotal){
+  if(t._backend==='supabase'){
+    const path=`${t.id}/${Date.now()}_${file.name}`;
+    const {error:upErr}=await sb.storage.from('invoices').upload(path,file,{upsert:true});
+    if(upErr){toast('Upload failed: '+upErr.message);return false;}
+    const {data:signed}=await sb.storage.from('invoices').createSignedUrl(path,60*60*24*7);
+    const url=signed?signed.signedUrl:null;
+    t.invoice=file.name;t.invoiceFileUrl=url;t.invoiceFileName=file.name;t.payment='Match Proposed';
+    t.invoiceTotal=(invoiceTotal!=null)?invoiceTotal:null;
+    const ok=await dbUpdateTicket(t.id,{invoice_number:file.name,invoice_file_url:url,invoice_file_name:file.name,payment_status:'Match Proposed',invoice_total:(invoiceTotal!=null?invoiceTotal:null)});
+    if(ok)dbLogActivity(t.id,'Invoice attached',file.name+(invoiceTotal!=null?' · total '+money(invoiceTotal):''));
+    return ok;
+  }
+  let url=null;try{url=URL.createObjectURL(file);}catch(e){}
+  t.invoice=file.name;
+  t.invoiceFileUrl=url;
+  t.invoiceFileName=file.name;
+  t.payment='Match Proposed';
+  t.invoiceTotal=(invoiceTotal!=null)?invoiceTotal:null;
+  return true;
+}
+function rowDragOver(ev){ev.preventDefault();ev.currentTarget.style.background='#fef7e0';}
+function rowDragLeave(ev){ev.currentTarget.style.background='';}
+async function dropInvoiceOnTicket(id,ev){
+  ev.preventDefault();ev.currentTarget.style.background='';
+  const files=ev.dataTransfer&&ev.dataTransfer.files;const f=files&&files[0];
+  if(!f){toast('No file detected in drop');return;}
+  const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const total=promptInvoiceTotal();
+  const ok=await attachInvoiceFile(t,f,total);
+  if(!ok)return;
+  if(total!=null&&t.cost==null){t.cost=total;if(t._backend==='supabase')await dbUpdateTicket(id,{cost:total});}
+  if(t._backend!=='supabase')saveState();
+  toast('Invoice attached to '+id+' — status set to Match Proposed, review and confirm');
+  refreshTickets();
+}
+function bulkDragOver(ev){ev.preventDefault();if(SELECTED.size)ev.currentTarget.style.background='#fef7e0';}
+function bulkDragLeave(ev){ev.currentTarget.style.background='';}
+async function dropInvoiceOnSelected(ev){
+  ev.preventDefault();ev.currentTarget.style.background='';
+  if(SELECTED.size===0){toast('Select tickets first, then drop the invoice');return;}
+  const files=ev.dataTransfer&&ev.dataTransfer.files;const f=files&&files[0];
+  if(!f){toast('No file detected in drop');return;}
+  const total=promptInvoiceTotal();
+  let n=0,anyLocal=false;
+  for(const t of TICKETS){if(SELECTED.has(t.id)){const ok=await attachInvoiceFile(t,f,total);if(ok){n++;if(t._backend!=='supabase')anyLocal=true;}}}
+  if(anyLocal)saveState();
+  toast('Invoice attached to '+n+' selected ticket(s) — status set to Match Proposed, review and confirm'+(total!=null?'. Invoice total: '+money(total):''));
+  refreshTickets();
+}
+async function pickInvoiceForTicket(id,input){
+  const f=input.files&&input.files[0];if(!f)return;
+  const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const total=promptInvoiceTotal();
+  const ok=await attachInvoiceFile(t,f,total);
+  if(!ok){input.value='';return;}
+  if(total!=null&&t.cost==null){t.cost=total;if(t._backend==='supabase')await dbUpdateTicket(id,{cost:total});}
+  if(t._backend!=='supabase')saveState();
+  toast('Invoice attached to '+id+' — status set to Match Proposed, review and confirm');
+  input.value='';
+  refreshTickets();
+}
+async function pickInvoiceForSelected(input){
+  const f=input.files&&input.files[0];if(!f)return;
+  if(SELECTED.size===0){toast('Select tickets first, then choose an invoice');input.value='';return;}
+  const total=promptInvoiceTotal();
+  let n=0,anyLocal=false;
+  for(const t of TICKETS){if(SELECTED.has(t.id)){const ok=await attachInvoiceFile(t,f,total);if(ok){n++;if(t._backend!=='supabase')anyLocal=true;}}}
+  if(anyLocal)saveState();
+  toast('Invoice attached to '+n+' selected ticket(s) — status set to Match Proposed, review and confirm'+(total!=null?'. Invoice total: '+money(total):''));
+  input.value='';
+  refreshTickets();
+}
+function viewInvoiceFile(id){const t=TICKETS.find(x=>x.id===id);if(t&&t.invoiceFileUrl){window.open(t.invoiceFileUrl,'_blank');}else{toast('No file attached — invoice number entered manually');}}
+async function removeInvoiceFile(id){
+  if(!confirm('Remove the attached invoice from this ticket?'))return;
+  const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const prev={invoice:t.invoice,invoiceFileUrl:t.invoiceFileUrl,invoiceFileName:t.invoiceFileName,invoiceTotal:t.invoiceTotal,payment:t.payment};
+  t.invoice=null;t.invoiceFileUrl=null;t.invoiceFileName=null;t.invoiceTotal=null;t.payment='';
+  if(t._backend==='supabase'){
+    const ok=await dbUpdateTicket(id,{invoice_number:null,invoice_file_url:null,invoice_file_name:null,invoice_total:null,payment_status:null});
+    if(ok)dbLogActivity(id,'Invoice removed','Attachment cleared');
+    else Object.assign(t,prev);
+  } else saveState();
+  toast('Invoice attachment removed');
+  refreshTickets();
+}
+function ageDays(t){return Math.max(0,Math.round((today-new Date(t.created))/864e5));}
+function spendFor(id){return TICKETS.filter(t=>t.prop===id&&t.cost).reduce((s,t)=>s+t.cost,0);}
+function computeHealth(){PROPS.forEach(p=>{if(p.status==='Onboarding')return;const ts=TICKETS.filter(t=>t.prop===p.id&&isOpen(t));p.health=ts.some(t=>t.urgency==='Emergency')?'red':(ts.length?'amber':'green');p.status=p.health==='red'?'At risk':'Active';});}
+
+const PURCHASE_CHECKLIST=["Flood Risk / County Confirmed","Non-contiguous Clearance","Offer Acceptance","HOA Docs Reviewed (if appl)","Deposit Received by Seller","Contingency — Inspection: Home/Property","Contingency — Inspection: Termite/Pest","Contingency — Other","Inspection Feedback Deadline — Buyer","Inspection Feedback Deadline — Seller","Other Contingency Deadline","Appraisal","Insurance Coverage","Utilities / Sewer Transferred","Financing / Loan Approval","Walkthrough","Close","Certificate of Occupancy / Use","Closing Documents Stored","Videos / Photos","Licensed","Comments","User Notes"];
+const RENTAL_CHECKLIST=["County Confirmed","Non-contiguous Clearance","Lease Negotiations / Mgmt Doc Review","Lease Execution","Deposit / Initial Rent Received by Landlord","Insurance Coverage","Portal Setup (if appl)","Rent Payment Setup (Finance)","Utilities / Sewer Transferred","Possession Taken (Keys)","Walkthrough / Condition Report","Certificate of Occupancy / Use","Documents Stored","Videos / Photos","Licensed","Comments","User Notes"];
+function chkListFor(p){return p.own==='owned'?PURCHASE_CHECKLIST:RENTAL_CHECKLIST;}
+
+let MAINT_TAB='items';
+let NOTEID=200;
+let NOTES=[
+ {id:1,tag:'Ownership',pinned:true,text:'ResHab Property Holdings owns the individual ResHab Prop LLCs and rents to MaxCare (tenant/client). ResHab Property Holdings pays for all maintenance.'},
+ {id:2,tag:'Compliance',pinned:true,text:'State regs require preventive items: annual HVAC inspection, annual inspection & cleaning, and annual fire-extinguisher inspection.'},
+ {id:3,tag:'Budget',pinned:true,text:'Budget guidance: ~$100–200/mo for a small property (e.g. Progress); ~$200–300/mo for a larger property (e.g. Highlands).'},
+ {id:4,tag:'Open item',pinned:false,text:'Highlands: loose shingle + wire per HOA/neighbor — follow up.'},
+ {id:5,tag:'Open item',pinned:false,text:'Nassau: replace carpeting in LR, DR & stairs — Empire scheduled for Aug 6.'},
+];
+
+const LOANS={
+ p3:[{lender:'First National Bank',contact:'(717) 555-0140',loanNo:'FNB-4471',principal:292000,origDate:'Mar 2021',rate:3.75,rateType:'Fixed',termMo:360,maturity:'Mar 2051',payment:1352,escrow:410,balance:268400,lien:'1st',prepay:'None'}],
+ p5:[{lender:'M&T Bank',contact:'(717) 555-0182',loanNo:'MT-8830',principal:210000,origDate:'Jul 2020',rate:3.5,rateType:'Fixed',termMo:360,maturity:'Jul 2050',payment:943,escrow:300,balance:190500,lien:'1st',prepay:'None'}],
+ p6:[{lender:'First National Bank',contact:'(717) 555-0140',loanNo:'FNB-5120',principal:240000,origDate:'Jan 2022',rate:4.25,rateType:'Fixed',termMo:360,maturity:'Jan 2052',payment:1181,escrow:350,balance:228900,lien:'1st',prepay:'None'}],
+ p7:[{lender:'PNC Bank',contact:'(888) 762-2265',loanNo:'PNC-2213',principal:205000,origDate:'Sep 2019',rate:3.9,rateType:'Fixed',termMo:360,maturity:'Sep 2049',payment:967,escrow:320,balance:178200,lien:'1st',prepay:'None'}],
+ p8:[{lender:'Mid Penn Bank',contact:'349 Union St, Millersburg PA 17061',loanNo:'Guidance Line Sub-Note (Master Note 7/11/2025)',principal:236170,origDate:'Feb 27, 2026',rate:6.5,rateType:'Fixed 5 yrs, then WSJ Prime + 1.00% (floor 4.00%)',termMo:240,maturity:'Feb 27, 2046',payment:1773.57,escrow:0,balance:236170,lien:'1st (secured by property)',prepay:'5%/4%/3%/2%/1% in yrs 1–5+; waived on insurance payoff or sale to unrelated third party'}],
+ p9:[{lender:'M&T Bank',contact:'(717) 555-0182',loanNo:'MT-9041',principal:185000,origDate:'Nov 2021',rate:3.6,rateType:'Fixed',termMo:360,maturity:'Nov 2051',payment:841,escrow:290,balance:172400,lien:'1st',prepay:'None'}]
+};
+
+/* ===== compliance: certificates & inspections (Scope §4.2) ===== */
+const CERTS=[
+ {prop:'p3',type:'Certificate of Occupancy',authority:'City of Harrisburg',certNo:'CO-2021-0456',issue:'2021-03-20',exp:null,cadence:'Perpetual',status:'active',resp:'Sonia S.',cost:0},
+ {prop:'p3',type:'Group home / IDD waiver license',authority:'PA Dept. of Human Services',certNo:'GH-2024-1123',issue:'2024-06-01',exp:'2026-06-01',cadence:'Biennial',status:'expired',resp:'Sonia S.',cost:250},
+ {prop:'p3',type:'Fire safety certificate',authority:'Dauphin County Fire Marshal',certNo:'FS-2025-0099',issue:'2025-08-15',exp:'2026-08-15',cadence:'Annual',status:'active',resp:'Mohammed',cost:120},
+ {prop:'p6',type:'Certificate of Occupancy',authority:'Lower Paxton Township',certNo:'CO-2022-0117',issue:'2022-01-25',exp:null,cadence:'Perpetual',status:'active',resp:'Sonia S.',cost:0},
+ {prop:'p6',type:'Group home / IDD waiver license',authority:'PA Dept. of Human Services',certNo:'GH-2025-0207',issue:'2025-01-10',exp:'2027-01-10',cadence:'Biennial',status:'active',resp:'Sonia S.',cost:250},
+ {prop:'p6',type:'Fire safety certificate',authority:'Dauphin County Fire Marshal',certNo:'FS-2025-0511',issue:'2025-07-01',exp:'2026-07-01',cadence:'Annual',status:'in renewal',resp:'Keira',cost:120},
+ {prop:'p7',type:'Fire safety certificate',authority:'Dauphin County Fire Marshal',certNo:'FS-2025-0322',issue:'2025-05-01',exp:'2026-05-01',cadence:'Annual',status:'expired',resp:'Keira',cost:120},
+ {prop:'p7',type:'Group home / IDD waiver license',authority:'PA Dept. of Human Services',certNo:'GH-2024-0876',issue:'2024-09-05',exp:'2026-09-05',cadence:'Biennial',status:'active',resp:'Sonia S.',cost:250},
+ {prop:'p8',type:'Group home / IDD waiver license',authority:'PA Dept. of Human Services',certNo:'GH-2026-0033',issue:'2026-02-27',exp:'2028-02-27',cadence:'Biennial',status:'active',resp:'Sonia S.',cost:250},
+ {prop:'p9',type:'Certificate of Occupancy',authority:'Middletown Borough',certNo:'CO-2021-0982',issue:'2021-11-15',exp:null,cadence:'Perpetual',status:'active',resp:'Mohammed',cost:0},
+ {prop:'p4',type:'Certificate of Occupancy',authority:'City of Harrisburg',certNo:'CO-2026-0044',issue:'2026-06-01',exp:null,cadence:'Perpetual',status:'active',resp:'Sonia S.',cost:0},
+ {prop:'p4',type:'Fire safety certificate',authority:'Dauphin County Fire Marshal',certNo:'FS-2025-0640',issue:'2025-09-01',exp:'2026-09-01',cadence:'Annual',status:'active',resp:'Sonia S.',cost:120},
+ {prop:'p1',type:'Fire safety certificate',authority:'Dauphin County Fire Marshal',certNo:'FS-2025-0710',issue:'2025-07-20',exp:'2026-07-20',cadence:'Annual',status:'active',resp:'Keira',cost:120},
+];
+const INSPECTIONS=[
+ {prop:'p3',type:'Fire & life safety inspection',inspector:'Dauphin Fire Safety Co.',scheduled:'2025-08-10',completed:'2025-08-10',result:'Passed with conditions',findings:'Extinguisher tag expired',corrective:'Replace extinguisher tags',due:'2026-08-10',cost:150,nextDue:'2026-08-10'},
+ {prop:'p6',type:'Health department inspection',inspector:'PA Dept. of Health',scheduled:'2026-07-15',completed:null,result:'Scheduled',findings:'',corrective:'',due:null,cost:0,nextDue:'2026-07-15'},
+ {prop:'p9',type:'HVAC annual inspection',inspector:'Saylor Heating',scheduled:'2026-05-01',completed:'2026-05-01',result:'Passed',findings:'',corrective:'',due:null,cost:150,nextDue:'2027-05-01'},
+ {prop:'p7',type:'Group home licensing inspection',inspector:'PA Dept. of Human Services',scheduled:'2026-03-01',completed:'2026-03-01',result:'Passed',findings:'',corrective:'',due:null,cost:0,nextDue:'2027-03-01'},
+];
+function daysTo(d){if(!d)return null;const dd=new Date(/^\d{4}-\d{2}-\d{2}$/.test(d)?d+'T00:00:00':d);return Math.round((dd-today)/864e5);}
+function certBadge(c){if(c.status==='expired')return '<span class="badge b-red">⚠ Expired</span>';if(c.status==='in renewal')return '<span class="badge b-progress">↻ In renewal</span>';if(!c.exp)return '<span class="badge b-resolved">✓ Active (perpetual)</span>';const d=daysTo(c.exp);if(d<=90&&d>=0)return `<span class="badge b-assigned">⏳ Expires in ${d}d</span>`;return '<span class="badge b-resolved">✓ Active</span>';}
+function dstr(v){if(!v||v==='—')return '—';const d=new Date(/^\d{4}-\d{2}-\d{2}$/.test(v)?v+'T00:00:00':v);if(isNaN(d))return v;return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+
+/* ===== property disposition (Scope §4.13/4.14) ===== */
+const DISPOSITION_CHECKLIST=["Offer Acceptance","Deposit Received by Seller","HOA Docs Sent (if appl)","Contingency — Inspection: Home/Property","Contingency — Inspection: Termite/Pest","Contingency — Other","Inspection Feedback Deadline — Buyer","Inspection Feedback Deadline — Seller","Other Contingency Deadline","Utilities / Sewer Transferred","Financing / Loan Payoff","Walkthrough","Close","Closing Documents Stored","Comments","User Notes"];
+
+/* ===== document upload & auto-populate (Scope §4.1 Property Documents / §4.10 invoice routing) ===== */
+const DOC_TYPES=['Deed','Lease','Insurance','Certificate of Occupancy','Inspection Report','Loan Documents','Photos / Videos'];
+// Note: vendor invoices are no longer uploaded here — they're attached directly to maintenance
+// ticket(s) via drag-and-drop (or the file picker) in the Maintenance list, single or multi-select.
+function docTypesFor(p){
+  // Ownership-specific documents only make sense for the matching property type —
+  // e.g., a rental like Monticello shouldn't offer "Deed" or "Loan Documents" (owned-only),
+  // and an owned property shouldn't offer "Lease" (leased-only).
+  const ownedOnly=['Deed','Loan Documents'];
+  const leasedOnly=['Lease'];
+  return DOC_TYPES.filter(t=>{
+    if(p.own==='owned'&&leasedOnly.includes(t))return false;
+    if(p.own==='leased'&&ownedOnly.includes(t))return false;
+    return true;
+  });
+}
+function docBadge(type){const m={'Deed':'📄','Lease':'📄','Insurance':'🛡️','Certificate of Occupancy':'📜','Inspection Report':'🔍','Loan Documents':'🏦','Invoice':'🧾','Photos / Videos':'🖼️'};return m[type]||'📄';}
+let DOC_ID=100;
+let DOCS=[
+ {id:'d1',prop:'p3',type:'Deed',file:'Highlands_deed.pdf',uploaded:new Date('2021-03-16'),status:'Extracted',note:'Auto-filled: purchase price, settlement date, buyer LLC, tax ID.'},
+ {id:'d2',prop:'p4',type:'Lease',file:'Monticello_lease.pdf',uploaded:new Date('2026-06-02'),status:'Extracted',note:'Auto-filled: landlord, rent, lease type.'},
+ {id:'d3',prop:'p6',type:'Certificate of Occupancy',file:'CountryHill_CO.pdf',uploaded:new Date('2022-01-26'),status:'Extracted',note:'Auto-filled: Certificate of Occupancy (Compliance tab).'},
+];
+function fmtISO(d){const dt=new Date(d);const m=(dt.getMonth()+1+'').padStart(2,'0');const day=(dt.getDate()+'').padStart(2,'0');return dt.getFullYear()+'-'+m+'-'+day;}
+function addYears(d,n){const dt=new Date(d);dt.setFullYear(dt.getFullYear()+n);return dt;}
+function extractIntoProperty(p,type){
+  const applied=[];
+  if(type==='Deed'&&p.own==='owned'){
+    if(!p.purchasePrice){p.purchasePrice=Math.round(180000+Math.random()*80000);applied.push('purchase price');}
+    if(!p.settlementDate||p.settlementDate==='—'){p.settlementDate=fmtISO(today);applied.push('settlement date');}
+    if(!p.purchaseDate||p.purchaseDate==='—'){p.purchaseDate=fmtISO(today);applied.push('purchase date');}
+    if(!p.buyerLLC){p.buyerLLC=p.name+' Holdings LLC';applied.push('buyer LLC');}
+    if(!p.taxId){p.taxId=String(Math.floor(10+Math.random()*80))+'-'+String(Math.floor(100+Math.random()*800))+'-'+String(Math.floor(100+Math.random()*800));applied.push('tax ID');}
+  }
+  if(type==='Lease'&&p.own==='leased'){
+    if(!p.landlord||p.landlord==='—'){p.landlord='Extracted Landlord LLC';applied.push('landlord');}
+    if(!p.rent){p.rent=Math.round(1800+Math.random()*1200);applied.push('rent');}
+    if(!p.leaseType){p.leaseType='ResHab';applied.push('lease type');}
+  }
+  if(type==='Certificate of Occupancy'){
+    CERTS.push({prop:p.id,type:'Certificate of Occupancy',authority:'Local municipality',certNo:'CO-'+(2020+Math.floor(Math.random()*6))+'-'+Math.floor(1000+Math.random()*9000),issue:fmtISO(today),exp:null,cadence:'Perpetual',status:'active',resp:'Office Staff',cost:0});
+    applied.push('Certificate of Occupancy (Compliance tab)');
+  }
+  if(type==='Inspection Report'){
+    INSPECTIONS.push({prop:p.id,type:'General inspection',inspector:'Vendor (from document)',scheduled:fmtISO(today),completed:fmtISO(today),result:'Passed',findings:'',corrective:'',due:null,cost:0,nextDue:fmtISO(addYears(today,1))});
+    applied.push('inspection record (Compliance tab)');
+  }
+  return applied;
+}
+function uploadDoc(pid){
+  const p=propById(pid);
+  const typeSel=document.getElementById('docType_'+pid);
+  const fileInp=document.getElementById('docFile_'+pid);
+  const type=typeSel?typeSel.value:'Deed';
+  const picked=(fileInp&&fileInp.files&&fileInp.files[0])?fileInp.files[0]:null;
+  if(!picked){toast('Choose a file first');return;}
+  if(!docTypesFor(p).includes(type)){toast(type+' doesn\'t apply to '+(p.own==='owned'?'an owned':'a leased')+' property like '+p.name);return;}
+  let url=null;try{url=URL.createObjectURL(picked);}catch(e){}
+  const rec={id:'d'+(++DOC_ID),prop:pid,type,file:picked.name,size:fmtBytes(picked.size),url,uploaded:new Date(today),status:'On file',note:''};
+  {
+    const applied=extractIntoProperty(p,type);
+    rec.status='Extracted';
+    rec.note=applied.length?('Auto-filled: '+applied.join(', ')+' — review and edit as needed.'):'No mapped fields for this document type in the prototype; filed for reference.';
+    DOCS.push(rec);saveState();
+    toast(applied.length?'Extracted from '+type+' — fields updated, review below':'Document filed');
+  }
+  document.getElementById('propTabBody').innerHTML=propDocs(p);
+}
+function updatePropField(pid,field,value,kind){
+  const p=propById(pid);if(!p)return;
+  if(kind==='number'){const v=value.trim();p[field]=v===''?null:(isNaN(Number(v))?p[field]:Number(v));}
+  else{p[field]=value.trim()===''?null:value;}
+  saveState();toast('Updated — override saved');
+}
+
+/* ===== router ===== */
+let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all',svc:'all',vendor:'all',payment:'all',invoice:'all',selectedOnly:false};
+let SELECTED=new Set();
+const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'compliance',ic:'📜',label:'Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'reports',ic:'📊',label:'Reports'},{id:'recon',ic:'🧾',label:'Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length}];
+const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & onboarding'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['Compliance','Certificates, licenses & inspections · Scope §4.2'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['Reconciliation','Matching engine · S1']};
+function setRole(r){ROLE=r;document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
+  const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
+  if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
+  else{const s=STAFF[r];document.getElementById('sideName').textContent=s.name;document.getElementById('sideRole').textContent=s.role;const av=document.getElementById('sideAvatar');av.textContent=initials(s.name);av.style.background=s.color;navigate('dashboard');}}
+function buildNav(){const nav=document.getElementById('nav');let items=NAV.slice();if(ROLE==='admin')items.splice(1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});
+  nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
+function navigate(v){VIEW=v;buildNav();const t=TITLES[v]||[v,''];
+  if(v==='approvals'){document.getElementById('viewTitle').textContent='Approvals';document.getElementById('crumb').textContent='Sign-offs & escalations';}
+  else{document.getElementById('viewTitle').textContent=t[0];document.getElementById('crumb').textContent=t[1];}
+  const el=document.getElementById('view');el.scrollTop=0;
+  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals}[v]||renderDashboard)(el);}
+function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast">✓ ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);}
+function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};return (U[a.urgency]-U[b.urgency])||(new Date(b.created)-new Date(a.created));}
+
+/* ===== dashboard ===== */
+function renderDashboard(el){
+  const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');const atrisk=PROPS.filter(p=>p.health==='red');
+  const exc=RECON.weekly.exceptions.length+RECON.monthly.exceptions.length;
+  const spend=TICKETS.filter(t=>t.cost).reduce((s,t)=>s+t.cost,0);
+  const recent=[...TICKETS].sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,7);
+  el.innerHTML=`
+  <div class="kpis">
+    <div class="kpi"><div class="lab">Open items</div><div class="val">${open.length}</div><div class="sub">${TICKETS.length} total tracked</div></div>
+    <div class="kpi red"><div class="lab">Emergencies</div><div class="val">${emerg.length}</div><div class="sub">need action now</div></div>
+    <div class="kpi ${atrisk.length?'red':'green'}"><div class="lab">Properties at risk</div><div class="val">${atrisk.length}</div><div class="sub">of ${PROPS.length} homes</div></div>
+    <div class="kpi"><div class="lab">Maint. spend</div><div class="val">${money(spend)}</div><div class="sub">recorded to date</div></div>
+    <div class="kpi ${exc?'amber':'green'}"><div class="lab">Recon exceptions</div><div class="val">${exc}</div><div class="sub">weekly + monthly</div></div>
+  </div>
+  <div class="grid2" style="margin-top:18px">
+    <div class="card"><h3>🎫 Priority queue<a class="link" onclick="navigate('tickets')">View all →</a></h3>
+      <table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th>Status</th><th>Age</th></tr></thead><tbody>
+      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="faint" style="font-size:11.5px">${t.id} · ${t.svc}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono">${ageDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
+      </tbody></table></div>
+    <div class="card"><h3>🏠 Portfolio health</h3><div class="body">
+      ${PROPS.map(p=>`<div class="mrow" style="padding:7px 0;border-bottom:1px solid var(--line)"><div><span class="dotc" style="background:var(--${p.health==='green'?'green':(p.health==='red'?'red':'amber')})"></span> <span class="b">${p.name}</span> <span class="faint" style="font-size:11.5px">· ${p.own==='owned'?'Owned':'Leased'}</span></div><div class="pill" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">${p.status}</div></div>`).join('')}
+    </div></div>
+  </div>
+  <div class="sectitle">Recent activity</div>
+  <div class="card"><table><thead><tr><th>Logged</th><th>Item</th><th>Property</th><th>Vendor</th><th>Status</th></tr></thead><tbody>
+    ${recent.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="muted mono">${fdate(t.created)}</td><td><span class="b">${t.id}</span> ${t.title}</td><td>${propById(t.prop).name}</td><td class="muted">${t.vendor||'—'}</td><td>${badge(t)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+/* ===== tickets ===== */
+function renderTickets(el){
+  const MT=`<div class="tabs"><button class="tab ${MAINT_TAB==='items'?'active':''}" onclick="MAINT_TAB='items';renderTickets(document.getElementById('view'))">🎫 Items</button><button class="tab ${MAINT_TAB==='notes'?'active':''}" onclick="MAINT_TAB='notes';renderTickets(document.getElementById('view'))">🗒️ Notes</button></div>`;
+  if(MAINT_TAB==='notes'){el.innerHTML=MT+notesHtml();return;}
+  const rows=filtered();
+  const totalCost=rows.reduce((s,t)=>s+(t.cost||0),0);
+  const costedCount=rows.filter(t=>t.cost!=null).length;
+  const groups=invoiceGroups(rows).filter(g=>Math.abs(g.diff)>0.01);
+  const svcOpts=[...new Set(TICKETS.map(t=>t.svc).filter(Boolean))].sort();
+  const vendorOpts=[...new Set(TICKETS.map(t=>t.vendor).filter(Boolean))].sort();
+  const invOpts=[...new Set(TICKETS.map(t=>t.invoice).filter(Boolean))].sort();
+  const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
+  const thSel=(key,label,opts)=>`<th style="text-align:left"><select onchange="setF('${key}',this.value)" style="${fSel}" title="Filter by ${label}"><option value="all"${FILTER[key]==='all'?' selected':''}>${label}</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select></th>`;
+  el.innerHTML=MT+`
+  <div class="toolbar"><span class="b">Status:</span>
+    ${['all','Open','In progress','Completed','Closed'].map(s=>`<span class="chip ${FILTER.status===s?'active':''}" onclick="setF('status','${s}')">${s==='all'?'All':s}</span>`).join('')}</div>
+  <div class="toolbar"><span class="b">Priority:</span>
+    ${['all','Emergency','Urgent','Low'].map(u=>`<span class="chip ${FILTER.urgency===u?'active':''}" onclick="setF('urgency','${u}')">${u==='all'?'All':u}</span>`).join('')}
+    <span style="margin-left:auto"></span>
+    <select onchange="setF('prop',this.value)"><option value="all"${FILTER.prop==='all'?' selected':''}>All properties</option>${PROPS.map(p=>`<option value="${p.id}"${FILTER.prop===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>
+  <div class="toolbar"><span class="b">Selection:</span>
+    <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
+    <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
+    <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
+    <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" style="border:2px dashed var(--line);border-radius:9px;padding:6px 12px;font-size:12px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:8px">
+      <span>📎 ${SELECTED.size?`Drop an invoice here to apply to ${SELECTED.size} selected`:'Select tickets, then drop an invoice here'}</span>
+      <input type="file" id="bulkInvFile" style="display:none" onchange="pickInvoiceForSelected(this)">
+      <a onclick="document.getElementById('bulkInvFile').click()">or choose file</a>
+    </div></div>
+  ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
+  <div class="card" style="overflow-x:auto"><table style="min-width:1160px"><thead><tr>
+    <th style="width:34px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
+    <th>Property</th>
+    <th>Status</th>
+    <th>Created</th>
+    <th>Description</th>
+    <th>Priority</th>
+    ${thSel('svc','Service Category',svcOpts.map(s=>({v:s,l:s})))}
+    ${thSel('vendor','Vendor',vendorOpts.map(v=>({v:v,l:v})))}
+    <th><div>Cost</div><div style="font-weight:800;font-size:11px;color:var(--os);text-transform:none;letter-spacing:0" title="Total cost across ${rows.length} filtered ticket${rows.length===1?'':'s'} (${costedCount} costed)">${money(totalCost)}</div></th>
+    ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))])}
+    ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}])}
+    <th>Notes</th>
+  </tr></thead><tbody id="tbody"></tbody></table></div>`;
+  drawTickets();
+}
+function setF(k,v){FILTER[k]=v;if(VIEW==='tickets')renderTickets(document.getElementById('view'));}
+function toggleSelectedOnly(){FILTER.selectedOnly=!FILTER.selectedOnly;renderTickets(document.getElementById('view'));}
+function toggleSelect(id,checked){if(checked)SELECTED.add(id);else SELECTED.delete(id);
+  if(FILTER.selectedOnly&&SELECTED.size===0){FILTER.selectedOnly=false;renderTickets(document.getElementById('view'));return;}
+  const c=document.getElementById('selCount');if(c)c.textContent=(SELECTED.size?SELECTED.size+' selected':'0 selected');if(FILTER.selectedOnly)drawTickets();}
+function toggleSelectAll(checked){filtered().forEach(t=>{if(checked)SELECTED.add(t.id);else SELECTED.delete(t.id);});if(!checked&&FILTER.selectedOnly&&SELECTED.size===0)FILTER.selectedOnly=false;renderTickets(document.getElementById('view'));}
+function clearSelection(){SELECTED.clear();FILTER.selectedOnly=false;renderTickets(document.getElementById('view'));}
+function filtered(){return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(!FILTER.selectedOnly||SELECTED.has(t.id))).sort(rankSort);}
+function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
+  <td onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
+  <td class="b">${propById(t.prop).name}</td>
+  <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
+  <td class="muted mono" style="white-space:nowrap">${fdate(t.created)}</td>
+  <td><div>${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="faint" style="font-size:11px">${t.id}${t.svctype?' · '+t.svctype:''}</div></td>
+  <td>${ubadge(t.urgency)}</td>
+  <td class="muted">${t.svc||'—'}</td>
+  <td>${t.vendor||'<span class="faint">—</span>'}</td>
+  <td onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
+  <td onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
+  <td onclick="event.stopPropagation()">${paySelect(t)}</td>
+  <td onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add note…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
+function drawTickets(){const rows=filtered();document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';}
+
+function actualCompletionDate(t){const c=t.log.find(l=>l[0]==='Completed');if(!c)return null;const d=new Date(today);d.setDate(d.getDate()-c[2]);return d;}
+function ticketRecon(t){const inMonthly=RECON.monthly.groups.some(g=>g.tickets.includes(t.id));const inWeekly=RECON.weekly.groups.some(g=>g.tickets.includes(t.id));
+  if(inMonthly)return {label:'Matched — monthly',cls:'b-resolved'};
+  if(inWeekly)return {label:'Matched — weekly (preliminary)',cls:'b-progress'};
+  if(t.status==='Completed'||t.status==='Closed')return {label:'Pending reconciliation',cls:'b-new'};
+  return {label:'—',cls:'b-closed'};}
+function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=propById(t.prop);
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${t.id} · ${t.svc} ${CAT[t.svc]||''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${t.title}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
+   `<div class="card"><div class="body"><div class="kv">
+      <div class="k">Property</div><div><a onclick="closeDrawer();navigate('properties');setTimeout(()=>openProperty('${p.id}'),60)">${p.name}</a> · ${p.addr||'—'}</div>
+      <div class="k">Status</div><div>${badge(t)}</div>
+      <div class="k">Priority</div><div>${ubadge(t.urgency)}</div>
+      <div class="k">Service category</div><div>${t.svc||'—'}</div>
+      <div class="k">Service type</div><div>${t.svctype||'—'}</div>
+      <div class="k">Vendor</div><div>${t.vendor||'<span class="faint">Not assigned</span>'}</div>
+      <div class="k">Cost</div><div>${t.cost!=null?'<span class="b">'+money(t.cost)+'</span>':'<span class="faint">pending</span>'}</div>
+      <div class="k">Invoice</div><div>${t.invoice||'<span class="faint">—</span>'}</div>
+      <div class="k">Target completion</div><div><span class="faint">— (not captured in this sample)</span></div>
+      <div class="k">Actual completion</div><div>${actualCompletionDate(t)?fdate(actualCompletionDate(t)):'<span class="faint">—</span>'}</div>
+      <div class="k">Year / Month completed</div><div>${actualCompletionDate(t)?actualCompletionDate(t).toLocaleDateString('en-US',{year:'numeric',month:'long'}):'<span class="faint">—</span>'}</div>
+      <div class="k">Finance recon</div><div><span class="badge ${ticketRecon(t).cls}">${ticketRecon(t).label}</span></div>
+      <div class="k">Payment</div><div>${paySelect(t)}</div>
+      <div class="k">Notes</div><div><textarea style="width:100%;min-height:56px" placeholder="add / update notes…" onchange="updateNote('${t.id}',this.value)">${esc(t.notes)}</textarea></div>
+      <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
+    </div></div></div>
+    <div class="sectitle">Description</div><div class="card"><div class="body">${t.desc||t.title}</div></div>
+    <div class="sectitle">Actions</div><div class="card"><div class="body" style="display:flex;gap:10px;flex-wrap:wrap">${ticketActions(t)}</div></div>
+    <div class="sectitle">Activity</div><div class="card"><div class="body"><ul class="timeline">${t.log.map(l=>`<li><span class="tdot"></span><div class="tt">${l[0]}</div><div class="tm">${l[1]} · ${logAge(l)}</div></li>`).join('')}</ul></div></div>`);
+}
+function ticketActions(t){const b=[];const vsel=`<select onchange="assignVendor('${t.id}',this.value)"><option value="">Assign vendor…</option>${VENDORS.map(v=>`<option value="${v.name}"${t.vendor===v.name?' selected':''}>${v.name} (${v.trade})</option>`).join('')}</select>`;
+  if(t.status==='Open'){b.push(vsel);b.push(`<button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Work started')">Start work</button>`);}
+  else if(t.status==='In progress'){b.push(`<button class="btn green sm" onclick="completeTicket('${t.id}')">Mark completed</button>`);if(!t.vendor)b.push(vsel);}
+  else if(t.status==='Completed'){b.push(`<button class="btn sm" onclick="closeTicket('${t.id}')">Close & reconcile</button>`);}
+  else if(t.status==='Closed'){b.push(`<button class="btn sec sm" onclick="setStatus('${t.id}','Open','Re-opened')">Re-open</button>`);}
+  return b.join('');}
+function assignVendor(id,name){if(!name)return;const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const prevVendor=t.vendor,prevStatus=t.status;
+  t.vendor=name;if(t.status==='Open')t.status='In progress';
+  pushActivity(t,'Assigned','Dispatched to '+name);
+  if(t._backend==='supabase')dbUpdateTicket(id,{vendor:name,status:t.status}).then(ok=>{if(!ok){t.vendor=prevVendor;t.status=prevStatus;refresh(id);}});
+  toast('Vendor assigned');refresh(id);}
+function setStatus(id,s,note){const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const prev=t.status;t.status=s;
+  pushActivity(t,s,note||'');
+  if(t._backend==='supabase')dbUpdateTicket(id,{status:s}).then(ok=>{if(!ok){t.status=prev;refresh(id);}});
+  toast('Status → '+s);refresh(id);}
+function completeTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const c=prompt('Actual cost ($):',t.cost!=null?t.cost:'');if(c===null)return;
+  const prevCost=t.cost,prevStatus=t.status;
+  t.cost=Number(c)||0;t.status='Completed';
+  pushActivity(t,'Completed','Work complete · '+money(t.cost));
+  if(t._backend==='supabase')dbUpdateTicket(id,{cost:t.cost,status:'Completed'}).then(ok=>{if(!ok){t.cost=prevCost;t.status=prevStatus;refresh(id);}});
+  toast('Marked completed');refresh(id);}
+function closeTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const prev=t.status;t.status='Closed';
+  pushActivity(t,'Closed','Closed & queued for reconciliation');
+  if(t._backend==='supabase')dbUpdateTicket(id,{status:'Closed'}).then(ok=>{if(!ok){t.status=prev;refresh(id);}});
+  toast('Ticket closed');refresh(id);}
+function refresh(openId){saveState();buildNav();if(VIEW==='tickets')drawTickets();else navigate(VIEW);if(openId&&document.querySelector('.drawer'))openTicket(openId);}
+
+function notesHtml(){
+ const rec=['Inspect HVAC systems','Clean plumbing systems','Maintain electrical systems','Clean & inspect appliances','Inspect windows & doors','Flooring & carpet care','Outdoor equipment maintenance','Outdoor safety inspection','Alarm & extinguisher testing','Pest control contracts'];
+ const spring=['Clean gutters & downspouts','Inspect roof for damage / leaks','Clean exterior doors & windows','Landscape & clear yard debris','Pressure-wash walks & driveways','Service outdoor lighting'];
+ return `<div class="sectitle">Maintenance notes <span class="faint">— running notes & open items (saved)</span></div>
+  <div class="card"><div class="body"><textarea id="noteInput" rows="2" style="width:100%" placeholder="Add a maintenance note or open item…"></textarea><div style="margin-top:8px"><button class="btn sm" onclick="addNote()">+ Add note</button></div></div></div>
+  <div style="margin-top:12px">${NOTES.map(n=>`<div class="card" style="margin-bottom:10px"><div class="body"><div class="mrow"><span class="pill">${n.tag}${n.pinned?' · pinned':''}</span>${n.pinned?'':`<a onclick="delNote(${n.id})" class="faint" style="font-size:12px">Delete</a>`}</div><div style="margin-top:8px">${n.text}</div></div></div>`).join('')}</div>
+  <div class="sectitle">Preventive maintenance — recurring best practices</div>
+  <div class="card"><div class="body row">${rec.map((r,i)=>`<span class="pill">${i+1}. ${r}</span>`).join('')}</div></div>
+  <div class="sectitle">Seasonal checklist — Spring</div>
+  <div class="card"><div class="body row">${spring.map(r=>`<span class="pill">${r}</span>`).join('')}</div></div>`;}
+function addNote(){const ta=document.getElementById('noteInput');const v=(ta.value||'').trim();if(!v)return;NOTES.unshift({id:++NOTEID,tag:'Note',pinned:false,text:v});saveState();renderTickets(document.getElementById('view'));}
+function delNote(id){NOTES=NOTES.filter(n=>n.id!==id);saveState();renderTickets(document.getElementById('view'));}
+
+/* ===== properties ===== */
+function renderProperties(el){
+  const list=[...PROPS].sort((a,b)=>a.name.localeCompare(b.name));
+  el.innerHTML=`<div class="toolbar"><span class="b">${PROPS.length} properties</span>
+    <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
+    <span style="margin-left:auto"></span><button class="btn sec sm" onclick="startOnboard()">+ Onboard property</button></div>
+  <div class="card"><table><thead><tr><th>Property</th><th>Type</th><th>Status</th><th>Open</th><th>Total items</th><th class="right">Maint. spend</th></tr></thead><tbody>
+  ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');return `<tr class="clickable" onclick="openProperty('${p.id}')">
+    <td><span class="dotc" style="background:var(--${col})"></span> <span class="b">${p.name}</span><div class="faint" style="font-size:11.5px">${p.addr||'—'}</div></td>
+    <td><span class="pill ${p.own}">${p.own==='owned'?'Owned':'Leased'}</span></td>
+    <td><span class="pill" style="border-color:var(--${col});color:var(--${col})">${p.status}</span></td>
+    <td class="mono" style="color:${openN?'var(--ext)':'var(--muted)'}">${openN}</td>
+    <td class="mono">${total}</td>
+    <td class="right mono">${money(spendFor(p.id))}</td></tr>`;}).join('')}
+  </tbody></table></div>`;
+}
+function openProperty(id){const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
+  const tabList=p.own==='owned'?['Overview','Details','Checklist','Disposition','Compliance','Licensing','Loan','Components','Documents','Maintenance']:['Overview','Details','Checklist','Compliance','Licensing','Components','Documents','Maintenance'];const tabsHtml=tabList.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="propTab(this,'${id}','${t}')">${t}</button>`).join('');
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${p.own==='owned'?'Owned · '+(p.llc||'LLC'):'Leased · '+(p.landlord||'—')}</div><div style="font-size:19px;font-weight:800;margin-top:2px">${p.name}</div><div class="faint" style="font-size:12.5px">${p.addr||'—'}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">● ${p.status}</span></div></div>`,
+    `<div class="tabs">${tabsHtml}</div><div id="propTabBody">${propOverview(p,tks)}</div>`);
+}
+function propTab(btn,id,name){document.querySelectorAll('.drawer .tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
+  document.getElementById('propTabBody').innerHTML={Overview:propOverview(p,tks),Details:propDetails(p),Checklist:propChecklist(p),Disposition:propDisposition(p),Compliance:propComplianceTab(p),Licensing:propLicensing(p),Loan:propLoan(p),Components:propComponents(p),Documents:propDocs(p),Maintenance:propTickets(tks)}[name];}
+function propOverview(p,tks){const open=tks.filter(isOpen).length;return `<div class="card"><div class="body"><div class="kv">
+  <div class="k">Ownership</div><div><b>${p.own==='owned'?(p.llc||p.buyerLLC||'—'):(p.landlord&&p.landlord!=='—'?p.landlord:'—')}</b></div>
+  <div class="k">Address</div><div>${p.addr||'—'}</div>
+  <div class="k">Open items</div><div>${open}</div>
+  <div class="k">Total items</div><div>${tks.length}</div>
+  <div class="k">Maint. spend</div><div><b>${money(spendFor(p.id))}</b></div>
+</div></div></div>${p.health==='red'?`<div class="card" style="margin-top:14px;border-color:var(--red)"><div class="body" style="color:var(--red)"><b>⚠ At-risk:</b> has an open emergency item.</div></div>`:''}`;}
+function dval(v,suffix){return (v==null||v==='—')?'<span class="faint">—</span>':(suffix?v+suffix:v);}
+function propDetails(p){
+  if(p.own==='owned'){
+    return `<div class="card"><div class="body"><div class="kv">
+      <div class="k">Buyer entity (LLC)</div><div><input type="text" value="${esc(p.buyerLLC||p.llc||'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','buyerLLC',this.value)"></div>
+      <div class="k">Metro / County</div><div>${dval(p.metro)} / ${dval(p.county)}</div>
+      <div class="k">Purchase date</div><div><input type="text" value="${p.purchaseDate&&p.purchaseDate!=='—'?p.purchaseDate:''}" placeholder="YYYY-MM-DD" style="width:150px;font-size:13px" onchange="updatePropField('${p.id}','purchaseDate',this.value)"></div>
+      <div class="k">Settlement date</div><div><input type="text" value="${p.settlementDate&&p.settlementDate!=='—'?p.settlementDate:''}" placeholder="YYYY-MM-DD" style="width:150px;font-size:13px" onchange="updatePropField('${p.id}','settlementDate',this.value)"></div>
+      <div class="k">Purchase price</div><div><input type="text" inputmode="decimal" value="${p.purchasePrice!=null?p.purchasePrice:''}" placeholder="—" style="width:150px;font-size:13px;text-align:right" onchange="updatePropField('${p.id}','purchasePrice',this.value,'number')"></div>
+      <div class="k">Total buyer costs</div><div>${p.totalBuyerCosts!=null?money(p.totalBuyerCosts):'<span class="faint">—</span>'}</div>
+      <div class="k">Loan — initial</div><div>${p.loanInitial!=null?money(p.loanInitial):'<span class="faint">—</span>'}</div>
+      <div class="k">Loan — remaining</div><div>${p.loanRemaining!=null?money(p.loanRemaining):'<span class="faint">—</span>'}</div>
+      <div class="k">Tax ID #</div><div><input type="text" value="${esc(p.taxId||'')}" placeholder="—" style="width:170px;font-size:13px" onchange="updatePropField('${p.id}','taxId',this.value)"></div>
+    </div></div></div>
+    <div class="muted" style="font-size:11.5px;margin-top:6px">Fields above are commonly auto-filled from an uploaded Deed (see Documents tab) — highlighted here as editable so staff can override anything extracted incorrectly.</div>
+    <div class="sectitle">Property characteristics</div>
+    <div class="card"><div class="body"><div class="kv">
+      <div class="k">Bedrooms / Baths</div><div>${dval(p.bedrooms)} / ${dval(p.bathrooms)}</div>
+      <div class="k">Sq ft</div><div>${dval(p.sqft)}</div>
+      <div class="k">Cost / sq ft</div><div>${(p.purchasePrice&&p.sqft)?money(Math.round(p.purchasePrice/p.sqft)):'<span class="faint">—</span>'}</div>
+      <div class="k">Year built</div><div>${dval(p.yearBuilt)}</div>
+      <div class="k">Levels / stories</div><div>${dval(p.levels)}</div>
+      <div class="k">Parking</div><div>${dval(p.parkingType)}</div>
+      <div class="k">Type / style</div><div>${dval(p.typeStyle)}</div>
+      <div class="k">Construction</div><div>${dval(p.constructionMaterial)}</div>
+      <div class="k">Zoning</div><div>${dval(p.zoning)}</div>
+      <div class="k">Property type</div><div>${dval(p.propertyType)}</div>
+      <div class="k">HOA / Condo</div><div>${p.hoaCondo==='Yes'?`Yes · ${money(p.hoaFee)}/mo · ${dval(p.hoaAssocName)} · ${dval(p.hoaAssocContact)}`:'No'}</div>
+      <div class="k">Municipality</div><div>${dval(p.municipality)}</div>
+      <div class="k">School district</div><div>${dval(p.schoolDistrict)}</div>
+      <div class="k">MLS #</div><div>${dval(p.mls)}</div>
+      <div class="k">Operating program</div><div>${dval(p.operatingProgram)}</div>
+      <div class="k">House manager</div><div>${dval(p.houseManager)}</div>
+    </div></div></div>
+    <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.12 Purchased Property Records (Landing Page + Additional) · sample data for prototype review.</div>`;
+  }
+  const rentSf=(p.rent&&p.sqft)?('$'+(Math.round(p.rent/p.sqft*100)/100).toFixed(2)):'<span class="faint">—</span>';
+  return `<div class="card"><div class="body"><div class="kv">
+    <div class="k">Landlord</div><div><input type="text" value="${esc(p.landlord&&p.landlord!=='—'?p.landlord:'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','landlord',this.value)"></div>
+    <div class="k">Monthly rent</div><div><input type="text" inputmode="decimal" value="${p.rent!=null?p.rent:''}" placeholder="—" style="width:130px;font-size:13px;text-align:right" onchange="updatePropField('${p.id}','rent',this.value,'number')"></div>
+    <div class="k">Lease type</div><div><input type="text" value="${esc(p.leaseType||'')}" placeholder="—" style="width:150px;font-size:13px" onchange="updatePropField('${p.id}','leaseType',this.value)"></div>
+    <div class="k">Metro / County</div><div>${dval(p.metro)} / ${dval(p.county)}</div>
+    <div class="k">Bedrooms / Baths</div><div>${dval(p.bedrooms)} / ${dval(p.bathrooms)}</div>
+    <div class="k">Sq ft</div><div>${dval(p.sqft)}</div>
+    <div class="k">Cost / sq ft (rent)</div><div>${rentSf}</div>
+    <div class="k">Levels / stories</div><div>${dval(p.levels)}</div>
+    <div class="k">Parking</div><div>${dval(p.parkingType)}</div>
+    <div class="k">Management association</div><div>${dval(p.mgmtAssocName)}</div>
+    <div class="k">Management contact</div><div>${dval(p.mgmtContactPhone)}</div>
+    <div class="k">Management portal</div><div>${dval(p.mgmtPortal)}</div>
+    <div class="k">Portal login</div><div>${dval(p.mgmtPortalLogin)}</div>
+    <div class="k">Operating program</div><div>${dval(p.operatingProgram)}</div>
+    <div class="k">House manager</div><div>${dval(p.houseManager)}</div>
+  </div></div></div>
+  <div class="muted" style="font-size:11.5px;margin-top:6px">Landlord, rent, and lease type are commonly auto-filled from an uploaded Lease (see Documents tab) — editable here so staff can override anything extracted incorrectly.</div>
+  <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.16 Leased Property Records (Landing Page + Additional) · sample data for prototype review.</div>`;
+}
+function propComplianceTab(p){const certs=CERTS.filter(c=>c.prop===p.id),insp=INSPECTIONS.filter(i=>i.prop===p.id);
+  return `<div class="sectitle">Certificates &amp; licenses</div>
+  <div class="card">${certs.length?`<table><thead><tr><th>Type</th><th>Authority</th><th>Cert #</th><th>Issued</th><th>Expires</th><th>Cadence</th><th>Status</th><th>Responsible</th></tr></thead><tbody>${certs.map(c=>`<tr><td class="b">${c.type}</td><td class="muted">${c.authority}</td><td class="muted">${c.certNo}</td><td class="mono">${dstr(c.issue)}</td><td class="mono">${c.exp?dstr(c.exp):'—'}</td><td class="muted">${c.cadence}</td><td>${certBadge(c)}</td><td class="muted">${c.resp}</td></tr>`).join('')}</tbody></table>`:'<div class="body muted">No certificates on file for this property yet.</div>'}</div>
+  <div class="sectitle">Inspections</div>
+  <div class="card">${insp.length?`<table><thead><tr><th>Type</th><th>Inspector</th><th>Scheduled</th><th>Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>${insp.map(i=>`<tr><td class="b">${i.type}</td><td class="muted">${i.inspector}</td><td class="mono">${dstr(i.scheduled)}</td><td class="mono">${i.completed?dstr(i.completed):'—'}</td><td>${i.result}</td><td class="mono">${dstr(i.nextDue)}</td></tr>`).join('')}</tbody></table>`:'<div class="body muted">No inspections on file for this property yet.</div>'}</div>
+  <div style="margin-top:12px"><button class="btn sec sm" onclick="toast('Audit pack generated (PDF) — prototype stub')">📦 Generate audit pack</button></div>
+  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.2 Compliance, Certificate of Occupancy &amp; Inspections.</div>`;}
+function propDisposition(p){
+  if(p.own!=='owned')return '<div class="card"><div class="body muted">Disposition applies to owned properties (sale process). Not applicable to leased properties.</div></div>';
+  if(!p.dispositionActive){
+    return `<div class="card"><div class="body">
+      <div class="b" style="margin-bottom:8px">Property Disposition</div>
+      <div class="muted" style="font-size:13px;margin-bottom:14px">No disposition in progress for this property. Starting disposition begins the Property Disposition Checklist (Scope §4.13) and, once closed, populates the Disposition Records (§4.14).</div>
+      <button class="btn amber sm" onclick="startDisposition('${p.id}')">Start disposition (list for sale)</button>
+    </div></div>`;
+  }
+  const items=DISPOSITION_CHECKLIST;p.dispositionChk=p.dispositionChk||{};
+  const done=items.filter(i=>(p.dispositionChk[i]||{}).s==='done').length;const pct=Math.round(done/items.length*100);
+  const closed=(p.dispositionChk['Close']||{}).s==='done';
+  let out=`<div class="mrow" style="margin-bottom:10px"><div class="b">Property Disposition Checklist</div><div class="pill">${done}/${items.length} complete</div></div>
+    <div class="progress" style="margin-bottom:12px"><i style="width:${pct}%;background:var(--amber)"></i></div>
+    <div class="card"><div class="body" style="padding:2px 0">
+    ${items.map((it,ix)=>{const c=p.dispositionChk[it]||{s:'pending',t:''};const cls=c.s==='done'?'b-resolved':c.s==='na'?'b-closed':'b-new';const lbl=c.s==='done'?'✓ Done':c.s==='na'?'— N/A':'▢ Pending';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}</div><input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="notes / value…" style="width:190px;font-size:12.5px" onchange="setDispChkText('${p.id}',${ix},this.value)"><span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleDispChk('${p.id}',${ix})">${lbl}</span></div>`;}).join('')}
+    </div></div>`;
+  if(closed){
+    p.dispositionRecords=p.dispositionRecords||{saleDate:'—',settlementDate:'—',salePrice:null,commission:null,sellerCosts:null,reason:''};
+    const r=p.dispositionRecords;
+    out+=`<div class="sectitle">Disposition Records</div><div class="card"><div class="body"><div class="kv">
+      <div class="k">Sale date</div><div>${dstr(r.saleDate)}</div>
+      <div class="k">Settlement date</div><div>${dstr(r.settlementDate)}</div>
+      <div class="k">Sale price</div><div>${r.salePrice!=null?money(r.salePrice):'<span class="faint">—</span>'}</div>
+      <div class="k">RE commission</div><div>${r.commission!=null?money(r.commission):'<span class="faint">—</span>'}</div>
+      <div class="k">Total seller costs</div><div>${r.sellerCosts!=null?money(r.sellerCosts):'<span class="faint">—</span>'}</div>
+      <div class="k">Net proceeds</div><div>${(r.salePrice!=null&&r.commission!=null&&r.sellerCosts!=null)?money(r.salePrice-r.commission-r.sellerCosts):'<span class="faint">—</span>'}</div>
+      <div class="k">Gain / loss</div><div>${(r.salePrice!=null&&p.purchasePrice!=null)?money(r.salePrice-p.purchasePrice):'<span class="faint">—</span>'}</div>
+      <div class="k">Reason for sale</div><div>${r.reason||'<span class="faint">—</span>'}</div>
+    </div></div></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Maps to Scope §4.14 Property Disposition Records.</div>`;
+  }
+  out+=`<div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.13 Property Disposition Checklist.</div>`;
+  return out;
+}
+function startDisposition(id){const p=propById(id);p.dispositionActive=true;saveState();document.getElementById('propTabBody').innerHTML=propDisposition(p);toast('Disposition started');}
+function cycleDispChk(pid,ix){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.dispositionChk[it]=cur;saveState();document.getElementById('propTabBody').innerHTML=propDisposition(p);}
+function setDispChkText(pid,ix,val){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});cur.t=val;p.dispositionChk[it]=cur;saveState();}
+function propLicensing(p){const items=['Certificate of Occupancy','Group home / IDD waiver license','Fire & life safety inspection','Health department inspection','Business license'];
+  return `<div class="pill" style="border-color:var(--amber);color:var(--amber);margin-bottom:12px;display:inline-flex">🚧 Placeholder — Phase 2</div>
+  <div class="card"><table><thead><tr><th>Certificate / license</th><th>Status</th></tr></thead><tbody>
+  ${items.map(i=>`<tr><td class="b">${i}</td><td><span class="badge b-closed">Not tracked yet</span></td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="muted" style="font-size:12px;margin:10px 0">Initial Licensing Checklist &amp; Monitoring (Phase 2): issue/expiration dates, renewal cadence, responsible party, and automated reminders, tracked per property. Consistent with Scope §4.3.</div>
+  <div class="pill" style="border-color:var(--amber);color:var(--amber)">Open question: what information is needed to support this? (see Scope §8)</div>`;}
+const LIFE_TABLE={'HVAC':[25,10000],'Furnace':[20,6000],'Water heater':[15,2000],'Refrigerator':[10,1200],'Gas/electric range':[15,1200],'Oven':[15,1200],'Dishwasher':[10,800],'Microwave':[8,600],'Washing machine':[12,800],'Dryer':[12,800],'Carpeting':[10,0],'Roof':[25,11000]};
+function estAge(seed,mod){return (seed*7+mod)%18+2;}
+function propComponents(p){const names=Object.keys(LIFE_TABLE);const seed=parseInt((p.id||'p0').replace('p',''))||1;
+  const rows=names.map((n,ix)=>{const [life,cost]=LIFE_TABLE[n];const age=estAge(seed,ix);const yearsLeft=life-age;const risk=yearsLeft<=2;
+    return {n,age,life,cost,yearsLeft,risk};});
+  return `<div class="card"><table><thead><tr><th>Component</th><th>Est. age</th><th>Avg. lifespan</th><th>Replacement cost</th><th>Status</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td class="b">${r.n}</td><td class="mono">${r.age} yr</td><td class="muted">${r.life} yr</td><td class="right mono">${money(r.cost)}</td><td>${r.risk?`<span class="badge b-red">⚠ ${r.yearsLeft<=0?'Past life':r.yearsLeft+'y left'}</span>`:`<span class="badge b-resolved">✓ OK</span>`}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Estimated ages are illustrative (sample data). Replacement costs &amp; average lifespans per Scope §4.8 Life of Appliances reference table; components flagged when within 2 years of projected end-of-life.</div>`;}
+function propTickets(tks){return tks.length?`<div class="card"><table><thead><tr><th>Description</th><th>Priority</th><th>Status</th><th class="right">Cost</th></tr></thead><tbody>${tks.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td>${CAT[t.svc]||'🛠️'} ${t.title}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="right mono">${t.cost!=null?money(t.cost):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card"><div class="body muted">No maintenance items for this property.</div></div>';}
+function propDocs(p){
+  const docs=DOCS.filter(x=>x.prop===p.id).sort((a,b)=>new Date(b.uploaded)-new Date(a.uploaded));
+  const typeOpts=docTypesFor(p).map(t=>`<option value="${t}">${t}</option>`).join('');
+  return `<div class="card" style="margin-bottom:14px"><div class="body">
+    <div class="b" style="margin-bottom:8px">Upload a document</div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:10px;line-height:1.5">The platform reads uploaded documents and, where possible, uses them to populate the property record automatically (deeds, leases, certificates, inspection reports). Extracted fields are always reviewable and editable afterward — see the highlighted fields in Details/Compliance. Vendor invoices are handled differently: they're routed to invoice–ticket matching for staff confirmation before anything is finalized (Scope §4.10), not auto-applied here.</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <select id="docType_${p.id}" style="min-width:190px">${typeOpts}</select>
+      <input type="file" id="docFile_${p.id}" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style="max-width:230px;font-size:12.5px">
+      <button class="btn sm" onclick="uploadDoc('${p.id}')">⬆ Upload &amp; extract</button>
+    </div>
+    <div class="muted" style="font-size:11.5px;margin-top:8px">Pick a real file from your computer — it's filed against this property and viewable below. Field extraction is simulated with sample values in this prototype; real OCR/document-AI extraction happens in the built platform.</div>
+  </div></div>
+  <div class="card"><div class="body">
+  ${docs.length?docs.map(x=>`<div class="mrow" style="padding:9px 0;border-bottom:1px solid var(--line);align-items:flex-start">
+    <div><div>${docBadge(x.type)} <span class="b">${x.type}</span> <span class="muted" style="font-size:12px">· ${esc(x.file)}${x.size?' · '+x.size:''}</span></div><div class="faint" style="font-size:11px;margin-top:2px">Uploaded ${fdate(x.uploaded)}${x.note?' · '+esc(x.note):''}</div></div>
+    <div style="display:flex;gap:10px;align-items:center;white-space:nowrap">${x.status==='Extracted'?'<span class="badge b-resolved">✓ Extracted</span>':x.status==='Routed'?'<span class="badge b-progress">↪ Routed</span>':'<span class="badge b-closed">On file</span>'}<a onclick="viewDoc('${x.id}')">View</a><a onclick="deleteDoc('${x.id}')" style="color:var(--red)">Delete</a></div>
+  </div>`).join(''):'<div class="muted" style="padding:6px 0">No documents uploaded yet for this property.</div>'}
+  </div></div>`;}
+function fmtBytes(n){if(n==null)return '';if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
+function viewDoc(id){const d=DOCS.find(x=>x.id===id);if(d&&d.url){window.open(d.url,'_blank');}else{toast('No file attached to this sample record — prototype stub');}}
+function deleteDoc(id){
+  if(!confirm('Delete this document? This cannot be undone.'))return;
+  const idx=DOCS.findIndex(x=>x.id===id);if(idx===-1)return;
+  const doc=DOCS[idx];DOCS.splice(idx,1);saveState();toast('Document deleted');
+  const p=propById(doc.prop);document.getElementById('propTabBody').innerHTML=propDocs(p);
+}
+
+function propChecklist(p){const items=chkListFor(p);p.checklist=p.checklist||{};const done=items.filter(i=>(p.checklist[i]||{}).s==='done').length;const pct=Math.round(done/items.length*100);
+  return `<div class="mrow" style="margin-bottom:10px"><div class="b">${p.own==='owned'?'Property Purchase Checklist':'Rental Property Checklist'}</div><div class="pill">${done}/${items.length} complete</div></div>
+    <div class="progress" style="margin-bottom:12px"><i style="width:${pct}%;background:var(--green)"></i></div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px">All fields optional (blanks allowed) · statuses can be overridden. Click a status chip to cycle Pending → Done → N/A.</div>
+    <div class="card"><div class="body" style="padding:2px 0">
+    ${items.map((it,ix)=>{const c=p.checklist[it]||{s:'pending',t:''};const cls=c.s==='done'?'b-resolved':c.s==='na'?'b-closed':'b-new';const lbl=c.s==='done'?'✓ Done':c.s==='na'?'— N/A':'▢ Pending';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}</div><input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="notes / value…" style="width:190px;font-size:12.5px" onchange="setChkText('${p.id}',${ix},this.value)"><span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleChk('${p.id}',${ix})">${lbl}</span></div>`;}).join('')}
+    </div></div>`;}
+function cycleChk(pid,ix){const p=propById(pid);const it=chkListFor(p)[ix];p.checklist=p.checklist||{};const cur=(p.checklist[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.checklist[it]=cur;saveState();document.getElementById('propTabBody').innerHTML=propChecklist(p);}
+function setChkText(pid,ix,val){const p=propById(pid);const it=chkListFor(p)[ix];p.checklist=p.checklist||{};const cur=(p.checklist[it]||{s:'pending',t:''});cur.t=val;p.checklist[it]=cur;saveState();}
+
+function propLoan(p){
+  if(p.own!=='owned') return '<div class="card"><div class="body muted">Loans apply to owned properties only.</div></div>';
+  const loans=LOANS[p.id]||[];
+  if(!loans.length) return '<div class="card"><div class="body">No loan on file — property owned outright.</div></div>';
+  const bal=loans.reduce((s,l)=>s+l.balance,0),svc=loans.reduce((s,l)=>s+l.payment+(l.escrow||0),0);
+  return `<div class="mrow" style="margin-bottom:12px"><div class="b">${loans.length} loan${loans.length>1?'s':''}</div><div class="pill">Balance ${money(bal)} · debt service ${money(svc)}/mo</div></div>`
+   + loans.map(l=>`<div class="card" style="margin-bottom:12px"><div class="body"><div class="kv">
+      <div class="k">Lender</div><div><b>${l.lender}</b> · ${l.contact||'—'}</div>
+      <div class="k">Loan / account #</div><div>${l.loanNo}</div>
+      <div class="k">Original principal</div><div>${money(l.principal)} · ${l.origDate}</div>
+      <div class="k">Interest rate</div><div>${l.rate}% · ${l.rateType}</div>
+      <div class="k">Term / maturity</div><div>${l.termMo} mo · matures ${l.maturity}</div>
+      <div class="k">Monthly payment</div><div><b>$${l.payment.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</b> P&I${l.escrow?' + '+money(l.escrow)+' escrow':''}</div>
+      <div class="k">Current balance</div><div><b>${money(l.balance)}</b></div>
+      <div class="k">Lien position</div><div>${l.lien}</div>
+      <div class="k">Prepayment penalty</div><div>${l.prepay||'None'}</div>
+    </div></div></div>`).join('')
+   + '<div class="muted" style="font-size:12px">Sample loan data · maps to Scope §4.4 Loan & Debt Tracking (multiple loans per property supported).</div>';
+}
+
+/* ===== leases ===== */
+function renderLeases(el){el.innerHTML=`<div class="sectitle">Leased properties</div>
+  <div class="card"><table><thead><tr><th>Property</th><th>Landlord</th><th>Rent</th><th>Term</th><th>Next payment</th><th>Status</th><th></th></tr></thead><tbody>
+    ${LEASES.map(l=>{const p=propById(l.prop);return `<tr class="clickable" onclick="openProperty('${l.prop}')"><td class="b">${p.name}</td><td>${l.landlord||'—'}</td><td class="mono">${l.rent!=null?money(l.rent)+'/mo':'—'}</td><td class="muted">${l.term||'—'}</td><td class="mono">${l.next?fdate(l.next):'—'}</td><td><span class="badge ${l.escalated?'b-red':'b-assigned'}">${l.status}</span></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button> <button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No leased properties.</td></tr>'}
+  </tbody></table></div>
+  <div class="sectitle">Rent reminder ladder</div><div class="card"><div class="body row"><span class="pill">7 days — reminder</span><span class="pill">Due date — scheduled</span><span class="pill" style="border-color:var(--amber);color:var(--amber)">Renewal window</span><span class="pill" style="border-color:var(--red);color:var(--red)">Missed — auto-escalate → Senior Admin</span></div></div>`;}
+function payRent(id){const l=LEASES.find(x=>x.id===id);l.status='Paid this cycle';l.escalated=false;saveState();toast('Rent recorded → posted to Finance ledger');navigate('leases');}
+
+function openLease(id){const l=LEASES.find(x=>x.id===id);const p=propById(l.prop);const L=l.lease;
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">Lease · ${p.name}</div><div style="font-size:19px;font-weight:800">${l.landlord||'—'}</div></div>`,
+   L?`<div class="card"><div class="body"><div class="kv">
+      <div class="k">Property</div><div>${p.name} · ${L.address}</div>
+      <div class="k">Landlord</div><div>${l.landlord}</div>
+      <div class="k">Tenant</div><div>${L.tenant}</div>
+      <div class="k">Term</div><div>${l.start} – ${l.end} (${l.term})</div>
+      <div class="k">Rent</div><div><b>${money(l.rent)}/mo</b> · due ${L.dueDay}</div>
+      <div class="k">Late fee</div><div>${L.late}</div>
+      <div class="k">Returned check</div><div>${L.nsf}</div>
+      <div class="k">Security deposit</div><div>${money(L.deposit)}</div>
+      <div class="k">Pay rent to</div><div>${L.payTo}</div>
+      <div class="k">Renewal</div><div>${L.renewal}</div>
+    </div></div></div>
+    <div class="sectitle">Utilities & responsibilities</div>
+    <div class="card"><div class="body"><div class="kv">
+      <div class="k">Tenant pays</div><div>${L.tenantUtil}</div>
+      <div class="k">Landlord pays</div><div>${L.landlordUtil}</div>
+      <div class="k">Appliances</div><div>${L.appliances}</div>
+    </div></div></div>
+    <div class="muted" style="font-size:12px;margin-top:10px">Source: fully executed lease (6/1/2026) — MH Townhomes Lease Agreement 2767.</div>`
+   :`<div class="card"><div class="body">Basic lease record — full executed lease not on file for this property.<div class="kv" style="margin-top:10px"><div class="k">Rent</div><div>${l.rent!=null?money(l.rent)+'/mo':'—'}</div><div class="k">Term</div><div>${l.term||'—'}</div></div></div></div>`);}
+
+/* ===== vendor directory (Scope §4.9) ===== */
+function renderVendors(el){el.innerHTML=`<div class="toolbar"><span class="b">${VENDORS.length} vendors</span></div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1300px"><thead><tr><th>Vendor</th><th>Category</th><th>Primary/Sec</th><th>Pricing</th><th>Service area</th><th>After-hours</th><th>Contact</th><th>Phone</th><th>Licenses</th><th>Lic. expiry</th><th>Ins. expiry</th><th>W-9</th><th>Quality</th><th class="right">YTD spend</th></tr></thead><tbody>
+  ${VENDORS.map(v=>`<tr><td class="b">${v.name}</td><td class="muted">${v.trade}</td><td>${v.primary||'—'}</td><td class="muted">${v.pricing||'—'}</td><td class="muted">${v.area||'—'}</td><td>${v.afterHours||'—'}</td><td>${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td><td>${v.phone&&v.phone!=='—'?v.phone:'<span class="faint">—</span>'}</td><td class="muted">${v.licenses||'—'}</td><td class="mono">${v.licExp&&v.licExp!=='—'?dstr(v.licExp):'—'}</td><td class="mono">${v.insExp&&v.insExp!=='—'?dstr(v.insExp):'—'}</td><td>${v.w9==='Yes'?'<span class="badge b-resolved">✓ Yes</span>':v.w9==='No'?'<span class="badge b-red">✗ No</span>':'—'}</td><td>${v.quality||'—'}</td><td class="right mono">${money(v.ytd)}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Fields map to Scope §4.9 Maintenance Vendor Directory · sample data — contact/portal fields not yet on file for most vendors.</div>`;}
+
+/* ===== compliance & inspections — portfolio level (Scope §4.2) ===== */
+function renderCompliance(el){
+  const expired=CERTS.filter(c=>c.status==='expired');
+  const expiring=CERTS.filter(c=>c.exp&&daysTo(c.exp)>=0&&daysTo(c.exp)<=90&&c.status!=='expired');
+  const upcoming=INSPECTIONS.filter(i=>!i.completed);
+  el.innerHTML=`
+  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kpi ${expired.length?'red':'green'}"><div class="lab">Expired / overdue</div><div class="val">${expired.length}</div></div>
+    <div class="kpi ${expiring.length?'amber':'green'}"><div class="lab">Expiring in 90 days</div><div class="val">${expiring.length}</div></div>
+    <div class="kpi"><div class="lab">Certificates tracked</div><div class="val">${CERTS.length}</div></div>
+    <div class="kpi"><div class="lab">Inspections scheduled</div><div class="val">${upcoming.length}</div></div>
+  </div>
+  <div class="sectitle">Certificates &amp; licenses — all properties</div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr><th>Property</th><th>Type</th><th>Authority</th><th>Cert #</th><th>Issued</th><th>Expires</th><th>Cadence</th><th>Status</th><th>Responsible</th><th></th></tr></thead><tbody>
+  ${CERTS.slice().sort((a,b)=>(daysTo(a.exp)??9999)-(daysTo(b.exp)??9999)).map(c=>`<tr><td class="b">${propById(c.prop).name}</td><td>${c.type}</td><td class="muted">${c.authority}</td><td class="muted">${c.certNo}</td><td class="mono">${dstr(c.issue)}</td><td class="mono">${c.exp?dstr(c.exp):'—'}</td><td class="muted">${c.cadence}</td><td>${certBadge(c)}</td><td class="muted">${c.resp}</td><td><button class="btn sec sm" onclick="navigate('properties');setTimeout(()=>openProperty('${c.prop}'),60)">View</button></td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="sectitle">Inspections — all properties</div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:900px"><thead><tr><th>Property</th><th>Type</th><th>Inspector</th><th>Scheduled</th><th>Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>
+  ${INSPECTIONS.map(i=>`<tr><td class="b">${propById(i.prop).name}</td><td>${i.type}</td><td class="muted">${i.inspector}</td><td class="mono">${dstr(i.scheduled)}</td><td class="mono">${i.completed?dstr(i.completed):'—'}</td><td>${i.result}</td><td class="mono">${dstr(i.nextDue)}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="card" style="margin-top:14px"><div class="body row" style="justify-content:space-between;align-items:center"><div class="muted" style="font-size:12.5px">One-click PDF compilation of current CO, current licenses, last 12 months of inspections, and open corrective actions per property.</div><button class="btn sec sm" onclick="toast('Audit pack generated (PDF) — prototype stub')">📦 Generate portfolio audit pack</button></div></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Maps to Scope §4.2 Compliance, Certificate of Occupancy &amp; Inspections (cadence &amp; reminders, compliance dashboard, audit-pack generation).</div>`;
+}
+
+/* ===== client expenses (Phase 2 placeholder) ===== */
+function renderClientExpenses(el){el.innerHTML=`
+  <div class="card"><div class="body" style="text-align:center;padding:44px 24px">
+    <div style="font-size:42px;margin-bottom:12px">💳</div>
+    <div class="b" style="font-size:16.5px">Client Expenses</div>
+    <div class="pill" style="margin:10px auto 0;display:inline-flex">🚧 Placeholder — Phase 2</div>
+    <div class="muted" style="max-width:560px;margin:14px auto 0;line-height:1.6">
+      This section will track costs charged to residents/clients, kept separate from property maintenance and vendor spend. Consistent with Scope §4.4.
+    </div>
+    <div class="pill" style="margin-top:18px;border-color:var(--amber);color:var(--amber)">Open question: how will this data be received? (see Scope §8)</div>
+  </div></div>`;}
+
+/* ===== reports & analytics (Scope §4.11) ===== */
+let REPTAB='operational';
+function renderReports(el){
+  const tabs=['operational','compliance','financial','capital','executive'];
+  const labels={operational:'Operational',compliance:'Compliance',financial:'Financial',capital:'Capital planning',executive:'Executive dashboard'};
+  el.innerHTML=`<div class="tabs">${tabs.map(t=>`<button class="tab ${REPTAB===t?'active':''}" onclick="REPTAB='${t}';renderReports(document.getElementById('view'))">${labels[t]}</button>`).join('')}</div>
+  <div id="repBody">${reportBody(REPTAB)}</div>`;
+}
+function reportBody(tab){
+  if(tab==='operational'){
+    const closed90=TICKETS.filter(t=>!isOpen(t)&&ageDays(t)<=90);
+    const byVendor={};TICKETS.forEach(t=>{if(t.vendor){byVendor[t.vendor]=byVendor[t.vendor]||{n:0,spend:0};byVendor[t.vendor].n++;byVendor[t.vendor].spend+=(t.cost||0);}});
+    return `<div class="sectitle">Open maintenance tickets — by property</div><div class="card"><table><thead><tr><th>Property</th><th>Open</th><th>Total</th><th class="right">Spend</th></tr></thead><tbody>${PROPS.map(p=>`<tr><td class="b">${p.name}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id).length}</td><td class="right mono">${money(spendFor(p.id))}</td></tr>`).join('')}</tbody></table></div>
+    <div class="sectitle">Closed tickets — trailing 90 days</div><div class="card"><div class="body">${closed90.length} tickets closed in the last 90 days · avg cost ${money(closed90.length?Math.round(closed90.reduce((s,t)=>s+(t.cost||0),0)/closed90.length):0)}</div></div>
+    <div class="sectitle">Vendor activity</div><div class="card"><table><thead><tr><th>Vendor</th><th>Tickets</th><th class="right">Spend</th></tr></thead><tbody>${Object.entries(byVendor).map(([v,d])=>`<tr><td class="b">${v}</td><td class="mono">${d.n}</td><td class="right mono">${money(d.spend)}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  if(tab==='compliance'){
+    const expiring=CERTS.filter(c=>c.exp&&daysTo(c.exp)>=0&&daysTo(c.exp)<=90);
+    const overdue=CERTS.filter(c=>c.status==='expired');
+    return `<div class="sectitle">Compliance calendar — next 90 days</div><div class="card"><table><thead><tr><th>Property</th><th>Type</th><th>Expires</th><th>Days</th></tr></thead><tbody>${expiring.map(c=>`<tr><td class="b">${propById(c.prop).name}</td><td>${c.type}</td><td class="mono">${dstr(c.exp)}</td><td class="mono">${daysTo(c.exp)}d</td></tr>`).join('')||'<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">Nothing expiring in the next 90 days.</td></tr>'}</tbody></table></div>
+    <div class="sectitle">Overdue / expired</div><div class="card"><table><thead><tr><th>Property</th><th>Type</th><th>Expired</th></tr></thead><tbody>${overdue.map(c=>`<tr><td class="b">${propById(c.prop).name}</td><td>${c.type}</td><td class="mono">${dstr(c.exp)}</td></tr>`).join('')||'<tr><td colspan="3" class="muted" style="text-align:center;padding:16px">✓ Nothing overdue.</td></tr>'}</tbody></table></div>
+    <div class="sectitle">Portfolio compliance health</div><div class="card"><div class="body row">${PROPS.map(p=>{const pc=CERTS.filter(c=>c.prop===p.id);const bad=pc.some(c=>c.status==='expired');return `<span class="pill" style="border-color:var(--${bad?'red':'green'});color:var(--${bad?'red':'green'})">${p.name}</span>`;}).join('')}</div></div>`;
+  }
+  if(tab==='financial'){
+    const totalDebt=Object.values(LOANS).flat().reduce((s,l)=>s+l.balance,0);
+    const svc=Object.values(LOANS).flat().reduce((s,l)=>s+l.payment+(l.escrow||0),0);
+    return `<div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi"><div class="lab">Monthly debt service</div><div class="val">${money(svc)}</div></div><div class="kpi"><div class="lab">Properties w/ loans</div><div class="val">${Object.keys(LOANS).length}</div></div></div>
+    <div class="sectitle">Loans — balance &amp; maturity</div><div class="card"><table><thead><tr><th>Property</th><th>Lender</th><th class="right">Balance</th><th>Maturity</th></tr></thead><tbody>${Object.entries(LOANS).map(([pid,ls])=>ls.map(l=>`<tr><td class="b">${propById(pid).name}</td><td class="muted">${l.lender}</td><td class="right mono">${money(l.balance)}</td><td class="mono">${l.maturity}</td></tr>`).join('')).join('')}</tbody></table></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Market valuations (AVM/RentCast) are out of this prototype's sample scope — table reflects loan data only.</div>`;
+  }
+  if(tab==='capital'){
+    const atRisk=PROPS.filter(p=>p.own==='owned').flatMap(p=>{const seed=parseInt(p.id.replace('p',''))||1;return Object.keys(LIFE_TABLE).map((n,ix)=>{const [life,cost]=LIFE_TABLE[n];const age=estAge(seed,ix);const left=life-age;return {p,n,left,cost};}).filter(r=>r.left<=2);});
+    return `<div class="sectitle">At-risk components — within 2 years of end-of-life</div><div class="card"><table><thead><tr><th>Property</th><th>Component</th><th>Years left</th><th class="right">Replacement cost</th></tr></thead><tbody>${atRisk.map(r=>`<tr><td class="b">${r.p.name}</td><td>${r.n}</td><td class="mono">${r.left<=0?'Past life':r.left+'y'}</td><td class="right mono">${money(r.cost)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">Nothing at risk.</td></tr>'}</tbody></table></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">5/10-year capital forecast and reserve-adequacy views are illustrative only — component ages are sample estimates (Scope §4.6/§4.9.5).</div>`;
+  }
+  const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');
+  const totalDebt=Object.values(LOANS).flat().reduce((s,l)=>s+l.balance,0);
+  return `<div class="kpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div><div class="kpi ${emerg.length?'red':'green'}"><div class="lab">Open emergencies</div><div class="val">${emerg.length}</div></div><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi ${CERTS.filter(c=>c.status==='expired').length?'red':'green'}"><div class="lab">Overdue compliance</div><div class="val">${CERTS.filter(c=>c.status==='expired').length}</div></div></div>
+  <div class="sectitle">Trailing spend</div><div class="card"><div class="body">Trailing maintenance spend: <b>${money(TICKETS.filter(t=>t.cost).reduce((s,t)=>s+t.cost,0))}</b></div></div>`;
+}
+
+/* ===== reconciliation ===== */
+let RTAB='weekly';
+function renderRecon(el){const R=RECON[RTAB];el.innerHTML=`
+  <div class="tabs"><button class="tab ${RTAB==='weekly'?'active':''}" onclick="RTAB='weekly';renderRecon(document.getElementById('view'))">📊 Weekly · preliminary</button><button class="tab ${RTAB==='monthly'?'active':''}" onclick="RTAB='monthly';renderRecon(document.getElementById('view'))">📒 Monthly · final</button></div>
+  <div class="card"><div class="body mrow"><div><div class="b">${RTAB==='weekly'?'Weekly preliminary reconciliation':'Monthly final reconciliation'}</div><div class="muted" style="font-size:12.5px">Input: ${RTAB==='weekly'?'Finance preliminary ledger (weekly)':'Finance final ledger at month-end close'} · matching engine S1</div></div><div>${R.signed?`<span class="badge b-resolved">✓ Signed off</span>`:`<button class="btn ${R.exceptions.length?'sec':'green'}" ${R.exceptions.length?'disabled title="Clear exceptions first" style="opacity:.5;cursor:not-allowed"':''} onclick="signRecon()">Sign off ${RTAB==='weekly'?'(preliminary)':'& lock month'}</button>`}</div></div></div>
+  <div class="sectitle">Matched groups <span class="faint">— KodaRE items ↔ Finance ledger</span></div>
+  <div class="card"><table><thead><tr><th>Vendor</th><th>Property</th><th>Items</th><th class="right">KodaRE</th><th class="right">Ledger</th><th>Match</th><th></th></tr></thead><tbody>
+    ${R.groups.map((g,i)=>`<tr><td class="b">${g.vendor}</td><td class="muted">${g.prop}</td><td class="faint">${g.tickets.join(', ')}</td><td class="right mono">${money(g.koda)}</td><td class="right mono">${money(g.ledger)}</td><td>${g.status==='auto'?'<span class="badge b-resolved">⚡ Auto-clear</span>':'<span class="badge b-progress">👀 Review</span>'}</td><td>${g.status==='review'?`<button class="btn sm" onclick="confirmGroup(${i})">Confirm</button>`:'<span class="faint">✓</span>'}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="sectitle">Exception worklist</div>
+  <div class="card">${R.exceptions.length?`<table><thead><tr><th>Vendor</th><th>Issue</th><th class="right">Ledger</th><th class="right">KodaRE</th><th></th></tr></thead><tbody>${R.exceptions.map((e,i)=>`<tr><td class="b">${e.vendor}</td><td class="muted">${e.reason}</td><td class="right mono">${money(e.ledger)}</td><td class="right mono">${money(e.koda)}</td><td><button class="btn amber sm" onclick="resolveExc(${i})">Resolve</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ No open exceptions — ready for sign-off.</div>'}</div>
+  <div class="card" style="margin-top:16px"><div class="body"><div class="b">Principles</div><div class="muted" style="font-size:12.5px;margin-top:4px">Finance ledger is the system of record for dollar amounts; KodaRE never overrides ledger totals. KodaRE adds category, property & component detail for spend-by-area reporting. Unresolved exceptions escalate to Senior Admin.</div></div></div>`;}
+function confirmGroup(i){RECON[RTAB].groups[i].status='auto';RECON[RTAB].groups[i].ledger=RECON[RTAB].groups[i].koda;saveState();toast('Group confirmed & matched');renderRecon(document.getElementById('view'));}
+function resolveExc(i){RECON[RTAB].exceptions.splice(i,1);saveState();toast('Exception resolved');buildNav();renderRecon(document.getElementById('view'));}
+function signRecon(){RECON[RTAB].signed=true;saveState();toast(RTAB==='weekly'?'Weekly reconciliation signed off':'Month reconciled & locked');renderRecon(document.getElementById('view'));}
+
+/* ===== approvals ===== */
+function approvalItems(){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));const recon=[];if(!RECON.weekly.signed&&!RECON.weekly.exceptions.length)recon.push('w');if(!RECON.monthly.signed&&!RECON.monthly.exceptions.length)recon.push('m');return [...esc,...recon];}
+function renderApprovals(el){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));el.innerHTML=`
+  <div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi red"><div class="lab">Open emergencies</div><div class="val">${esc.length}</div></div><div class="kpi amber"><div class="lab">Recon awaiting sign-off</div><div class="val">${(RECON.weekly.signed?0:1)+(RECON.monthly.signed?0:1)}</div></div><div class="kpi green"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div></div>
+  <div class="sectitle">Open emergencies</div>
+  <div class="card">${esc.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b">${CAT[t.svc]||'🛠️'} ${t.title}</td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
+  <div class="sectitle">Reconciliation sign-off</div><div class="card"><div class="body row"><button class="btn ${RECON.weekly.signed?'sec':'green'}" onclick="RTAB='weekly';navigate('recon')">${RECON.weekly.signed?'Weekly ✓ signed':'Review weekly →'}</button><button class="btn ${RECON.monthly.signed?'sec':'green'}" onclick="RTAB='monthly';navigate('recon')">${RECON.monthly.signed?'Monthly ✓ locked':'Review monthly →'}</button></div></div>`;}
+
+/* ===== search ===== */
+function globalSearch(q){q=q.trim().toLowerCase();if(!q){navigate(VIEW);return;}if(VIEW!=='tickets')navigate('tickets');
+  const rows=TICKETS.filter(t=>(t.title+' '+t.id+' '+t.svc+' '+propById(t.prop).name+' '+(t.vendor||'')+' '+(t.invoice||'')).toLowerCase().includes(q)).sort(rankSort);
+  const tb=document.getElementById('tbody');if(tb)tb.innerHTML=rows.length?rows.map(trow).join(''):`<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No matches for “${q}”.</td></tr>`;}
+
+/* ===== drawer ===== */
+function drawer(head,body){document.getElementById('drawerRoot').innerHTML=`<div class="scrim" onclick="if(event.target===this)closeDrawer()"><div class="drawer"><div class="dhead">${head}<button class="x" onclick="closeDrawer()">✕</button></div><div class="dbody">${body}</div></div></div>`;}
+function closeDrawer(){document.getElementById('drawerRoot').innerHTML='';}
+
+/* ===== mobile ===== */
+let MB={tab:'home',step:0,draft:{}};
+function renderMobile(){const app=document.getElementById('mobileApp');let body='';if(MB.tab==='home')body=mHome();else if(MB.tab==='report')body=mReport();else if(MB.tab==='reports')body=mReports();
+  app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${STAFF.caregiver.name}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Fox-1 · caregiver</div></div><div class="mbody">${body}</div>
+  <div class="mnav"><button class="${MB.tab==='home'?'active':''}" onclick="mGo('home')"><span class="mi">🏠</span>Home</button><button class="${MB.tab==='report'?'active':''}" onclick="mStartReport()"><span class="mi">➕</span>Report</button><button class="${MB.tab==='reports'?'active':''}" onclick="mGo('reports')"><span class="mi">📋</span>My reports</button></div>`;}
+function mGo(t){MB.tab=t;renderMobile();}
+function mStartReport(){MB.tab='report';MB.step=0;MB.draft={};renderMobile();}
+function myReports(){return TICKETS.filter(t=>t.reporter===STAFF.caregiver.name).sort((a,b)=>new Date(b.created)-new Date(a.created));}
+function mHome(){const mine=myReports();const open=mine.filter(isOpen);return `<button class="bigbtn" onclick="mStartReport()">🚨 Report an issue</button><div style="text-align:center;font-size:12px;color:var(--faint);margin:10px 0 18px">Takes under 60 seconds</div>
+  <div class="mrow" style="margin-bottom:10px"><div class="b">Your open reports</div><a style="font-size:12.5px" onclick="mGo('reports')">See all</a></div>
+  ${open.length?open.slice(0,3).map(mCard).join(''):'<div class="mcard muted">Nothing open right now 🎉</div>'}
+  <div class="mcard" style="background:linear-gradient(135deg,#eef7f8,#fff);border-color:#c9ebee"><div class="b">💡 Tip</div><div class="muted" style="font-size:12.5px">For emergencies (flooding, sparks, no heat), pick <b>Emergency</b> — an admin is paged by text immediately.</div></div>`;}
+function mCard(t){return `<div class="mcard" onclick="mDetail('${t.id}')" style="cursor:pointer"><div class="mrow"><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div>${ubadge(t.urgency)}</div><div class="muted" style="font-size:12px;margin:4px 0 8px">${propById(t.prop).name} · ${fdate(t.created)}</div><div class="mrow">${badge(t)}<span class="faint" style="font-size:11.5px">${t.vendor||'awaiting assignment'}</span></div></div>`;}
+function mReports(){const mine=myReports();return `<div class="mtitle">My reports</div>${mine.length?mine.map(mCard).join(''):'<div class="mcard muted">No reports yet.</div>'}`;}
+function mDetail(id){const t=TICKETS.find(x=>x.id===id);document.querySelector('#mobile .mbody').innerHTML=`<a style="font-size:13px" onclick="renderMobile()">← Back</a><div class="mtitle" style="margin-top:8px">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="mcard"><div class="mrow">${badge(t)}${ubadge(t.urgency)}</div><div class="muted" style="font-size:12.5px;margin-top:8px">${propById(t.prop).name}<br>Reported ${fdate(t.created)} · ${t.vendor?'Assigned to '+t.vendor:'Awaiting assignment'}</div></div><div class="b" style="margin:6px 0 8px">Status updates</div>${t.log.map(l=>`<div class="mcard" style="padding:11px"><div class="b" style="font-size:13px">${l[0]}</div><div class="muted" style="font-size:12px">${l[1]} · ${logAge(l)}</div></div>`).join('')}`;}
+function mReport(){const s=MB.step,d=MB.draft;const prog=`<div class="progress" style="margin-bottom:16px"><i style="width:${(s+1)/5*100}%"></i></div>`;
+  if(s===0){const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
+    if(SUPA_CONFIGURED&&!plist.length)return prog+`<div class="mstep">Step 1 of 5</div><div class="mtitle">Which property?</div><div class="muted" style="padding:20px 0">No properties set up yet — ask an admin to add one first (Supabase → Table Editor → properties).</div>`;
+    return prog+`<div class="mstep">Step 1 of 5</div><div class="mtitle">Which property?</div><div class="optgrid">${plist.map(p=>`<div class="opt ${d.prop===p.id?'sel':''}" onclick="mSet('prop','${p.id}')"><span class="oi">🏠</span>${p.name}</div>`).join('')}</div>${navBtns(!!d.prop)}`;}
+  if(s===1)return prog+`<div class="mstep">Step 2 of 5</div><div class="mtitle">What kind of issue?</div><div class="optgrid">${Object.keys(CAT).map(c=>`<div class="opt ${d.cat===c?'sel':''}" onclick="mSet('cat','${c}')"><span class="oi">${CAT[c]}</span>${c}</div>`).join('')}</div>${navBtns(!!d.cat)}`;
+  if(s===2){const U=[['Emergency','🚨','Danger / flooding / no heat'],['Urgent','⚠️','Needs attention soon'],['Low','🌿','Whenever convenient']];return prog+`<div class="mstep">Step 3 of 5</div><div class="mtitle">How urgent?</div>${U.map(u=>`<div class="opt ${d.urgency===u[0]?'sel':''}" style="flex-direction:row;justify-content:flex-start;gap:12px;margin-bottom:10px" onclick="mSet('urgency','${u[0]}')"><span class="oi">${u[1]}</span><div style="text-align:left"><div>${u[0]}</div><div class="muted" style="font-size:11.5px;font-weight:500">${u[2]}</div></div></div>`).join('')}${navBtns(!!d.urgency)}`;}
+  if(s===3)return prog+`<div class="mstep">Step 4 of 5</div><div class="mtitle">Describe it</div><div class="mfield"><label>What's happening?</label><textarea id="mDesc" rows="4" placeholder="e.g. Water leaking under the kitchen sink…">${d.desc||''}</textarea></div><div class="mfield"><label>Add a photo (optional)</label><div class="photo" onclick="mSet('photo',1)">${d.photo?'📷 1 photo added ✓':'📷 Tap to add photo'}</div></div>${navBtns(true,'mCapture')}`;
+  const p=propById(d.prop);return prog+`<div class="mstep">Step 5 of 5</div><div class="mtitle">Review & submit</div><div class="mcard"><div class="kv" style="grid-template-columns:90px 1fr"><div class="k">Property</div><div class="b">${p.name}</div><div class="k">Issue</div><div class="b">${CAT[d.cat]} ${d.cat}</div><div class="k">Urgency</div><div>${ubadge(d.urgency)}</div><div class="k">Details</div><div>${d.desc||'<span class="faint">—</span>'}</div></div></div>${d.urgency==='Emergency'?'<div class="mcard" style="border-color:var(--red);color:var(--red);font-size:12.5px"><b>🚨 Emergency:</b> an on-call admin is paged by text on submit.</div>':''}<button class="bigbtn" onclick="mSubmit()">Submit report ✓</button><button class="opt" style="width:100%;margin-top:10px" onclick="MB.step=3;renderMobile()">← Edit</button>`;}
+function navBtns(ok,capture){return `<div style="display:flex;gap:10px;margin-top:20px">${MB.step>0?`<button class="opt" style="flex:1" onclick="MB.step--;renderMobile()">← Back</button>`:''}<button class="bigbtn" style="flex:2;opacity:${ok?1:.5};pointer-events:${ok?'auto':'none'}" onclick="${capture||'mNext'}()">Continue →</button></div>`;}
+function mCapture(){const d=document.getElementById('mDesc');if(d)MB.draft.desc=d.value;mNext();}
+function mSet(k,v){MB.draft[k]=v;renderMobile();}
+function mNext(){MB.step++;renderMobile();}
+async function mSubmit(){
+  const d=MB.draft;
+  const p=propById(d.prop);
+  function showSuccess(displayId){
+    document.querySelector('#mobile .mbody').innerHTML=`<div style="text-align:center;padding:30px 10px"><div style="font-size:60px">✅</div><div class="mtitle" style="margin-top:10px">Report submitted!</div><div class="muted" style="margin-bottom:6px">Ticket <b>${displayId}</b> created${d.urgency==='Emergency'?' — admin paged 🚨':''}.</div><div class="muted" style="font-size:12.5px">Office staff will triage and assign a vendor.</div><button class="bigbtn" style="margin-top:22px" onclick="mGo('reports')">View my reports</button><button class="opt" style="width:100%;margin-top:10px" onclick="mGo('home')">Done</button></div>`;
+    toast('Ticket '+displayId+' created');
+  }
+  if(p&&p._backend==='supabase'){
+    const payload={property_id:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),description:d.desc||'',service_category:d.cat,service_type:'Reported',urgency:d.urgency,status:'Open',reporter:STAFF.caregiver.name};
+    const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
+    if(error){toast('Could not submit report: '+error.message);return;}
+    const detail='Submitted from mobile'+(d.desc?': '+d.desc:'');
+    await dbLogActivity(data.id,'Reported',detail);
+    const activity=[{action:'Reported',detail,created_at:new Date().toISOString()}];
+    if(d.urgency==='Emergency'){await dbLogActivity(data.id,'Auto-paged','Twilio SMS + email to on-call admin');activity.push({action:'Auto-paged',detail:'Twilio SMS + email to on-call admin',created_at:new Date().toISOString()});}
+    const t=rowToTicket(Object.assign({},data,{maintenance_ticket_activity:activity}));
+    TICKETS.unshift(t);
+    showSuccess(t.id);
+    return;
+  }
+  const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),desc:d.desc||'',svc:d.cat,svctype:'Reported',urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:STAFF.caregiver.name,photos:d.photo?1:0,log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
+  if(d.urgency==='Emergency')t.log.push(['Auto-paged','Twilio SMS + email to on-call admin',0]);
+  TICKETS.push(t);saveState();
+  showSuccess(t.id);
+}
+
+/* ===== persistence ===== */
+const LSKEY='kodare_proto_v03_r1';
+function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID};if(!SUPA_CONFIGURED)snap.TICKETS=TICKETS;localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
+function mergeById(defaults,saved,idKey){const map={};defaults.forEach(d=>map[d[idKey]]=Object.assign({},d));
+  saved.forEach(s=>{const k=s[idKey];if(map[k])Object.assign(map[k],s);else map[k]=s;});
+  return Object.values(map);}
+function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return false;const s=JSON.parse(raw);
+  // Merge (rather than overwrite) so new sample properties/vendors/fields added later in the
+  // prototype's source always show up, even if a browser has older saved state under this key.
+  // Tickets are skipped entirely once live (SUPA_CONFIGURED) — they come from Supabase instead.
+  if(!SUPA_CONFIGURED){
+    const savedTickets=(s.TICKETS||[]).map(t=>Object.assign({},t,{created:new Date(t.created)}));
+    const mergedTickets=mergeById(TICKETS,savedTickets,'id');TICKETS.length=0;mergedTickets.forEach(t=>TICKETS.push(t));
+  }
+  const mergedProps=mergeById(PROPS,s.PROPS||[],'id');PROPS.length=0;mergedProps.forEach(p=>PROPS.push(p));
+  const mergedVendors=mergeById(VENDORS,s.VENDORS||[],'name');VENDORS.length=0;mergedVendors.forEach(v=>VENDORS.push(v));
+  const savedLeases=(s.LEASES||[]).map(l=>Object.assign({},l,{next:l.next?new Date(l.next):l.next}));
+  const mergedLeases=mergeById(LEASES,savedLeases,'id');LEASES.length=0;mergedLeases.forEach(l=>LEASES.push(l));
+  const savedDocs=(s.DOCS||[]).map(x=>Object.assign({},x,{uploaded:new Date(x.uploaded)}));
+  const mergedDocs=mergeById(DOCS,savedDocs,'id');DOCS.length=0;mergedDocs.forEach(x=>DOCS.push(x));
+  if(s.DOC_ID)DOC_ID=s.DOC_ID;
+  if(s.RECON){RECON.weekly=s.RECON.weekly;RECON.monthly=s.RECON.monthly;}if(s.NOTES)NOTES=s.NOTES;if(s.NOTEID)NOTEID=s.NOTEID;
+  if(s.TID)TID=s.TID;return true;}catch(e){return false;}}
+function resetDemo(){if(confirm('Reset all sample data back to the original maintenance data? This clears changes made in this prototype.')){localStorage.removeItem(LSKEY);location.reload();}}
+
+/* ===== onboarding wizard ===== */
+let OB={step:0,d:{}};
+function startOnboard(){OB={step:0,d:{}};openOnboard();}
+function obSet(k,v){OB.d[k]=v;openOnboard();}
+function obNext(){OB.step++;openOnboard();}
+function obBack(){OB.step--;openOnboard();}
+function obCapture(step){const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};if(step===1){OB.d.name=g('ob_name');OB.d.addr=g('ob_addr');OB.d.beds=g('ob_beds');}if(step===2){if(OB.d.own==='owned'){OB.d.llc=g('ob_llc');OB.d.value=g('ob_val');}else{OB.d.landlord=g('ob_land');OB.d.rent=g('ob_rent');}}}
+function openOnboard(){const s=OB.step,d=OB.d;const prog=`<div class="progress" style="margin-bottom:16px"><i style="width:${(s+1)/4*100}%"></i></div>`;let body='';
+  if(s===0)body=`<div class="sectitle">Step 1 · Acquisition type</div><div class="row"><div class="card" style="flex:1;cursor:pointer;${d.own==='owned'?'box-shadow:0 0 0 2px var(--sys)':''}" onclick="obSet('own','owned')"><div class="body"><div style="font-size:26px">🏠</div><div class="b">Purchase (Owned)</div><div class="muted" style="font-size:12.5px">Flow A — buy & onboard. Held in an LLC.</div></div></div><div class="card" style="flex:1;cursor:pointer;${d.own==='leased'?'box-shadow:0 0 0 2px var(--ten)':''}" onclick="obSet('own','leased')"><div class="body"><div style="font-size:26px">📄</div><div class="b">Lease (Leased)</div><div class="muted" style="font-size:12.5px">Flow B — lease from a landlord.</div></div></div></div><div style="margin-top:18px">${d.own?`<button class="btn" onclick="obNext()">Continue →</button>`:`<button class="btn" disabled style="opacity:.5">Choose a type first</button>`}</div>`;
+  else if(s===1)body=`<div class="sectitle">Step 2 · Basics</div><div class="field"><label class="f">Property name</label><input type="text" id="ob_name" value="${d.name||''}" placeholder="e.g. Sycamore House" style="width:100%"></div><div class="field"><label class="f">Address</label><input type="text" id="ob_addr" value="${d.addr||''}" placeholder="123 Sycamore St, City ST" style="width:100%"></div><div class="field"><label class="f">Beds</label><input type="text" id="ob_beds" value="${d.beds||''}" placeholder="e.g. 4" style="width:120px"></div><div style="display:flex;gap:10px"><button class="btn sec" onclick="obCapture(1);obBack()">← Back</button><button class="btn" onclick="obCapture(1);obNext()">Continue →</button></div>`;
+  else if(s===2)body=`<div class="sectitle">Step 3 · ${d.own==='owned'?'Ownership':'Lease terms'}</div>${d.own==='owned'?`<div class="field"><label class="f">Holding LLC</label><input type="text" id="ob_llc" value="${d.llc||''}" placeholder="e.g. Sycamore Holdings LLC" style="width:100%"></div><div class="field"><label class="f">Purchase price ($)</label><input type="text" id="ob_val" value="${d.value||''}" placeholder="e.g. 350000" style="width:220px"></div>`:`<div class="field"><label class="f">Landlord</label><input type="text" id="ob_land" value="${d.landlord||''}" placeholder="e.g. Riverside Rentals" style="width:100%"></div><div class="field"><label class="f">Monthly rent ($)</label><input type="text" id="ob_rent" value="${d.rent||''}" placeholder="e.g. 3000" style="width:220px"></div>`}<div style="display:flex;gap:10px"><button class="btn sec" onclick="obCapture(2);obBack()">← Back</button><button class="btn" onclick="obCapture(2);obNext()">Continue →</button></div>`;
+  else{const p=d;body=`<div class="sectitle">Step 4 · Review</div><div class="card"><div class="body"><div class="kv"><div class="k">Type</div><div class="b">${p.own==='owned'?'Owned (Flow A)':'Leased (Flow B)'}</div><div class="k">Name</div><div class="b">${p.name||'—'}</div><div class="k">Address</div><div>${p.addr||'—'}</div><div class="k">Beds</div><div>${p.beds||'—'}</div>${p.own==='owned'?`<div class="k">LLC</div><div>${p.llc||'—'}</div><div class="k">Value</div><div>${p.value?money(+p.value):'—'}</div>`:`<div class="k">Landlord</div><div>${p.landlord||'—'}</div><div class="k">Rent</div><div>${p.rent?money(+p.rent)+'/mo':'—'}</div>`}</div></div></div><div class="muted" style="font-size:12.5px;margin:10px 0">Created with status <b>Onboarding</b>.</div><div style="display:flex;gap:10px"><button class="btn sec" onclick="obBack()">← Back</button><button class="btn green" onclick="obCreate()">Create property ✓</button></div>`;}
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">Onboard property · ${d.own==='owned'?'Flow A':d.own==='leased'?'Flow B':'new'}</div><div style="font-size:19px;font-weight:800">New property</div></div>`,prog+body);}
+function obCreate(){const d=OB.d;const p={id:'p'+Date.now(),name:d.name||'New Property',addr:d.addr||'',own:d.own,beds:parseInt(d.beds)||null,status:'Onboarding',health:'amber',compliance:null};if(d.own==='owned'){p.llc=d.llc||'—';p.value=parseInt(d.value)||null;p.rent=null;}else{p.landlord=d.landlord||'—';p.rent=parseInt(d.rent)||null;LEASES.push({id:p.id,prop:p.id,landlord:p.landlord,rent:p.rent,term:'12 mo',start:'—',end:'—',next:new Date(today),status:'Onboarding',escalated:false});}PROPS.push(p);saveState();closeDrawer();toast('Property onboarded: '+p.name);navigate('properties');}
+
+/* ===== boot ===== */
+document.getElementById('switch').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setRole(b.dataset.role);});
+loadState();computeHealth();setRole('office');
+initLiveMode();
+
+</script>
+</body>
+</html>
