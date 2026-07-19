@@ -733,6 +733,7 @@ function renderTickets(el){
   const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
   const thSel=(key,label,opts)=>`<th style="text-align:left"><select onchange="setF('${key}',this.value)" style="${fSel}" title="Filter by ${label}"><option value="all"${FILTER[key]==='all'?' selected':''}>${label}</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select></th>`;
   el.innerHTML=MT+`
+  <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Add ticket</button></div>
   <div class="toolbar"><span class="b">Status:</span>
     ${['all','Open','In progress','Completed','Closed'].map(s=>`<span class="chip ${FILTER.status===s?'active':''}" onclick="setF('status','${s}')">${s==='all'?'All':s}</span>`).join('')}</div>
   <div class="toolbar"><span class="b">Priority:</span>
@@ -1216,6 +1217,82 @@ function globalSearch(q){q=q.trim().toLowerCase();if(!q){navigate(VIEW);return;}
 /* ===== drawer ===== */
 function drawer(head,body){document.getElementById('drawerRoot').innerHTML=`<div class="scrim" onclick="if(event.target===this)closeDrawer()"><div class="drawer"><div class="dhead">${head}<button class="x" onclick="closeDrawer()">✕</button></div><div class="dbody">${body}</div></div></div>`;}
 function closeDrawer(){document.getElementById('drawerRoot').innerHTML='';}
+function openAddTicket(){
+  const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
+  const svcOpts=Object.keys(CAT);
+  drawer(
+    `<div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:19px;font-weight:800">New ticket</div></div>`,
+    `${SUPA_CONFIGURED&&!plist.length?'<div class="muted" style="margin-bottom:10px">No properties set up yet — add one in Supabase (Table Editor → properties) first.</div>':''}
+    <div class="field"><label class="f">Property</label>
+      <select id="nt_prop" style="width:100%">
+        <option value="">Select a property…</option>
+        ${plist.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Description</label>
+      <textarea id="nt_desc" style="width:100%;min-height:70px" placeholder="What's the issue?"></textarea>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Priority</label>
+      <select id="nt_urgency" style="width:100%">
+        <option value="Low">Low — whenever convenient</option>
+        <option value="Urgent">Urgent — needs attention soon</option>
+        <option value="Emergency">Emergency — danger / flooding / no heat</option>
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Service category</label>
+      <select id="nt_svc" style="width:100%">
+        <option value="">— optional —</option>
+        ${svcOpts.map(s=>`<option value="${s}">${CAT[s]||''} ${s}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Vendor</label>
+      <select id="nt_vendor" style="width:100%">
+        <option value="">— not assigned yet —</option>
+        ${VENDORS.map(v=>`<option value="${v.name}">${v.name} (${v.trade})</option>`).join('')}
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Estimated cost ($)</label>
+      <input type="text" id="nt_cost" inputmode="decimal" placeholder="optional" style="width:100%">
+    </div>
+    <div id="nt_error" style="color:var(--red,#c0392b);font-size:12.5px;margin-top:10px;min-height:16px"></div>
+    <button class="btn" style="width:100%;margin-top:14px" onclick="submitNewTicket()">Create ticket</button>`
+  );
+}
+async function submitNewTicket(){
+  const propEl=document.getElementById('nt_prop');
+  const propId=propEl?propEl.value:'';
+  const desc=(document.getElementById('nt_desc').value||'').trim();
+  const urgency=document.getElementById('nt_urgency').value;
+  const svc=document.getElementById('nt_svc').value;
+  const vendor=document.getElementById('nt_vendor').value;
+  const costRaw=(document.getElementById('nt_cost').value||'').trim();
+  const errEl=document.getElementById('nt_error');
+  errEl.textContent='';
+  if(!propId){errEl.textContent='Choose a property.';return;}
+  if(!desc){errEl.textContent='Add a short description.';return;}
+  let cost=null;
+  if(costRaw!==''){const n=Number(costRaw);if(isNaN(n)){errEl.textContent='Cost must be a number.';return;}cost=n;}
+  const p=propById(propId);
+  const title=desc.slice(0,60);
+
+  if(p&&p._backend==='supabase'){
+    const payload={property_id:propId,title,description:desc,service_category:svc||null,service_type:'Reported',urgency,status:'Open',vendor:vendor||null,cost,reporter:STAFF.office.name};
+    const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
+    if(error){errEl.textContent='Could not create ticket: '+error.message;return;}
+    await dbLogActivity(data.id,'Logged','Entered in maintenance tracker');
+    const t=rowToTicket(Object.assign({},data,{maintenance_ticket_activity:[{action:'Logged',detail:'Entered in maintenance tracker',created_at:new Date().toISOString()}]}));
+    TICKETS.unshift(t);
+    closeDrawer();
+    toast('Ticket '+t.id+' created');
+    refreshTickets();
+    return;
+  }
+  const t=mkTicket({prop:propId,title,desc,svc:svc||null,svctype:'Reported',urgency,status:'Open',vendor:vendor||null,cost,invoice:null,created:new Date(today),reporter:STAFF.office.name,log:[['Logged','Entered in maintenance tracker',0]]});
+  TICKETS.push(t);saveState();
+  closeDrawer();
+  toast('Ticket '+t.id+' created');
+  refreshTickets();
+}
 
 /* ===== mobile ===== */
 let MB={tab:'home',step:0,draft:{}};
