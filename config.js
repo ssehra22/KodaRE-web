@@ -7,5 +7,5 @@
 // Until you fill these in, the app runs entirely in demo mode with sample data (unchanged
 // from today) — nothing breaks by leaving this file as-is.
 
-const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://ybjsbxswsuuxmoxdhvkt.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_K1BE_CGLkreR0p03Ocwq2w_HW8CuhnT';
