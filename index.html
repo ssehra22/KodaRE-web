@@ -321,10 +321,10 @@ async function loadRealCertsAndInspections(){
   if(!SUPA_CONFIGURED)return;
   const {data:certRows,error:certErr}=await sb.from('certificates').select('*').order('created_at');
   if(certErr)toast('Could not load certificates: '+certErr.message);
-  else (certRows||[]).forEach(row=>{if(!CERTS.find(c=>c._id===row.id))CERTS.push(rowToCert(row));});
+  else {CERTS.length=0;(certRows||[]).forEach(row=>CERTS.push(rowToCert(row)));}
   const {data:inspRows,error:inspErr}=await sb.from('inspections').select('*').order('created_at');
   if(inspErr)toast('Could not load inspections: '+inspErr.message);
-  else (inspRows||[]).forEach(row=>{if(!INSPECTIONS.find(i=>i._id===row.id))INSPECTIONS.push(rowToInspection(row));});
+  else {INSPECTIONS.length=0;(inspRows||[]).forEach(row=>INSPECTIONS.push(rowToInspection(row)));}
 }
 function rowToLease(row){
   return {id:row.id, _backend:'supabase', prop:row.property_id, landlord:row.landlord,
@@ -341,11 +341,7 @@ async function loadRealLeases(){
   if(!SUPA_CONFIGURED)return;
   const {data,error}=await sb.from('leases').select('*').order('created_at');
   if(error){toast('Could not load leases: '+error.message);return;}
-  (data||[]).forEach(row=>{
-    const existing=LEASES.find(l=>l.id===row.id);
-    if(existing)Object.assign(existing,rowToLease(row));
-    else LEASES.push(rowToLease(row));
-  });
+  LEASES.length=0;(data||[]).forEach(row=>LEASES.push(rowToLease(row)));
 }
 function rowToVendor(row){
   return {_backend:'supabase', _id:row.id, name:row.name, trade:row.trade, ytd:row.ytd!=null?Number(row.ytd):0,
@@ -357,21 +353,13 @@ async function loadRealVendors(){
   if(!SUPA_CONFIGURED)return;
   const {data,error}=await sb.from('vendors').select('*').order('name');
   if(error){toast('Could not load vendors: '+error.message);return;}
-  (data||[]).forEach(row=>{
-    const existing=VENDORS.find(v=>v.name===row.name);
-    if(existing)Object.assign(existing,rowToVendor(row));
-    else VENDORS.push(rowToVendor(row));
-  });
+  VENDORS.length=0;(data||[]).forEach(row=>VENDORS.push(rowToVendor(row)));
 }
 async function loadRealProperties(){
   if(!SUPA_CONFIGURED)return;
   const {data,error}=await sb.from('properties').select('*').order('name');
   if(error){toast('Could not load properties: '+error.message);return;}
-  (data||[]).forEach(row=>{
-    const existing=PROPS.find(p=>p.id===row.id);
-    if(existing)Object.assign(existing,rowToProperty(row));
-    else PROPS.push(rowToProperty(row));
-  });
+  PROPS.length=0;(data||[]).forEach(row=>PROPS.push(rowToProperty(row)));
 }
 async function loadRealTickets(){
   if(!SUPA_CONFIGURED)return;
