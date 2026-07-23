@@ -177,7 +177,7 @@
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Interactive Prototype · v0.3 · + licensing & client expense placeholders</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Interactive Prototype · v0.3 · build jul 20, 6:05pm</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -231,6 +231,7 @@
 
 <!-- Supabase client (only loaded/used when config.js has real project values — see config.js) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="config.js"></script>
 <script>
 /* ===== Supabase live-data layer (Phase 1: Maintenance module only) =====
@@ -685,7 +686,9 @@ function certBadge(c){if(c.status==='expired')return '<span class="badge b-red">
 function dstr(v){if(!v||v==='—')return '—';const d=new Date(/^\d{4}-\d{2}-\d{2}$/.test(v)?v+'T00:00:00':v);if(isNaN(d))return v;return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
 
 /* ===== property disposition (Scope §4.13/4.14) ===== */
-const DISPOSITION_CHECKLIST=["Offer Acceptance","Deposit Received by Seller","HOA Docs Sent (if appl)","Contingency — Inspection: Home/Property","Contingency — Inspection: Termite/Pest","Contingency — Other","Inspection Feedback Deadline — Buyer","Inspection Feedback Deadline — Seller","Other Contingency Deadline","Utilities / Sewer Transferred","Financing / Loan Payoff","Walkthrough","Close","Closing Documents Stored","Comments","User Notes"];
+const DISPOSITION_CHECKLIST=["Offer Acceptance","Deposit Received by Seller","HOA Docs Sent (if appl)","Contingency — Inspection: Home/Property","Contingency — Inspection: Termite/Pest","Contingency — Other","Inspection Feedback Deadline — Buyer","Inspection Feedback Deadline — Seller","Other Contingency Deadline","Utilities / Sewer Transferred","Financing / Loan Payoff","Walkthrough","Close","Closing Documents Stored","Status","Comments","User Notes"];
+const DISPOSITION_STATUS_OPTIONS=["Sale Offer Submitted","Sale Offer Accepted","Sale Under Contract","Sold"];
+const LICENSING_CHECKLIST=["Non-contiguous approval","Certificate of Occupancy/Use application/receipt","Licensure (Certification Licensing System – CLS) application","Self-inspection / DHS site inspection","Document submission to RA-odplicensing@pa.gov","ODP Licensing approval","Residential Approval Letter request to APC","Promise enrollment completion","Referral and matching","ISP update and authorization","Home/operational setup","Billing/authorization confirmed in Promise","Move-in of individual(s)"];
 
 /* ===== document upload & auto-populate (Scope §4.1 Property Documents / §4.10 invoice routing) ===== */
 const DOC_TYPES=['Deed','Lease','Insurance','Certificate of Occupancy','Inspection Report','Loan Documents','Photos / Videos'];
@@ -768,7 +771,7 @@ function updatePropField(pid,field,value,kind){
 }
 
 /* ===== router ===== */
-let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all',svc:'all',vendor:'all',payment:'all',invoice:'all',selectedOnly:false};
+let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all',svc:'all',vendor:'all',payment:'all',invoice:'all',selectedOnly:false,createdFrom:'',createdTo:'',descQuery:'',notesQuery:'',costMin:'',costMax:''};
 let SELECTED=new Set();
 const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'compliance',ic:'📜',label:'Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'reports',ic:'📊',label:'Reports'},{id:'recon',ic:'🧾',label:'Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length}];
 const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & onboarding'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['Compliance','Certificates, licenses & inspections · Scope §4.2'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['Reconciliation','Matching engine · S1']};
@@ -827,15 +830,23 @@ function renderTickets(el){
   const vendorOpts=[...new Set(TICKETS.map(t=>t.vendor).filter(Boolean))].sort();
   const invOpts=[...new Set(TICKETS.map(t=>t.invoice).filter(Boolean))].sort();
   const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
-  const thSel=(key,label,opts)=>`<th style="text-align:left"><select onchange="setF('${key}',this.value)" style="${fSel}" title="Filter by ${label}"><option value="all"${FILTER[key]==='all'?' selected':''}>${label}</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select></th>`;
+  const clearX=(key,label)=>`<a onclick="event.stopPropagation();clearFilter('${key}')" title="Clear ${label} filter" style="font-size:13px;color:var(--faint);cursor:pointer;flex-shrink:0;text-transform:none;letter-spacing:0;font-weight:700;padding:4px 6px;margin:-4px -6px;display:inline-block;line-height:1">✕</a>`;
+  const thTitle=(inner)=>`<div style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px;white-space:normal;text-align:left;min-height:28px">${inner}</div>`;
+  const thSel=(key,label,opts)=>`<th style="text-align:left;min-width:118px;vertical-align:top">
+    ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
+    <select onchange="setF('${key}',this.value)" style="${fSel};width:100%" title="Filter by ${label}"><option value="all"${FILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>
+  </th>`;
+  const activeFilterCount=['status','urgency','prop','svc','vendor','payment','invoice'].filter(k=>FILTER[k]!=='all').length
+    + ['createdFrom','createdTo','descQuery','notesQuery','costMin','costMax'].filter(k=>FILTER[k]).length;
   el.innerHTML=MT+`
-  <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Add ticket</button></div>
-  <div class="toolbar"><span class="b">Status:</span>
-    ${['all','Open','In progress','Completed','Closed'].map(s=>`<span class="chip ${FILTER.status===s?'active':''}" onclick="setF('status','${s}')">${s==='all'?'All':s}</span>`).join('')}</div>
-  <div class="toolbar"><span class="b">Priority:</span>
-    ${['all','Emergency','Urgent','Low'].map(u=>`<span class="chip ${FILTER.urgency===u?'active':''}" onclick="setF('urgency','${u}')">${u==='all'?'All':u}</span>`).join('')}
-    <span style="margin-left:auto"></span>
-    <select onchange="setF('prop',this.value)"><option value="all"${FILTER.prop==='all'?' selected':''}>All properties</option>${PROPS.map(p=>`<option value="${p.id}"${FILTER.prop===p.id?' selected':''}>${p.name}</option>`).join('')}</select></div>
+  <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Add ticket</button>
+    <button class="btn sec sm" onclick="openBulkGrid()">📋 Bulk add tickets</button>
+    <button class="btn sec sm" onclick="document.getElementById('bulkTicketFile').click()">⬆ Upload spreadsheet</button>
+    <input type="file" id="bulkTicketFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkUploadFile(this)">
+    <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
+      <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
+    </span></div>
   <div class="toolbar"><span class="b">Selection:</span>
     <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
     <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
@@ -846,19 +857,36 @@ function renderTickets(el){
       <a onclick="document.getElementById('bulkInvFile').click()">or choose file</a>
     </div></div>
   ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
-  <div class="card" style="overflow-x:auto"><table style="min-width:1160px"><thead><tr>
-    <th style="width:34px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
-    <th>Property</th>
-    <th>Status</th>
-    <th>Created</th>
-    <th>Description</th>
-    <th>Priority</th>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1380px"><thead><tr>
+    <th style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
+    ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})))}
+    ${thSel('status','Status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))}
+    <th style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
+      ${thTitle(`<span>Created</span>${clearX('created','Created')}`)}
+      <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="From MM/DD/YYYY" title="From date (MM/DD/YYYY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
+      <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="To MM/DD/YYYY" title="To date (MM/DD/YYYY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
+    </th>
+    <th style="text-align:left;min-width:170px;max-width:220px;overflow:hidden;vertical-align:top">
+      ${thTitle(`<span>Description</span>${clearX('descQuery','Description')}`)}
+      <input type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.descQuery)}" oninput="setFLive('descQuery',this.value)" placeholder="Search..." title="Filter by description text" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
+    </th>
+    ${thSel('urgency','Priority',['Emergency','Urgent','Low'].map(u=>({v:u,l:u})))}
     ${thSel('svc','Service Category',svcOpts.map(s=>({v:s,l:s})))}
     ${thSel('vendor','Vendor',vendorOpts.map(v=>({v:v,l:v})))}
-    <th><div>Cost</div><div style="font-weight:800;font-size:11px;color:var(--os);text-transform:none;letter-spacing:0" title="Total cost across ${rows.length} filtered ticket${rows.length===1?'':'s'} (${costedCount} costed)">${money(totalCost)}</div></th>
+    <th style="text-align:left;min-width:110px;vertical-align:top">
+      ${thTitle(`<span>Cost</span>${clearX('cost','Cost')}`)}
+      <div id="costTotalDisplay" style="font-weight:800;font-size:11px;color:var(--os);text-transform:none;letter-spacing:0" title="Total cost across ${rows.length} filtered ticket${rows.length===1?'':'s'} (${costedCount} costed)">${money(totalCost)}</div>
+      <div style="display:flex;gap:2px;margin-top:2px">
+        <input type="number" value="${FILTER.costMin}" oninput="setFLive('costMin',this.value)" placeholder="Min" title="Minimum cost" style="${fSel};width:50%;text-transform:none">
+        <input type="number" value="${FILTER.costMax}" oninput="setFLive('costMax',this.value)" placeholder="Max" title="Maximum cost" style="${fSel};width:50%;text-transform:none">
+      </div>
+    </th>
     ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))])}
     ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}])}
-    <th>Notes</th>
+    <th style="text-align:left;min-width:130px;vertical-align:top">
+      ${thTitle(`<span>Notes</span>${clearX('notesQuery','Notes')}`)}
+      <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by notes text" style="${fSel};width:100%;text-transform:none;font-weight:400">
+    </th>
   </tr></thead><tbody id="tbody"></tbody></table></div>`;
   drawTickets();
 }
@@ -869,7 +897,19 @@ function toggleSelect(id,checked){if(checked)SELECTED.add(id);else SELECTED.dele
   const c=document.getElementById('selCount');if(c)c.textContent=(SELECTED.size?SELECTED.size+' selected':'0 selected');if(FILTER.selectedOnly)drawTickets();}
 function toggleSelectAll(checked){filtered().forEach(t=>{if(checked)SELECTED.add(t.id);else SELECTED.delete(t.id);});if(!checked&&FILTER.selectedOnly&&SELECTED.size===0)FILTER.selectedOnly=false;renderTickets(document.getElementById('view'));}
 function clearSelection(){SELECTED.clear();FILTER.selectedOnly=false;renderTickets(document.getElementById('view'));}
-function filtered(){return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(!FILTER.selectedOnly||SELECTED.has(t.id))).sort(rankSort);}
+function parseFilterDate(s){
+  const m=String(s||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(!m)return null;
+  const mo=+m[1],da=+m[2],yr=+m[3];
+  if(mo<1||mo>12||da<1||da>31)return null;
+  const d=new Date(yr,mo-1,da,0,0,0,0);
+  return isNaN(d.getTime())?null:d;
+}
+function filtered(){
+  const cf=parseFilterDate(FILTER.createdFrom);
+  const ct=parseFilterDate(FILTER.createdTo);
+  return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
+}
 function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
   <td onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
   <td class="b">${propById(t.prop).name}</td>
@@ -883,7 +923,29 @@ function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" o
   <td onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
   <td onclick="event.stopPropagation()">${paySelect(t)}</td>
   <td onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add note…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
-function drawTickets(){const rows=filtered();document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';}
+function drawTickets(){
+  const rows=filtered();
+  document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
+  const totalCost=rows.reduce((s,t)=>s+(t.cost||0),0);
+  const costedCount=rows.filter(t=>t.cost!=null).length;
+  const cd=document.getElementById('costTotalDisplay');
+  if(cd){cd.textContent=money(totalCost);cd.title='Total cost across '+rows.length+' filtered ticket'+(rows.length===1?'':'s')+' ('+costedCount+' costed)';}
+}
+function setFLive(k,v){FILTER[k]=v;drawTickets();}
+function clearFilter(key){
+  if(key==='created'){FILTER.createdFrom='';FILTER.createdTo='';}
+  else if(key==='cost'){FILTER.costMin='';FILTER.costMax='';}
+  else if(key==='descQuery'||key==='notesQuery'){FILTER[key]='';}
+  else{FILTER[key]='all';}
+  toast('Filter cleared');
+  if(VIEW==='tickets')renderTickets(document.getElementById('view'));
+}
+function clearAllFilters(){
+  FILTER.status='all';FILTER.urgency='all';FILTER.prop='all';FILTER.svc='all';FILTER.vendor='all';FILTER.payment='all';FILTER.invoice='all';
+  FILTER.createdFrom='';FILTER.createdTo='';FILTER.descQuery='';FILTER.notesQuery='';FILTER.costMin='';FILTER.costMax='';
+  toast('All filters cleared');
+  if(VIEW==='tickets')renderTickets(document.getElementById('view'));
+}
 
 function actualCompletionDate(t){const c=t.log.find(l=>l[0]==='Completed');if(!c)return null;const d=new Date(today);d.setDate(d.getDate()-c[2]);return d;}
 function ticketRecon(t){const inMonthly=RECON.monthly.groups.some(g=>g.tickets.includes(t.id));const inWeekly=RECON.weekly.groups.some(g=>g.tickets.includes(t.id));
@@ -974,12 +1036,12 @@ function renderProperties(el){
   </tbody></table></div>`;
 }
 function openProperty(id){const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
-  const tabList=p.own==='owned'?['Overview','Details','Checklist','Disposition','Compliance','Licensing','Loan','Components','Documents','Maintenance']:['Overview','Details','Checklist','Compliance','Licensing','Components','Documents','Maintenance'];const tabsHtml=tabList.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="propTab(this,'${id}','${t}')">${t}</button>`).join('');
+  const tabList=p.own==='owned'?['Overview','Details','Acquisition','Disposition','Compliance','Licensing','Loan','Components','Documents','Maintenance']:['Overview','Details','Acquisition','Compliance','Licensing','Components','Documents','Maintenance'];const tabsHtml=tabList.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="propTab(this,'${id}','${t}')">${t}</button>`).join('');
   drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${p.own==='owned'?'Owned · '+(p.llc||'LLC'):'Leased · '+(p.landlord||'—')}</div><div style="font-size:19px;font-weight:800;margin-top:2px">${p.name}</div><div class="faint" style="font-size:12.5px">${p.addr||'—'}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">● ${p.status}</span></div></div>`,
     `<div class="tabs">${tabsHtml}</div><div id="propTabBody">${propOverview(p,tks)}</div>`);
 }
 function propTab(btn,id,name){document.querySelectorAll('.drawer .tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
-  document.getElementById('propTabBody').innerHTML={Overview:propOverview(p,tks),Details:propDetails(p),Checklist:propChecklist(p),Disposition:propDisposition(p),Compliance:propComplianceTab(p),Licensing:propLicensing(p),Loan:propLoan(p),Components:propComponents(p),Documents:propDocs(p),Maintenance:propTickets(tks)}[name];}
+  document.getElementById('propTabBody').innerHTML={Overview:propOverview(p,tks),Details:propDetails(p),Acquisition:propChecklist(p),Disposition:propDisposition(p),Compliance:propComplianceTab(p),Licensing:propLicensing(p),Loan:propLoan(p),Components:propComponents(p),Documents:propDocs(p),Maintenance:propTickets(tks)}[name];}
 function propOverview(p,tks){const open=tks.filter(isOpen).length;return `<div class="card"><div class="body"><div class="kv">
   <div class="k">Ownership</div><div><b>${p.own==='owned'?(p.llc||p.buyerLLC||'—'):(p.landlord&&p.landlord!=='—'?p.landlord:'—')}</b></div>
   <div class="k">Address</div><div>${p.addr||'—'}</div>
@@ -1053,21 +1115,16 @@ function propComplianceTab(p){const certs=CERTS.filter(c=>c.prop===p.id),insp=IN
   <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.2 Compliance, Certificate of Occupancy &amp; Inspections.</div>`;}
 function propDisposition(p){
   if(p.own!=='owned')return '<div class="card"><div class="body muted">Disposition applies to owned properties (sale process). Not applicable to leased properties.</div></div>';
-  if(!p.dispositionActive){
-    return `<div class="card"><div class="body">
-      <div class="b" style="margin-bottom:8px">Property Disposition</div>
-      <div class="muted" style="font-size:13px;margin-bottom:14px">No disposition in progress for this property. Starting disposition begins the Property Disposition Checklist (Scope §4.13) and, once closed, populates the Disposition Records (§4.14).</div>
-      <button class="btn amber sm" onclick="startDisposition('${p.id}')">Start disposition (list for sale)</button>
-    </div></div>`;
-  }
   const items=DISPOSITION_CHECKLIST;p.dispositionChk=p.dispositionChk||{};
   const done=items.filter(i=>(p.dispositionChk[i]||{}).s==='done').length;const pct=Math.round(done/items.length*100);
   const closed=(p.dispositionChk['Close']||{}).s==='done';
   let out=`<div class="mrow" style="margin-bottom:10px"><div class="b">Property Disposition Checklist</div><div class="pill">${done}/${items.length} complete</div></div>
     <div class="progress" style="margin-bottom:12px"><i style="width:${pct}%;background:var(--amber)"></i></div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px">All fields optional (blanks allowed) · statuses can be overridden. Click a status chip to cycle Pending → Done → N/A.</div>
     <div class="card"><div class="body" style="padding:2px 0">
     ${items.map((it,ix)=>{const c=p.dispositionChk[it]||{s:'pending',t:''};const cls=c.s==='done'?'b-resolved':c.s==='na'?'b-closed':'b-new';const lbl=c.s==='done'?'✓ Done':c.s==='na'?'— N/A':'▢ Pending';
-      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}</div><input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="notes / value…" style="width:190px;font-size:12.5px" onchange="setDispChkText('${p.id}',${ix},this.value)"><span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleDispChk('${p.id}',${ix})">${lbl}</span></div>`;}).join('')}
+      const field=it==='Status'?`<select style="width:190px;font-size:12.5px" onchange="setDispChkText('${p.id}',${ix},this.value)"><option value="">—</option>${DISPOSITION_STATUS_OPTIONS.map(o=>`<option value="${o}" ${c.t===o?'selected':''}>${o}</option>`).join('')}</select>`:`<input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="notes / value…" style="width:190px;font-size:12.5px" onchange="setDispChkText('${p.id}',${ix},this.value)">`;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}</div>${field}<span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleDispChk('${p.id}',${ix})">${lbl}</span></div>`;}).join('')}
     </div></div>`;
   if(closed){
     p.dispositionRecords=p.dispositionRecords||{saleDate:'—',settlementDate:'—',salePrice:null,commission:null,sellerCosts:null,reason:''};
@@ -1087,16 +1144,21 @@ function propDisposition(p){
   out+=`<div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.13 Property Disposition Checklist.</div>`;
   return out;
 }
-function startDisposition(id){const p=propById(id);p.dispositionActive=true;saveState();document.getElementById('propTabBody').innerHTML=propDisposition(p);toast('Disposition started');}
 function cycleDispChk(pid,ix){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.dispositionChk[it]=cur;saveState();document.getElementById('propTabBody').innerHTML=propDisposition(p);}
 function setDispChkText(pid,ix,val){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});cur.t=val;p.dispositionChk[it]=cur;saveState();}
-function propLicensing(p){const items=['Certificate of Occupancy','Group home / IDD waiver license','Fire & life safety inspection','Health department inspection','Business license'];
+function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licensingChk||{};const done=items.filter(i=>(p.licensingChk[i]||{}).s==='done').length;const pct=Math.round(done/items.length*100);
   return `<div class="pill" style="border-color:var(--amber);color:var(--amber);margin-bottom:12px;display:inline-flex">🚧 Placeholder — Phase 2</div>
-  <div class="card"><table><thead><tr><th>Certificate / license</th><th>Status</th></tr></thead><tbody>
-  ${items.map(i=>`<tr><td class="b">${i}</td><td><span class="badge b-closed">Not tracked yet</span></td></tr>`).join('')}
-  </tbody></table></div>
-  <div class="muted" style="font-size:12px;margin:10px 0">Initial Licensing Checklist &amp; Monitoring (Phase 2): issue/expiration dates, renewal cadence, responsible party, and automated reminders, tracked per property. Consistent with Scope §4.3.</div>
+  <div class="mrow" style="margin-bottom:10px"><div class="b">Licensing Checklist</div><div class="pill">${done}/${items.length} complete</div></div>
+  <div class="progress" style="margin-bottom:12px"><i style="width:${pct}%;background:var(--green)"></i></div>
+  <div class="muted" style="font-size:12px;margin-bottom:12px">All fields optional (blanks allowed) · statuses can be overridden. Click a status chip to cycle Pending → Done → N/A.</div>
+  <div class="card"><div class="body" style="padding:2px 0">
+  ${items.map((it,ix)=>{const c=p.licensingChk[it]||{s:'pending',t:''};const cls=c.s==='done'?'b-resolved':c.s==='na'?'b-closed':'b-new';const lbl=c.s==='done'?'✓ Done':c.s==='na'?'— N/A':'▢ Pending';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}</div><input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="notes / date…" style="width:190px;font-size:12.5px" onchange="setLicChkText('${p.id}',${ix},this.value)"><span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleLicChk('${p.id}',${ix})">${lbl}</span></div>`;}).join('')}
+  </div></div>
+  <div class="muted" style="font-size:12px;margin:10px 0">Initial Licensing Checklist &amp; Monitoring (Phase 2): reflects the ODP licensing workflow from non-contiguous approval through move-in. Consistent with Scope §4.3.</div>
   <div class="pill" style="border-color:var(--amber);color:var(--amber)">Open question: what information is needed to support this? (see Scope §8)</div>`;}
+function cycleLicChk(pid,ix){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.licensingChk[it]=cur;saveState();document.getElementById('propTabBody').innerHTML=propLicensing(p);}
+function setLicChkText(pid,ix,val){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});cur.t=val;p.licensingChk[it]=cur;saveState();}
 const LIFE_TABLE={'HVAC':[25,10000],'Furnace':[20,6000],'Water heater':[15,2000],'Refrigerator':[10,1200],'Gas/electric range':[15,1200],'Oven':[15,1200],'Dishwasher':[10,800],'Microwave':[8,600],'Washing machine':[12,800],'Dryer':[12,800],'Carpeting':[10,0],'Roof':[25,11000]};
 function estAge(seed,mod){return (seed*7+mod)%18+2;}
 function propComponents(p){const names=Object.keys(LIFE_TABLE);const seed=parseInt((p.id||'p0').replace('p',''))||1;
@@ -1323,6 +1385,8 @@ function closeDrawer(){document.getElementById('drawerRoot').innerHTML='';}
 function openAddTicket(){
   const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
   const svcOpts=Object.keys(CAT);
+  const svcTypeOpts=['Routine/Prevent.','Repair','Replacement','Setup','Other'];
+  const todayStr=new Date().toISOString().slice(0,10);
   drawer(
     `<div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:19px;font-weight:800">New ticket</div></div>`,
     `${SUPA_CONFIGURED&&!plist.length?'<div class="muted" style="margin-bottom:10px">No properties set up yet — add one in Supabase (Table Editor → properties) first.</div>':''}
@@ -1331,6 +1395,17 @@ function openAddTicket(){
         <option value="">Select a property…</option>
         ${plist.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
       </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Status</label>
+      <select id="nt_status" style="width:100%">
+        <option value="Open">Open</option>
+        <option value="In progress">In progress</option>
+        <option value="Completed">Completed</option>
+        <option value="Closed">Closed</option>
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Created</label>
+      <input type="date" id="nt_created" value="${todayStr}" style="width:100%">
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Description</label>
       <textarea id="nt_desc" style="width:100%;min-height:70px" placeholder="What's the issue?"></textarea>
@@ -1348,6 +1423,12 @@ function openAddTicket(){
         ${svcOpts.map(s=>`<option value="${s}">${CAT[s]||''} ${s}</option>`).join('')}
       </select>
     </div>
+    <div class="field" style="margin-top:10px"><label class="f">Service type</label>
+      <select id="nt_svctype" style="width:100%">
+        <option value="">— optional —</option>
+        ${svcTypeOpts.map(s=>`<option value="${s}">${s}</option>`).join('')}
+      </select>
+    </div>
     <div class="field" style="margin-top:10px"><label class="f">Vendor</label>
       <select id="nt_vendor" style="width:100%">
         <option value="">— not assigned yet —</option>
@@ -1357,6 +1438,23 @@ function openAddTicket(){
     <div class="field" style="margin-top:10px"><label class="f">Estimated cost ($)</label>
       <input type="text" id="nt_cost" inputmode="decimal" placeholder="optional" style="width:100%">
     </div>
+    <div class="field" style="margin-top:10px"><label class="f">Invoice number</label>
+      <input type="text" id="nt_invoice" placeholder="optional" style="width:100%">
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Payment status</label>
+      <select id="nt_payment" style="width:100%">
+        <option value="">— none yet —</option>
+        <option value="Match Proposed">Match Proposed</option>
+        <option value="Ready for Payment">Ready for Payment</option>
+        <option value="Paid">Paid</option>
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Reporter</label>
+      <input type="text" id="nt_reporter" value="${STAFF.office.name}" style="width:100%">
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Notes</label>
+      <textarea id="nt_notes" style="width:100%;min-height:50px" placeholder="optional"></textarea>
+    </div>
     <div id="nt_error" style="color:var(--red,#c0392b);font-size:12.5px;margin-top:10px;min-height:16px"></div>
     <button class="btn" style="width:100%;margin-top:14px" onclick="submitNewTicket()">Create ticket</button>`
   );
@@ -1364,22 +1462,31 @@ function openAddTicket(){
 async function submitNewTicket(){
   const propEl=document.getElementById('nt_prop');
   const propId=propEl?propEl.value:'';
+  const status=document.getElementById('nt_status').value||'Open';
+  const createdRaw=(document.getElementById('nt_created').value||'').trim();
   const desc=(document.getElementById('nt_desc').value||'').trim();
   const urgency=document.getElementById('nt_urgency').value;
   const svc=document.getElementById('nt_svc').value;
+  const svctype=document.getElementById('nt_svctype').value;
   const vendor=document.getElementById('nt_vendor').value;
   const costRaw=(document.getElementById('nt_cost').value||'').trim();
+  const invoice=(document.getElementById('nt_invoice').value||'').trim();
+  const payment=document.getElementById('nt_payment').value;
+  const reporter=(document.getElementById('nt_reporter').value||'').trim()||STAFF.office.name;
+  const notes=(document.getElementById('nt_notes').value||'').trim();
   const errEl=document.getElementById('nt_error');
   errEl.textContent='';
   if(!propId){errEl.textContent='Choose a property.';return;}
   if(!desc){errEl.textContent='Add a short description.';return;}
   let cost=null;
   if(costRaw!==''){const n=Number(costRaw);if(isNaN(n)){errEl.textContent='Cost must be a number.';return;}cost=n;}
+  let created=createdRaw?new Date(createdRaw+'T00:00:00'):new Date();
+  if(isNaN(created))created=new Date();
   const p=propById(propId);
   const title=desc.slice(0,60);
 
   if(p&&p._backend==='supabase'){
-    const payload={property_id:propId,title,description:desc,service_category:svc||null,service_type:'Reported',urgency,status:'Open',vendor:vendor||null,cost,reporter:STAFF.office.name};
+    const payload={property_id:propId,title,description:desc,notes,service_category:svc||null,service_type:svctype||null,urgency,status,vendor:vendor||null,cost,invoice_number:invoice||null,payment_status:payment||null,reporter,created_at:created.toISOString()};
     const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
     if(error){errEl.textContent='Could not create ticket: '+error.message;return;}
     await dbLogActivity(data.id,'Logged','Entered in maintenance tracker');
@@ -1390,11 +1497,156 @@ async function submitNewTicket(){
     refreshTickets();
     return;
   }
-  const t=mkTicket({prop:propId,title,desc,svc:svc||null,svctype:'Reported',urgency,status:'Open',vendor:vendor||null,cost,invoice:null,created:new Date(today),reporter:STAFF.office.name,log:[['Logged','Entered in maintenance tracker',0]]});
+  const t=mkTicket({prop:propId,title,desc,notes,svc:svc||null,svctype:svctype||null,urgency,status,vendor:vendor||null,cost,invoice:invoice||null,payment:payment||null,created,reporter,log:[['Logged','Entered in maintenance tracker',0]]});
   TICKETS.push(t);saveState();
   closeDrawer();
   toast('Ticket '+t.id+' created');
   refreshTickets();
+}
+
+/* ===== bulk ticket entry: in-app paste grid ===== */
+const BULK_TICKET_HEADERS=['Property','Status','Created','Description','Priority','Service Category','Service Type','Vendor','Cost','Invoice','Payment','Reporter','Notes'];
+let BULK_GRID=[];
+function openBulkGrid(){
+  BULK_GRID=Array.from({length:20},()=>BULK_TICKET_HEADERS.map(()=>''));
+  document.getElementById('drawerRoot').innerHTML=bulkGridMarkup();
+}
+function bulkGridMarkup(){
+  return `<div class="scrim" style="justify-content:center;align-items:center" onclick="if(event.target===this)closeDrawer()">
+    <div style="background:var(--bg);width:96vw;max-width:1500px;height:92vh;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+      <div style="padding:16px 20px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px">
+        <div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:19px;font-weight:800">Bulk add tickets</div>
+        <div class="muted" style="font-size:12.5px;margin-top:4px">Type directly into cells, or copy a range from Excel or Google Sheets and paste anywhere in the grid — it fills starting from the cell you paste into.</div></div>
+        <button class="x" onclick="closeDrawer()">✕</button>
+      </div>
+      <div style="flex:1;overflow:auto;padding:14px 20px" id="bulkGridWrap">${bulkGridTable()}</div>
+      <div style="padding:12px 20px;border-top:1px solid var(--line);background:var(--panel);display:flex;gap:10px;align-items:center">
+        <button class="btn sec sm" onclick="addBulkGridRows(10)">+ Add 10 rows</button>
+        <span id="bulkGridMsg" class="muted" style="font-size:12.5px"></span>
+        <button class="btn" style="margin-left:auto" onclick="importBulkGrid()">Import all</button>
+      </div>
+    </div>
+  </div>`;
+}
+function bulkGridTable(){
+  return `<table style="border-collapse:collapse;min-width:1550px">
+    <thead><tr>${BULK_TICKET_HEADERS.map(h=>`<th style="position:sticky;top:0;background:var(--panel2);border:1px solid var(--line);padding:6px 8px;font-size:11.5px;text-align:left;white-space:nowrap;z-index:1">${h}</th>`).join('')}</tr></thead>
+    <tbody>${BULK_GRID.map((row,r)=>`<tr>${row.map((val,c)=>`<td style="border:1px solid var(--line);padding:0"><input value="${esc(val)}" oninput="setBulkCell(${r},${c},this.value)" onpaste="bulkGridPaste(event,${r},${c})" style="width:130px;border:0;padding:6px 8px;font-size:12.5px;background:transparent"></td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function setBulkCell(r,c,val){if(BULK_GRID[r])BULK_GRID[r][c]=val;}
+function bulkGridPaste(event,r,c){
+  const text=(event.clipboardData||window.clipboardData).getData('text');
+  if(!text||(!text.includes('\t')&&!text.includes('\n')))return; // single-cell paste: let the browser handle it natively
+  event.preventDefault();
+  const lines=text.replace(/\r/g,'').split('\n').filter((l,i,arr)=>!(i===arr.length-1&&l===''));
+  lines.forEach((line,ri)=>{
+    while(!BULK_GRID[r+ri])BULK_GRID.push(BULK_TICKET_HEADERS.map(()=>''));
+    const cells=line.split('\t');
+    cells.forEach((cell,ci)=>{
+      const col=c+ci;
+      if(col<BULK_TICKET_HEADERS.length)BULK_GRID[r+ri][col]=cell.trim();
+    });
+  });
+  document.getElementById('bulkGridWrap').innerHTML=bulkGridTable();
+}
+function addBulkGridRows(n){
+  for(let i=0;i<n;i++)BULK_GRID.push(BULK_TICKET_HEADERS.map(()=>''));
+  document.getElementById('bulkGridWrap').innerHTML=bulkGridTable();
+}
+function importBulkGrid(){
+  const rows=BULK_GRID.map(row=>{
+    const obj={};
+    BULK_TICKET_HEADERS.forEach((h,i)=>{obj[h]=row[i];});
+    return obj;
+  }).filter(obj=>Object.values(obj).some(v=>String(v||'').trim()!==''));
+  if(!rows.length){const m=document.getElementById('bulkGridMsg');if(m)m.textContent='Nothing to import yet — fill in at least one row.';return;}
+  closeDrawer();
+  processBulkTicketRows(rows);
+}
+const TICKET_UPLOAD_FIELD_MAP={property:'prop',propertyname:'prop',status:'status',created:'created',createddate:'created',datecreated:'created',date:'created',description:'desc',title:'desc',issue:'desc',priority:'urgency',urgency:'urgency',servicecategory:'svc',category:'svc',servicetype:'svctype',type:'svctype',vendor:'vendor',cost:'cost',estimatedcost:'cost',invoice:'invoice',invoicenumber:'invoice',payment:'payment',paymentstatus:'payment',reporter:'reporter',notes:'notes'};
+function normHeaderKey(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+function handleBulkUploadFile(input){
+  const file=input.files&&input.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      processBulkTicketRows(rows);
+    }catch(err){
+      toast('Could not read that file: '+err.message);
+    }finally{
+      input.value='';
+    }
+  };
+  reader.onerror=function(){toast('Could not read that file.');input.value='';};
+  reader.readAsArrayBuffer(file);
+}
+async function processBulkTicketRows(rows){
+  if(!rows||!rows.length){toast('That file has no rows to import.');return;}
+  const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
+  const STATUS_OPTS=['Open','In progress','Completed','Closed'];
+  const URGENCY_OPTS=['Low','Urgent','Emergency'];
+  const PAYMENT_OPTS=['Match Proposed','Ready for Payment','Paid'];
+  const parsed=[],skipped=[];
+  rows.forEach((row,i)=>{
+    const f={};
+    Object.keys(row).forEach(k=>{const mapped=TICKET_UPLOAD_FIELD_MAP[normHeaderKey(k)];if(mapped&&!(mapped in f))f[mapped]=row[k];});
+    const rowNum=i+2;
+    const propName=String(f.prop||'').trim();
+    const desc=String(f.desc||'').trim();
+    if(!propName){skipped.push('Row '+rowNum+': missing Property');return;}
+    if(!desc){skipped.push('Row '+rowNum+': missing Description');return;}
+    const prop=plist.find(p=>p.name.toLowerCase()===propName.toLowerCase());
+    if(!prop){skipped.push('Row '+rowNum+': property "'+propName+'" not found');return;}
+    let status=String(f.status||'').trim();
+    status=STATUS_OPTS.find(s=>s.toLowerCase()===status.toLowerCase())||'Open';
+    let urgency=String(f.urgency||'').trim();
+    urgency=URGENCY_OPTS.find(u=>u.toLowerCase()===urgency.toLowerCase())||'Low';
+    let payment=String(f.payment||'').trim();
+    payment=PAYMENT_OPTS.find(p=>p.toLowerCase()===payment.toLowerCase())||null;
+    let cost=null;
+    if(f.cost!=null&&String(f.cost).trim()!==''){const n=Number(String(f.cost).replace(/[^0-9.\-]/g,''));if(!isNaN(n))cost=n;}
+    let created=null;
+    if(f.created){
+      let d;
+      if(f.created instanceof Date)d=f.created;
+      else{const s=String(f.created).trim();d=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T00:00:00'):new Date(s);}
+      if(!isNaN(d))created=d;
+    }
+    parsed.push({prop,status,urgency,svc:String(f.svc||'').trim()||null,svctype:String(f.svctype||'').trim()||null,vendor:String(f.vendor||'').trim()||null,cost,invoice:String(f.invoice||'').trim()||null,payment,reporter:String(f.reporter||'').trim()||STAFF.office.name,notes:String(f.notes||'').trim(),desc,title:desc.slice(0,60),created});
+  });
+  if(!parsed.length){alert('No rows could be imported.'+(skipped.length?'\n\n'+skipped.join('\n'):''));return;}
+  let created=0;
+  const liveRows=parsed.filter(r=>r.prop._backend==='supabase');
+  const demoRows=parsed.filter(r=>r.prop._backend!=='supabase');
+  if(liveRows.length){
+    const payloads=liveRows.map(r=>{const payload={property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:r.status,urgency:r.urgency,service_category:r.svc,service_type:r.svctype,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:r.payment,reporter:r.reporter};if(r.created)payload.created_at=r.created.toISOString();return payload;});
+    const {data,error}=await sb.from('maintenance_tickets').insert(payloads).select();
+    if(error){toast('Bulk import failed: '+error.message);return;}
+    for(const row of data){
+      await dbLogActivity(row.id,'Logged','Entered via bulk upload');
+      TICKETS.unshift(rowToTicket(Object.assign({},row,{maintenance_ticket_activity:[{action:'Logged',detail:'Entered via bulk upload',created_at:new Date().toISOString()}]})));
+      created++;
+    }
+  }
+  if(demoRows.length){
+    demoRows.forEach(r=>{
+      const t=mkTicket({prop:r.prop.id,title:r.title,desc:r.desc,notes:r.notes,svc:r.svc,svctype:r.svctype,urgency:r.urgency,status:r.status,vendor:r.vendor,cost:r.cost,invoice:r.invoice,payment:r.payment,reporter:r.reporter,created:r.created||new Date(today),log:[['Logged','Entered via bulk upload',0]]});
+      TICKETS.push(t);
+      created++;
+    });
+    saveState();
+  }
+  refreshTickets();
+  let msg=created+' ticket'+(created===1?'':'s')+' imported.';
+  if(skipped.length)msg+=' '+skipped.length+' row'+(skipped.length===1?'':'s')+' skipped.';
+  toast(msg);
+  if(skipped.length)alert('Skipped rows:\n\n'+skipped.join('\n'));
 }
 
 /* ===== mobile ===== */
