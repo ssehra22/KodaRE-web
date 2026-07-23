@@ -369,6 +369,23 @@ async function loadRealTickets(){
   TICKETS.length=0;(data||[]).forEach(row=>TICKETS.push(rowToTicket(row)));
   refreshTickets();
 }
+async function dbUpsertChecklist(table,propertyId,items){
+  const {error}=await sb.from(table).upsert({property_id:propertyId,items},{onConflict:'property_id'});
+  if(error){toast('Save failed: '+error.message);return false;}
+  return true;
+}
+async function loadRealDispositionChecklists(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('disposition_checklists').select('*');
+  if(error){toast('Could not load disposition checklists: '+error.message);return;}
+  (data||[]).forEach(row=>{const p=PROPS.find(x=>x.id===row.property_id);if(p){p.dispositionChk=row.items||{};p._dispositionRowId=row.id;}});
+}
+async function loadRealLicensingChecklists(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('licensing_checklists').select('*');
+  if(error){toast('Could not load licensing checklists: '+error.message);return;}
+  (data||[]).forEach(row=>{const p=PROPS.find(x=>x.id===row.property_id);if(p){p.licensingChk=row.items||{};p._licensingRowId=row.id;}});
+}
 async function authSignIn(){
   const email=document.getElementById('authEmail').value.trim();
   const password=document.getElementById('authPassword').value;
@@ -382,12 +399,14 @@ async function authSignOut(){if(sb){await sb.auth.signOut();}location.reload();}
 async function enterLiveApp(){
   document.getElementById('authGate').classList.add('hidden');
   const foot=document.getElementById('footStatus');
-  if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases & Compliance are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
+  if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases, Compliance, Disposition & Licensing Checklists are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
   await loadRealProperties();
   await loadRealTickets();
   await loadRealVendors();
   await loadRealLeases();
   await loadRealCertsAndInspections();
+  await loadRealDispositionChecklists();
+  await loadRealLicensingChecklists();
   computeHealth();
   buildNav();
   navigate(VIEW);
@@ -806,7 +825,7 @@ function renderDashboard(el){
   <div class="grid2" style="margin-top:18px">
     <div class="card"><h3>🎫 Priority queue<a class="link" onclick="navigate('tickets')">View all →</a></h3>
       <table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th>Status</th><th>Age</th></tr></thead><tbody>
-      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="faint" style="font-size:11.5px">${t.id} · ${t.svc}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono">${ageDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
+      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="faint" style="font-size:11.5px">${t.svc}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono">${ageDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
       </tbody></table></div>
     <div class="card"><h3>🏠 Portfolio health</h3><div class="body">
       ${PROPS.map(p=>`<div class="mrow" style="padding:7px 0;border-bottom:1px solid var(--line)"><div><span class="dotc" style="background:var(--${p.health==='green'?'green':(p.health==='red'?'red':'amber')})"></span> <span class="b">${p.name}</span> <span class="faint" style="font-size:11.5px">· ${p.own==='owned'?'Owned':'Leased'}</span></div><div class="pill" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">${p.status}</div></div>`).join('')}
@@ -915,7 +934,7 @@ function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" o
   <td class="b">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
   <td class="muted mono" style="white-space:nowrap">${fdate(t.created)}</td>
-  <td><div>${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="faint" style="font-size:11px">${t.id}${t.svctype?' · '+t.svctype:''}</div></td>
+  <td><div>${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="faint" style="font-size:11px">${t.svctype||''}</div></td>
   <td>${ubadge(t.urgency)}</td>
   <td class="muted">${t.svc||'—'}</td>
   <td>${t.vendor||'<span class="faint">—</span>'}</td>
@@ -954,7 +973,7 @@ function ticketRecon(t){const inMonthly=RECON.monthly.groups.some(g=>g.tickets.i
   if(t.status==='Completed'||t.status==='Closed')return {label:'Pending reconciliation',cls:'b-new'};
   return {label:'—',cls:'b-closed'};}
 function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=propById(t.prop);
-  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${t.id} · ${t.svc} ${CAT[t.svc]||''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${t.title}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${t.svc} ${CAT[t.svc]||''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${t.title}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
    `<div class="card"><div class="body"><div class="kv">
       <div class="k">Property</div><div><a onclick="closeDrawer();navigate('properties');setTimeout(()=>openProperty('${p.id}'),60)">${p.name}</a> · ${p.addr||'—'}</div>
       <div class="k">Status</div><div>${badge(t)}</div>
@@ -1118,7 +1137,9 @@ function propDisposition(p){
   const items=DISPOSITION_CHECKLIST;p.dispositionChk=p.dispositionChk||{};
   const done=items.filter(i=>(p.dispositionChk[i]||{}).s==='done').length;const pct=Math.round(done/items.length*100);
   const closed=(p.dispositionChk['Close']||{}).s==='done';
-  let out=`<div class="mrow" style="margin-bottom:10px"><div class="b">Property Disposition Checklist</div><div class="pill">${done}/${items.length} complete</div></div>
+  const live=p._backend==='supabase';
+  let out=`${live?'':'<div class="pill" style="border-color:var(--amber);color:var(--amber);margin-bottom:12px;display:inline-flex">🚧 Sample data — sign in to Supabase for real tracking</div>'}
+    <div class="mrow" style="margin-bottom:10px"><div class="b">Property Disposition Checklist</div><div class="pill">${done}/${items.length} complete</div></div>
     <div class="progress" style="margin-bottom:12px"><i style="width:${pct}%;background:var(--amber)"></i></div>
     <div class="muted" style="font-size:12px;margin-bottom:12px">All fields optional (blanks allowed) · statuses can be overridden. Click a status chip to cycle Pending → Done → N/A.</div>
     <div class="card"><div class="body" style="padding:2px 0">
@@ -1144,10 +1165,11 @@ function propDisposition(p){
   out+=`<div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.13 Property Disposition Checklist.</div>`;
   return out;
 }
-function cycleDispChk(pid,ix){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.dispositionChk[it]=cur;saveState();document.getElementById('propTabBody').innerHTML=propDisposition(p);}
-function setDispChkText(pid,ix,val){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});cur.t=val;p.dispositionChk[it]=cur;saveState();}
+function cycleDispChk(pid,ix){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.dispositionChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('disposition_checklists',p.id,p.dispositionChk);else saveState();document.getElementById('propTabBody').innerHTML=propDisposition(p);}
+function setDispChkText(pid,ix,val){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});cur.t=val;p.dispositionChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('disposition_checklists',p.id,p.dispositionChk);else saveState();}
 function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licensingChk||{};const done=items.filter(i=>(p.licensingChk[i]||{}).s==='done').length;const pct=Math.round(done/items.length*100);
-  return `<div class="pill" style="border-color:var(--amber);color:var(--amber);margin-bottom:12px;display:inline-flex">🚧 Placeholder — Phase 2</div>
+  const live=p._backend==='supabase';
+  return `${live?'':'<div class="pill" style="border-color:var(--amber);color:var(--amber);margin-bottom:12px;display:inline-flex">🚧 Sample data — sign in to Supabase for real tracking</div>'}
   <div class="mrow" style="margin-bottom:10px"><div class="b">Licensing Checklist</div><div class="pill">${done}/${items.length} complete</div></div>
   <div class="progress" style="margin-bottom:12px"><i style="width:${pct}%;background:var(--green)"></i></div>
   <div class="muted" style="font-size:12px;margin-bottom:12px">All fields optional (blanks allowed) · statuses can be overridden. Click a status chip to cycle Pending → Done → N/A.</div>
@@ -1155,10 +1177,9 @@ function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licen
   ${items.map((it,ix)=>{const c=p.licensingChk[it]||{s:'pending',t:''};const cls=c.s==='done'?'b-resolved':c.s==='na'?'b-closed':'b-new';const lbl=c.s==='done'?'✓ Done':c.s==='na'?'— N/A':'▢ Pending';
     return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}</div><input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="notes / date…" style="width:190px;font-size:12.5px" onchange="setLicChkText('${p.id}',${ix},this.value)"><span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleLicChk('${p.id}',${ix})">${lbl}</span></div>`;}).join('')}
   </div></div>
-  <div class="muted" style="font-size:12px;margin:10px 0">Initial Licensing Checklist &amp; Monitoring (Phase 2): reflects the ODP licensing workflow from non-contiguous approval through move-in. Consistent with Scope §4.3.</div>
-  <div class="pill" style="border-color:var(--amber);color:var(--amber)">Open question: what information is needed to support this? (see Scope §8)</div>`;}
-function cycleLicChk(pid,ix){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.licensingChk[it]=cur;saveState();document.getElementById('propTabBody').innerHTML=propLicensing(p);}
-function setLicChkText(pid,ix,val){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});cur.t=val;p.licensingChk[it]=cur;saveState();}
+  <div class="muted" style="font-size:12px;margin:10px 0">Initial Licensing Checklist &amp; Monitoring: reflects the ODP licensing workflow from non-contiguous approval through move-in. Consistent with Scope §4.3.</div>`;}
+function cycleLicChk(pid,ix){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();document.getElementById('propTabBody').innerHTML=propLicensing(p);}
+function setLicChkText(pid,ix,val){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});cur.t=val;p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();}
 const LIFE_TABLE={'HVAC':[25,10000],'Furnace':[20,6000],'Water heater':[15,2000],'Refrigerator':[10,1200],'Gas/electric range':[15,1200],'Oven':[15,1200],'Dishwasher':[10,800],'Microwave':[8,600],'Washing machine':[12,800],'Dryer':[12,800],'Carpeting':[10,0],'Roof':[25,11000]};
 function estAge(seed,mod){return (seed*7+mod)%18+2;}
 function propComponents(p){const names=Object.keys(LIFE_TABLE);const seed=parseInt((p.id||'p0').replace('p',''))||1;
