@@ -317,6 +317,34 @@ async function dbUpdateProperty(id,patch){
   if(error){toast('Save failed: '+error.message);return false;}
   return true;
 }
+const VENDOR_FIELD_TO_COLUMN={name:'name',trade:'trade',svctype:'service_type',primary:'primary_secondary',
+  pricing:'pricing',area:'area',metro:'metro',afterHours:'after_hours',contact:'contact',phone:'phone',
+  email:'email',portal:'portal',login:'login',licenses:'licenses',licExp:'lic_exp',insExp:'ins_exp',w9:'w9',
+  properties:'properties',referredBy:'referred_by',quality:'quality',ytd:'ytd',comments:'comments',userNotes:'user_notes'};
+async function dbUpdateVendor(id,patch){
+  const {error}=await sb.from('vendors').update(patch).eq('id',id);
+  if(error){toast('Save failed: '+error.message);return false;}
+  return true;
+}
+async function dbDeleteVendor(id){
+  const {error}=await sb.from('vendors').delete().eq('id',id);
+  if(error){toast('Delete failed: '+error.message);return false;}
+  return true;
+}
+async function deleteVendor(id){
+  if(ROLE!=='admin'){toast('Only Senior Admin can delete vendors');return;}
+  const v=vendorById(id);if(!v)return;
+  if(!confirm(`Delete vendor "${v.name}"? This can't be undone.`))return;
+  if(v._backend==='supabase'){
+    const ok=await dbDeleteVendor(id);
+    if(!ok)return;
+  }
+  const ix=VENDORS.findIndex(x=>x.id===id);if(ix>-1)VENDORS.splice(ix,1);
+  if(!v._backend||v._backend!=='supabase')saveState();
+  closeDrawer();
+  toast('Vendor deleted: '+v.name);
+  if(VIEW==='vendors')renderVendors(document.getElementById('view'));
+}
 function rowToCert(row){
   return {_backend:'supabase', _id:row.id, prop:row.property_id, type:row.type, authority:row.authority,
     certNo:row.cert_no, issue:row.issue_date, exp:row.exp_date, cadence:row.cadence, status:row.status,
@@ -354,10 +382,11 @@ async function loadRealLeases(){
   LEASES.length=0;(data||[]).forEach(row=>LEASES.push(rowToLease(row)));
 }
 function rowToVendor(row){
-  return {_backend:'supabase', _id:row.id, name:row.name, trade:row.trade, ytd:row.ytd!=null?Number(row.ytd):0,
+  return {_backend:'supabase', id:row.id, _id:row.id, name:row.name, trade:row.trade, svctype:row.service_type, ytd:row.ytd!=null?Number(row.ytd):0,
     primary:row.primary_secondary, pricing:row.pricing, area:row.area, metro:row.metro, afterHours:row.after_hours,
     contact:row.contact, phone:row.phone, email:row.email, portal:row.portal, login:row.login,
-    licenses:row.licenses, licExp:row.lic_exp, insExp:row.ins_exp, w9:row.w9, referredBy:row.referred_by, quality:row.quality};
+    licenses:row.licenses, licExp:row.lic_exp, insExp:row.ins_exp, w9:row.w9, properties:row.properties||'',
+    referredBy:row.referred_by, quality:row.quality, comments:row.comments, userNotes:row.user_notes};
 }
 async function loadRealVendors(){
   if(!SUPA_CONFIGURED)return;
@@ -435,12 +464,12 @@ async function initLiveMode(){
 }
 
 /* KodaRE prototype v0.3 — data from Maintenance Items Sample 1; adds Licensing & Client Expense (Phase 2) placeholders */
-const VENDORS = [{"name": "Saylor Heating", "trade": "HVAC", "ytd": 1470, "primary": "Primary", "pricing": "Time & materials", "area": "Harrisburg / Mechanicsburg, PA", "metro": "Harrisburg", "afterHours": "Yes", "contact": "Dave Saylor", "phone": "(717) 555-0112", "email": "dave@saylorheating.example", "portal": "—", "login": "—", "licenses": "HVAC-PA-88213", "licExp": "2027-04-01", "insExp": "2026-12-01", "w9": "Yes", "referredBy": "—", "quality": "Excel"},
-{"name": "Fair Fix", "trade": "General repair", "ytd": 481, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2026-10-15", "w9": "Yes", "referredBy": "Keira", "quality": "Fair"},
-{"name": "Monti - Rent Café", "trade": "Property mgmt", "ytd": 0, "primary": "Secondary", "pricing": "Per management agreement", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "rentcafe.example.com", "login": "reshab_monti", "licenses": "—", "licExp": "—", "insExp": "—", "w9": "No", "referredBy": "—", "quality": "Fair"},
-{"name": "Boushab Services", "trade": "General repair", "ytd": 615, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2026-11-01", "w9": "Yes", "referredBy": "—", "quality": "Fair"},
-{"name": "Iconic Monti", "trade": "Property mgmt", "ytd": 825, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "—", "w9": "No", "referredBy": "—", "quality": "Fair"},
-{"name": "Lawn Love", "trade": "Landscaping", "ytd": 0, "primary": "Primary", "pricing": "Seasonal contract", "area": "Harrisburg / Mechanicsburg / Middletown, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "(888) 606-0611", "email": "support@lawnlove.example", "portal": "lawnlove.example.com", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2027-01-01", "w9": "Yes", "referredBy": "—", "quality": "Excel"}];
+const VENDORS = [{"id":"v1","name": "Saylor Heating", "trade": "HVAC/Furnace", "svctype": "", "ytd": 1470, "primary": "Primary", "pricing": "Time & materials", "area": "Harrisburg / Mechanicsburg, PA", "metro": "Harrisburg", "afterHours": "Yes", "contact": "Dave Saylor", "phone": "(717) 555-0112", "email": "dave@saylorheating.example", "portal": "—", "login": "—", "licenses": "HVAC-PA-88213", "licExp": "2027-04-01", "insExp": "2026-12-01", "w9": "Yes", "properties": "", "referredBy": "—", "quality": "Excellent", "comments": "", "userNotes": ""},
+{"id":"v2","name": "Fair Fix", "trade": "Handyman General", "svctype": "", "ytd": 481, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2026-10-15", "w9": "Yes", "properties": "", "referredBy": "Keira", "quality": "Fair", "comments": "", "userNotes": ""},
+{"id":"v3","name": "Monti - Rent Café", "trade": "Other", "svctype": "", "ytd": 0, "primary": "Secondary", "pricing": "Per management agreement", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "rentcafe.example.com", "login": "reshab_monti", "licenses": "—", "licExp": "—", "insExp": "—", "w9": "No", "properties": "", "referredBy": "—", "quality": "Fair", "comments": "", "userNotes": ""},
+{"id":"v4","name": "Boushab Services", "trade": "Handyman General", "svctype": "", "ytd": 615, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2026-11-01", "w9": "Yes", "properties": "", "referredBy": "—", "quality": "Fair", "comments": "", "userNotes": ""},
+{"id":"v5","name": "Iconic Monti", "trade": "Other", "svctype": "", "ytd": 825, "primary": "Primary", "pricing": "Per-job flat rate", "area": "Harrisburg, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "—", "email": "—", "portal": "—", "login": "—", "licenses": "—", "licExp": "—", "insExp": "—", "w9": "No", "properties": "", "referredBy": "—", "quality": "Fair", "comments": "", "userNotes": ""},
+{"id":"v6","name": "Lawn Love", "trade": "Lawn/Snow", "svctype": "", "ytd": 0, "primary": "Primary", "pricing": "Seasonal contract", "area": "Harrisburg / Mechanicsburg / Middletown, PA", "metro": "Harrisburg", "afterHours": "No", "contact": "—", "phone": "(888) 606-0611", "email": "support@lawnlove.example", "portal": "lawnlove.example.com", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2027-01-01", "w9": "Yes", "properties": "", "referredBy": "—", "quality": "Excellent", "comments": "", "userNotes": ""}];
 const PROPS = [{"id": "p1", "name": "Fox-1", "addr": "400 Fox Street, Flr 1, Harrisburg, PA 17109", "own": "leased", "beds": null, "status": "Active", "health": "green", "compliance": null, "landlord": "—", "rent": null, "leaseType": "ResHab", "metro": "Harrisburg", "county": "Dauphin", "bedrooms": 4, "bathrooms": 2, "sqft": 1650, "levels": 1, "parkingType": "Off-street lot", "mgmtAssocName": "—", "mgmtContactPhone": "—", "mgmtPortal": "—", "mgmtPortalLogin": "—", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
 {"id": "p2", "name": "Fox-2", "addr": "400 Fox Street, Flr 2, Harrisburg, PA 17109", "own": "leased", "beds": null, "status": "Active", "health": "green", "compliance": null, "landlord": "—", "rent": null, "leaseType": "ResHab", "metro": "Harrisburg", "county": "Dauphin", "bedrooms": 3, "bathrooms": 1, "sqft": 1400, "levels": 1, "parkingType": "Off-street lot", "mgmtAssocName": "—", "mgmtContactPhone": "—", "mgmtPortal": "—", "mgmtPortalLogin": "—", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
 {"id": "p3", "name": "Highlands", "addr": "6206 N. Highlands Ct, Harrisburg, PA 17111", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Highlands Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Highlands Holdings LLC", "purchaseDate": "2021-03-15", "settlementDate": "2021-03-15", "purchasePrice": 248000, "totalBuyerCosts": 9800, "loanInitial": 292000, "loanRemaining": 268400, "bedrooms": 4, "bathrooms": 2, "sqft": 1980, "yearBuilt": 1994, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-041-062", "mls": "PACB2011245", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Mohammed (House Manager)"},
@@ -510,11 +539,17 @@ const LEASES = [
 const RECON = {"weekly": {"signed": false, "groups": [{"vendor": "Saylor Heating", "prop": "Multiple", "tickets": ["T-101", "T-102", "T-103"], "koda": 1470, "ledger": 1470, "status": "auto"}, {"vendor": "Iconic Monti", "prop": "Monticello", "tickets": ["T-133"], "koda": 825, "ledger": 825, "status": "auto"}, {"vendor": "Boushab Services", "prop": "Multiple", "tickets": ["T-116", "T-118", "T-119"], "koda": 615, "ledger": 635, "status": "review"}], "exceptions": [{"vendor": "Boushab Services", "reason": "Ledger line has no matching KodaRE ticket group", "ledger": 510, "koda": 0}]}, "monthly": {"signed": false, "groups": [{"vendor": "Saylor Heating", "prop": "Multiple", "tickets": ["T-101", "T-102", "T-103"], "koda": 1470, "ledger": 1470, "status": "auto"}, {"vendor": "Iconic Monti", "prop": "Monticello", "tickets": ["T-133"], "koda": 825, "ledger": 825, "status": "auto"}, {"vendor": "Boushab Services", "prop": "Multiple", "tickets": ["T-116", "T-118", "T-119"], "koda": 615, "ledger": 615, "status": "auto"}], "exceptions": [{"vendor": "Fair Fix", "reason": "Bundled invoice (1293/1294) — split across properties needed", "ledger": 238.5, "koda": 159}]}};
 
 /* ===== helpers ===== */
-const CAT={'Handyman General':'🔧','Lawn/Snow':'🌿','HVAC/Furnace':'❄️','Electric':'💡','Plumbing':'🚰','Appliances':'🔌','Furniture/Cabinets':'🪑','Roof/Gutter':'🏠','Safety/Fire Drill':'🚨','Pest Control':'🐜','House Cleaning':'🧹','Car':'🚗','HOA':'🏢','Material':'📦','Other':'🛠️'}; // 2026-07: this is now the single canonical Service Category List — Scope v0.8 §4.7 (Maintenance) and §4.9 (Vendor Directory's "Service Category (Default)") both point at this same list, per Sonia's definitive list. Deprecated near-duplicates from the old separate ticket/vendor lists (Electrical, Appliance, Structural, Safety, Handyman, Outdoor Lawn/Snow, Outdoor Roof/Gutter, Other/Miscel) were removed.
+const CAT={'Handyman General':'🔧','Lawn/Snow':'🌿','HVAC/Furnace':'❄️','Electric':'💡','Plumbing':'🚰','Appliance':'🔌','Furniture/Cabinet':'🪑','Roof/Gutter':'🏠','Safety/Fire Drill':'🚨','Pest Control':'🐜','House Cleaning':'🧹','Car':'🚗','HOA':'🏢','Material':'📦','Other':'🛠️'}; // 2026-07: this is now the single canonical Service Category List — Scope v0.8 §4.7 (Maintenance) and §4.9 (Vendor Directory's "Service Category (Default)") both point at this same list, per Sonia's definitive list. Deprecated near-duplicates from the old separate ticket/vendor lists (Electrical, Structural, Safety, Handyman, Outdoor Lawn/Snow, Outdoor Roof/Gutter, Other/Miscel) were removed. Renamed Appliances→Appliance and Furniture/Cabinets→Furniture/Cabinet (singular) 2026-07.
 const SVC_TYPES=['Routine/Prevent','Repair','Replacement','Enhancement','Setup','Finance Plug','Other']; // 2026-07: single canonical Service Type List, shared by Maintenance tickets (§4.7) and Vendor Directory's Service Type (Default) (§4.9), per Scope v0.8. Deprecated 'Routine/Prevent.' (trailing period) in favor of the doc's exact 'Routine/Prevent'.
 const money=n=>'$'+(n==null?'—':Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}));
 const today=new Date(2026,6,1);
-function fdate(d){return d?new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';}
+function mdyy(d){if(d==null||d==='—'||d==='')return '—';const dt=(d instanceof Date)?d:new Date(/^\d{4}-\d{2}-\d{2}$/.test(d)?d+'T00:00:00':d);if(isNaN(dt.getTime()))return String(d);const mm=String(dt.getMonth()+1).padStart(2,'0');const dd=String(dt.getDate()).padStart(2,'0');const yy=String(dt.getFullYear()).slice(-2);return mm+'/'+dd+'/'+yy;}
+// Parses a user-typed MM/DD/YY (or MM/DD/YYYY, for anything already saved that way) date string into
+// a Date. 2-digit years use the standard windowing rule (00-68 -> 2000s, 69-99 -> 1900s) — matches how
+// browsers already parse "MM/DD/YY" strings, so this stays consistent with the bulk-upload date parser.
+function parseMDYY(s){s=String(s||'').trim();if(!s)return null;const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);if(!m)return null;const mo=+m[1],da=+m[2];let yr=+m[3];if(m[3].length===2)yr=yr<=68?2000+yr:1900+yr;if(mo<1||mo>12||da<1||da>31)return null;const d=new Date(yr,mo-1,da,0,0,0,0);return isNaN(d.getTime())?null:d;}
+function toISODate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fdate(d){return d?mdyy(d):'—';}
 function initials(name){return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();}
 const STAFF={office:{name:'Sonia S.',role:'Office Staff',color:'var(--os)'},admin:{name:'Morgan Patel',role:'Senior Admin',color:'var(--sa)'},caregiver:{name:'Alex Rivera',role:'Caregiver',color:'var(--cg)'}};
 const propById=id=>PROPS.find(p=>p.id===id)||{name:'—',addr:''};
@@ -744,7 +779,7 @@ const INSPECTIONS=[
 ];
 function daysTo(d){if(!d)return null;const dd=new Date(/^\d{4}-\d{2}-\d{2}$/.test(d)?d+'T00:00:00':d);return Math.round((dd-today)/864e5);}
 function certBadge(c){if(c.status==='expired')return '<span class="badge b-red">⚠ Expired</span>';if(c.status==='in renewal')return '<span class="badge b-progress">↻ In renewal</span>';if(!c.exp)return '<span class="badge b-resolved">✓ Active (perpetual)</span>';const d=daysTo(c.exp);if(d<=ASSUMPTIONS.complianceExpiringDays&&d>=0)return `<span class="badge b-assigned">⏳ Expires in ${d}d</span>`;return '<span class="badge b-resolved">✓ Active</span>';}
-function dstr(v){if(!v||v==='—')return '—';const d=new Date(/^\d{4}-\d{2}-\d{2}$/.test(v)?v+'T00:00:00':v);if(isNaN(d))return v;return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}
+function dstr(v){return mdyy(v);}
 
 /* ===== property disposition (Scope §4.13/4.14) ===== */
 const DISPOSITION_CHECKLIST=["Offer Acceptance","Deposit Received by Seller","HOA Docs Sent (if appl)","Contingency — Inspection: Home/Property","Contingency — Inspection: Termite/Pest","Contingency — Other","Inspection Feedback Deadline — Buyer","Inspection Feedback Deadline — Seller","Other Contingency Deadline","Utilities / Sewer Transferred","Financing / Loan Payoff","Walkthrough","Close","Closing Documents Stored","Stage","Comments","User Notes"];
@@ -822,6 +857,11 @@ function updatePropField(pid,field,value,kind){
   const p=propById(pid);if(!p)return;
   const prev=p[field];
   if(kind==='number'){const v=value.trim();p[field]=v===''?null:(isNaN(Number(v))?p[field]:Number(v));}
+  else if(kind==='date'){
+    const v=value.trim();
+    if(v===''){p[field]=null;}
+    else{const d=parseMDYY(v);if(!d){toast('Enter a date as MM/DD/YY');return;}p[field]=toISODate(d);}
+  }
   else{p[field]=value.trim()===''?null:value;}
   if(p._backend==='supabase'){
     const col=PROP_FIELD_TO_COLUMN[field];
@@ -886,7 +926,7 @@ function renderTickets(el){
   const totalCost=rows.reduce((s,t)=>s+(t.cost||0),0);
   const costedCount=rows.filter(t=>t.cost!=null).length;
   const groups=invoiceGroups(rows).filter(g=>Math.abs(g.diff)>0.01);
-  const svcOpts=[...new Set(TICKETS.map(t=>t.svc).filter(Boolean))].sort();
+  const svcOpts=Object.keys(CAT).filter(c=>TICKETS.some(t=>t.svc===c));
   const vendorOpts=[...new Set(TICKETS.map(t=>t.vendor).filter(Boolean))].sort();
   const invOpts=[...new Set(TICKETS.map(t=>t.invoice).filter(Boolean))].sort();
   const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
@@ -924,8 +964,8 @@ function renderTickets(el){
     ${thSel('status','Status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))}
     <th style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
       ${thTitle(`<span>Created</span>${clearX('created','Created')}`)}
-      <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="From MM/DD/YYYY" title="From date (MM/DD/YYYY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
-      <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="To MM/DD/YYYY" title="To date (MM/DD/YYYY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
+      <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="From MM/DD/YY" title="From date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
+      <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="To MM/DD/YY" title="To date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
     </th>
     <th style="text-align:left;min-width:170px;max-width:220px;overflow:hidden;vertical-align:top">
       ${thTitle(`<span>Description</span>${clearX('descQuery','Description')}`)}
@@ -978,17 +1018,9 @@ async function deleteSelectedTickets(){
   toast(failed?`Deleted ${ids.length-failed} of ${ids.length} (${failed} failed)`:`Deleted ${ids.length} ticket${ids.length===1?'':'s'}`);
   renderTickets(document.getElementById('view'));
 }
-function parseFilterDate(s){
-  const m=String(s||'').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if(!m)return null;
-  const mo=+m[1],da=+m[2],yr=+m[3];
-  if(mo<1||mo>12||da<1||da>31)return null;
-  const d=new Date(yr,mo-1,da,0,0,0,0);
-  return isNaN(d.getTime())?null:d;
-}
 function filtered(){
-  const cf=parseFilterDate(FILTER.createdFrom);
-  const ct=parseFilterDate(FILTER.createdTo);
+  const cf=parseMDYY(FILTER.createdFrom);
+  const ct=parseMDYY(FILTER.createdTo);
   return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
 }
 function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
@@ -1143,8 +1175,8 @@ function propDetails(p){
     return `<div class="card"><div class="body"><div class="kv">
       <div class="k">Buyer entity (LLC)</div><div><input type="text" value="${esc(p.buyerLLC||p.llc||'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','buyerLLC',this.value)"></div>
       <div class="k">Metro / County</div><div>${dval(p.metro)} / ${dval(p.county)}</div>
-      <div class="k">Purchase date</div><div><input type="text" value="${p.purchaseDate&&p.purchaseDate!=='—'?p.purchaseDate:''}" placeholder="YYYY-MM-DD" style="width:150px;font-size:13px" onchange="updatePropField('${p.id}','purchaseDate',this.value)"></div>
-      <div class="k">Settlement date</div><div><input type="text" value="${p.settlementDate&&p.settlementDate!=='—'?p.settlementDate:''}" placeholder="YYYY-MM-DD" style="width:150px;font-size:13px" onchange="updatePropField('${p.id}','settlementDate',this.value)"></div>
+      <div class="k">Purchase date</div><div><input type="text" value="${p.purchaseDate&&p.purchaseDate!=='—'?mdyy(p.purchaseDate):''}" placeholder="MM/DD/YY" style="width:110px;font-size:13px" onchange="updatePropField('${p.id}','purchaseDate',this.value,'date')"></div>
+      <div class="k">Settlement date</div><div><input type="text" value="${p.settlementDate&&p.settlementDate!=='—'?mdyy(p.settlementDate):''}" placeholder="MM/DD/YY" style="width:110px;font-size:13px" onchange="updatePropField('${p.id}','settlementDate',this.value,'date')"></div>
       <div class="k">Purchase price</div><div><input type="text" inputmode="decimal" value="${p.purchasePrice!=null?p.purchasePrice:''}" placeholder="—" style="width:150px;font-size:13px;text-align:right" onchange="updatePropField('${p.id}','purchasePrice',this.value,'number')"></div>
       <div class="k">Total buyer costs</div><div>${p.totalBuyerCosts!=null?money(p.totalBuyerCosts):'<span class="faint">—</span>'}</div>
       <div class="k">Loan — initial</div><div>${p.loanInitial!=null?money(p.loanInitial):'<span class="faint">—</span>'}</div>
@@ -1265,14 +1297,16 @@ let ASSUMPTIONS_TAB='capitalreserves';
 // the UI rather than silently reconciled.
 const REF_LISTS={
   propStage:{label:'Property Acquisition Stage',scope:'§4.11 Purchase Property Checklist',live:true,note:'Drives the Stage dropdown on the property\'s Acquisition checklist tab (owned properties), and is shown read-through on Purchased Property Description (§4.12) whenever the property isn\'t currently in a disposition process.',values:['Offer Submitted','Offer Accepted','Under Contract','Owned','Transaction Terminated','Licensed']},
-  metro:{label:'Metro',scope:'§4.12 Purchased Property Description',values:['Harrisburg','Pittsburgh','Other']},
+  metro:{label:'Metro',scope:'§4.12 Purchased Property Description + §4.9 Vendor Directory',live:true,note:'Drives the Metro dropdown on the Vendor Directory drill-down (§4.9).',values:['Harrisburg','Pittsburgh','Other']},
   dispositionStage:{label:'Property Disposition Stage',scope:'§4.13 Property Disposition Checklist',live:true,note:'Drives the Stage dropdown on the property\'s Disposition checklist tab, and is shown read-through on Purchased Property Description (§4.12) once a sale is in process, and on Property Disposition Records (§4.14).',values:['Sale Offer Submitted','Sale Offer Accepted','Sale Under Contract','Sold']},
   leaseChecklistStage:{label:'Leased Property Checklist Stage',scope:'§4.15 Leased Property Checklist',live:true,note:'Drives the Stage dropdown on the property\'s Acquisition checklist tab (leased properties), and is shown read-through on Leased Property Records / Rental Property Description (§4.16).',values:['Property Identified','Application in Progress','Lease Review/Negotiation','Leased','Licensed']},
   leaseType:{label:'Lease Type',scope:'§4.16 Leased Property Records',values:['ResHab','Corp']},
   ticketStatus:{label:'Maintenance Ticket Status',scope:'§4.7 Maintenance Items',note:'Live ticket Status today uses "In progress" (lower-case p) rather than "In Progress".',values:['Open','In Progress','Completed','Closed']},
   priority:{label:'Priority',scope:'§4.7 Maintenance Items',note:'Live ticket Priority today uses shorter labels: Low, Urgent, Emergency.',values:['Low-Not Priority','Medium-Urgent','High-Emergency']},
   paymentStatus:{label:'Payment Status',scope:'§4.7 Maintenance Items',note:'Doc lists "blank" as a valid state alongside the two named ones below, meaning no payment status has been recorded yet.',values:['(blank / not set)','Ready for Payment','Paid']},
-  workQuality:{label:'Vendor Work Quality',scope:'§4.9 Vendor Directory',note:'Doc lists this value as "Excel" — transcribed here as "Excellent," matching the parallel condition-rating language elsewhere in the doc. Edit if that\'s not the intent.',values:['Excellent','Fair','Poor']},
+  workQuality:{label:'Vendor Work Quality',scope:'§4.9 Vendor Directory',live:true,note:'Doc lists the top value as "Excel" — transcribed here as "Excellent," matching the parallel condition-rating language elsewhere in the doc. Drives the Work Quality dropdown on the Vendor Directory drill-down.',values:['Excellent','Good','Fair','Poor']},
+  vendorPrimarySecondary:{label:'Vendor Primary/Secondary',scope:'§4.9 Vendor Directory',live:true,note:'Drives the Primary/Secondary dropdown on the Vendor Directory drill-down. Doc also lists "Blank" as a valid state, meaning none selected.',values:['Primary','Secondary','Do Not Use']},
+  vendorW9:{label:'Vendor W-9 on File',scope:'§4.9 Vendor Directory',live:true,note:'Drives the W9 on File dropdown on the Vendor Directory drill-down.',values:['Yes','No']},
   conditionRating:{label:'Component Condition Rating',scope:'§4.8 Capital Reserves',values:['Excellent','Good','Fair','Poor','Failing']}
 };
 // Note: Vendor Service Category is intentionally NOT a separate list here — per Scope v0.8, Vendor Directory's
@@ -1370,10 +1404,10 @@ function referenceListsSection(){
   </div></div>
   <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.9 Service Category/Type picklists used across Maintenance, the "Add ticket" drawer, and bulk ticket uploads.</div>
   <div class="sectitle" style="margin-top:22px">Live property/lease stage lists</div>
-  <div class="muted" style="font-size:12.5px;margin:6px 0 14px;line-height:1.5">These drive real dropdowns on each property's Acquisition/Disposition checklist tab — edits here change what's selectable there immediately.</div>
+  <div class="muted" style="font-size:12.5px;margin:6px 0 14px;line-height:1.5">These drive real dropdowns on each property's Acquisition/Disposition checklist tab and the Vendor Directory drill-down (§4.9) — edits here change what's selectable there immediately.</div>
   ${Object.keys(REF_LISTS).filter(k=>REF_LISTS[k].live).map(refListCard).join('')}
   <div class="sectitle" style="margin-top:22px">Other picklists — Scope v0.7 (not yet wired)</div>
-  <div class="muted" style="font-size:12.5px;margin:6px 0 14px;line-height:1.5">The rest of the dropdown lists called out in the ResHab Property Management Platform Scope v0.7 requirements doc, for fields not yet built in this prototype (Metro, ticket Priority/Status/Payment Status wording, Vendor Work Quality, Component Condition Rating). Values are transcribed straight from the doc so they're ready to wire up when each field gets built — edit freely in the meantime.</div>
+  <div class="muted" style="font-size:12.5px;margin:6px 0 14px;line-height:1.5">The rest of the dropdown lists called out in the ResHab Property Management Platform Scope v0.7 requirements doc, for fields not yet built in this prototype (ticket Priority/Status/Payment Status wording, Component Condition Rating). Values are transcribed straight from the doc so they're ready to wire up when each field gets built — edit freely in the meantime.</div>
   ${Object.keys(REF_LISTS).filter(k=>!REF_LISTS[k].live).map(refListCard).join('')}`;
 }
 function refListCard(key){
@@ -1571,11 +1605,148 @@ function openLease(id){const l=LEASES.find(x=>x.id===id);const p=propById(l.prop
    :`<div class="card"><div class="body">Basic lease record — full executed lease not on file for this property.<div class="kv" style="margin-top:10px"><div class="k">Rent</div><div>${l.rent!=null?money(l.rent)+'/mo':'—'}</div><div class="k">Term</div><div>${l.term||'—'}</div></div></div></div>`);}
 
 /* ===== vendor directory (Scope §4.9) ===== */
-function renderVendors(el){el.innerHTML=`<div class="toolbar"><span class="b">${VENDORS.length} vendors</span></div>
-  <div class="card" style="overflow-x:auto"><table style="min-width:1300px"><thead><tr><th>Vendor</th><th>Category</th><th>Primary/Sec</th><th>Pricing</th><th>Service area</th><th>After-hours</th><th>Contact</th><th>Phone</th><th>Licenses</th><th>Lic. expiry</th><th>Ins. expiry</th><th>W-9</th><th>Quality</th><th class="right">YTD spend</th></tr></thead><tbody>
-  ${VENDORS.map(v=>`<tr><td class="b">${v.name}</td><td class="muted">${v.trade}</td><td>${v.primary||'—'}</td><td class="muted">${v.pricing||'—'}</td><td class="muted">${v.area||'—'}</td><td>${v.afterHours||'—'}</td><td>${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td><td>${v.phone&&v.phone!=='—'?v.phone:'<span class="faint">—</span>'}</td><td class="muted">${v.licenses||'—'}</td><td class="mono">${v.licExp&&v.licExp!=='—'?dstr(v.licExp):'—'}</td><td class="mono">${v.insExp&&v.insExp!=='—'?dstr(v.insExp):'—'}</td><td>${v.w9==='Yes'?'<span class="badge b-resolved">✓ Yes</span>':v.w9==='No'?'<span class="badge b-red">✗ No</span>':'—'}</td><td>${v.quality||'—'}</td><td class="right mono">${money(v.ytd)}</td></tr>`).join('')}
-  </tbody></table></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Fields map to Scope §4.9 Maintenance Vendor Directory · sample data — contact/portal fields not yet on file for most vendors.</div>`;}
+function vendorById(id){return VENDORS.find(v=>v.id===id);}
+let VFILTER={trade:'all',primary:'all',metro:'all',nameQuery:'',contactQuery:'',emailQuery:'',phoneQuery:''};
+// Landing page sort: grouped by Service Category, following the category order set in
+// Assumptions → Reference Lists (not alphabetically) — vendors with no category go last,
+// and vendors within the same category are sorted alphabetically by name.
+function vendorsFiltered(){
+  const catOrder=Object.keys(CAT);
+  const catRank=(v)=>{const i=catOrder.indexOf(v.trade);return i===-1?catOrder.length:i;};
+  return VENDORS.filter(v=>
+    (VFILTER.trade==='all'||v.trade===VFILTER.trade) &&
+    (VFILTER.primary==='all'||(VFILTER.primary==='__blank__'?!v.primary:v.primary===VFILTER.primary)) &&
+    (VFILTER.metro==='all'||(VFILTER.metro==='__blank__'?!v.metro:v.metro===VFILTER.metro)) &&
+    (!VFILTER.nameQuery||(v.name||'').toLowerCase().includes(VFILTER.nameQuery.toLowerCase())) &&
+    (!VFILTER.contactQuery||(v.contact||'').toLowerCase().includes(VFILTER.contactQuery.toLowerCase())) &&
+    (!VFILTER.emailQuery||(v.email||'').toLowerCase().includes(VFILTER.emailQuery.toLowerCase())) &&
+    (!VFILTER.phoneQuery||(v.phone||'').toLowerCase().includes(VFILTER.phoneQuery.toLowerCase()))
+  ).sort((a,b)=>{const r=catRank(a)-catRank(b);return r!==0?r:a.name.localeCompare(b.name);});
+}
+function vrow(v){return `<tr class="clickable" onclick="openVendor('${v.id}')">
+    <td class="b">${v.name}</td>
+    <td class="muted">${v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>'}</td>
+    <td>${v.primary||'<span class="faint">—</span>'}</td>
+    <td>${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td>
+    <td class="muted">${v.email&&v.email!=='—'?v.email:'<span class="faint">—</span>'}</td>
+    <td class="muted">${v.phone&&v.phone!=='—'?v.phone:'<span class="faint">—</span>'}</td>
+    <td class="muted">${v.metro||'<span class="faint">—</span>'}</td>
+  </tr>`;}
+function drawVendors(){
+  const rows=vendorsFiltered();
+  const tb=document.getElementById('vtbody');
+  if(tb)tb.innerHTML=rows.length?rows.map(vrow).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:26px">No vendors match these filters.</td></tr>';
+}
+function setVF(k,v){VFILTER[k]=v;if(VIEW==='vendors')renderVendors(document.getElementById('view'));}
+function setVFLive(k,v){VFILTER[k]=v;drawVendors();}
+function clearVFilter(key){
+  if(['nameQuery','contactQuery','emailQuery','phoneQuery'].includes(key))VFILTER[key]='';
+  else VFILTER[key]='all';
+  toast('Filter cleared');
+  if(VIEW==='vendors')renderVendors(document.getElementById('view'));
+}
+function clearAllVFilters(){
+  VFILTER={trade:'all',primary:'all',metro:'all',nameQuery:'',contactQuery:'',emailQuery:'',phoneQuery:''};
+  toast('All filters cleared');
+  if(VIEW==='vendors')renderVendors(document.getElementById('view'));
+}
+function renderVendors(el){
+  const tradeOpts=Object.keys(CAT).filter(c=>VENDORS.some(v=>v.trade===c));
+  const primaryOpts=REF_LISTS.vendorPrimarySecondary.values.slice();
+  const metroOpts=REF_LISTS.metro.values.slice();
+  const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
+  const clearX=(key,label)=>`<a onclick="event.stopPropagation();clearVFilter('${key}')" title="Clear ${label} filter" style="font-size:13px;color:var(--faint);cursor:pointer;flex-shrink:0;text-transform:none;letter-spacing:0;font-weight:700;padding:4px 6px;margin:-4px -6px;display:inline-block;line-height:1">✕</a>`;
+  const thTitle=(inner)=>`<div style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px;white-space:normal;text-align:left;min-height:28px">${inner}</div>`;
+  const thSel=(key,label,opts)=>`<th style="text-align:left;min-width:130px;vertical-align:top">
+    ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
+    <select onchange="setVF('${key}',this.value)" style="${fSel};width:100%" title="Filter by ${label}"><option value="all"${VFILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${VFILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>
+  </th>`;
+  const thText=(key,label)=>`<th style="text-align:left;min-width:140px;vertical-align:top">
+    ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
+    <input type="text" value="${esc(VFILTER[key])}" oninput="setVFLive('${key}',this.value)" placeholder="Search..." title="Filter by ${label}" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
+  </th>`;
+  const activeFilterCount=['trade','primary','metro'].filter(k=>VFILTER[k]!=='all').length
+    + ['nameQuery','contactQuery','emailQuery','phoneQuery'].filter(k=>VFILTER[k]).length;
+  el.innerHTML=`<div class="toolbar"><button class="btn sm" onclick="openAddVendor()">+ Add vendor</button>
+    <button class="btn sec sm" onclick="openBulkVendorGrid()">📋 Bulk add vendors</button>
+    <button class="btn sec sm" onclick="document.getElementById('bulkVendorFile').click()">⬆ Upload spreadsheet</button>
+    <input type="file" id="bulkVendorFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkVendorUploadFile(this)">
+    <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
+      <button class="btn sec sm" onclick="clearAllVFilters()">Clear all filters</button>
+    </span></div>
+  <div class="toolbar"><span class="b">${vendorsFiltered().length} of ${VENDORS.length} vendors</span></div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr>
+    ${thText('nameQuery','Vendor')}
+    ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})))}
+    ${thSel('primary','Primary/Secondary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))])}
+    ${thText('contactQuery','Contact Name')}
+    ${thText('emailQuery','Email')}
+    ${thText('phoneQuery','Phone Number')}
+    ${thSel('metro','Metro',[{v:'__blank__',l:'— none —'},...metroOpts.map(m=>({v:m,l:m}))])}
+  </tr></thead><tbody id="vtbody"></tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Fields map to Scope §4.9 Maintenance Vendor Directory · click a vendor for full details.</div>`;
+  drawVendors();
+}
+function vendorCatSelect(v){const opts=Object.keys(CAT);if(v.trade&&!opts.includes(v.trade))opts.push(v.trade);
+  return `<select onchange="updateVendorField('${v.id}','trade',this.value)" style="font-size:13px"><option value=""${!v.trade?' selected':''}>—</option>${opts.map(c=>`<option value="${esc(c)}"${v.trade===c?' selected':''}>${CAT[c]||''} ${esc(c)}</option>`).join('')}</select>`;}
+function vendorTypeSelect(v){const opts=SVC_TYPES.slice();if(v.svctype&&!opts.includes(v.svctype))opts.push(v.svctype);
+  return `<select onchange="updateVendorField('${v.id}','svctype',this.value)" style="font-size:13px"><option value=""${!v.svctype?' selected':''}>—</option>${opts.map(s=>`<option value="${esc(s)}"${v.svctype===s?' selected':''}>${esc(s)}</option>`).join('')}</select>`;}
+function vendorListSelect(v,field,listKey){const opts=REF_LISTS[listKey].values.slice();const cur=v[field];if(cur&&!opts.includes(cur))opts.push(cur);
+  return `<select onchange="updateVendorField('${v.id}','${field}',this.value)" style="font-size:13px"><option value=""${!cur?' selected':''}>—</option>${opts.map(o=>`<option value="${esc(o)}"${cur===o?' selected':''}>${esc(o)}</option>`).join('')}</select>`;}
+function vendorTxt(v,field,ph,w,kind){const val=v[field];
+  const shown=kind==='date'?((val&&val!=='—')?mdyy(val):''):((val==null||val==='—')?'':String(val));
+  return `<input type="text" ${kind==='number'?'inputmode="decimal"':''} value="${esc(shown)}" placeholder="${ph||'—'}" style="width:${w||190}px;font-size:13px${kind==='number'?';text-align:right':''}" onchange="updateVendorField('${v.id}','${field}',this.value${kind?`,'${kind}'`:''})">`;}
+function openVendor(id){const v=vendorById(id);if(!v)return;
+  const visTag=(label)=>`<span class="faint" style="font-size:10.5px;font-weight:400;margin-left:6px">${label==='private'?'🔒 Private — only you':'👥 Visible to other users'}</span>`;
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${v.trade?(CAT[v.trade]||'')+' '+v.trade:'Vendor'} · ${v.metro||'—'}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${v.name}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill">${v.primary||'—'}</span></div></div>`,
+   `<div class="card"><div class="body"><div class="kv">
+      <div class="k">Vendor</div><div>${vendorTxt(v,'name','Vendor name',230)}</div>
+      <div class="k">Metro</div><div>${vendorListSelect(v,'metro','metro')}</div>
+      <div class="k">Service Category (Default)</div><div>${ROLE==='admin'?vendorCatSelect(v):((v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>')+' <span class="faint" style="font-size:10.5px">(Senior Admin only)</span>')}</div>
+      <div class="k">Service Type (Default)</div><div>${ROLE==='admin'?vendorTypeSelect(v):((v.svctype?esc(v.svctype):'<span class="faint">—</span>')+' <span class="faint" style="font-size:10.5px">(Senior Admin only)</span>')}</div>
+      <div class="k">Primary/Secondary</div><div>${vendorListSelect(v,'primary','vendorPrimarySecondary')}</div>
+      <div class="k">Pricing</div><div>${vendorTxt(v,'pricing','—',210)}</div>
+      <div class="k">After-Hours Service</div><div>${vendorTxt(v,'afterHours','—',150)}</div>
+      <div class="k">Contact Name</div><div>${vendorTxt(v,'contact','—',210)}</div>
+      <div class="k">Phone</div><div>${vendorTxt(v,'phone','—',170)}</div>
+      <div class="k">Email</div><div>${vendorTxt(v,'email','—',230)}</div>
+      <div class="k">Portal/Website</div><div>${vendorTxt(v,'portal','—',230)}</div>
+      <div class="k">Login Info</div><div>${vendorTxt(v,'login','—',190)}</div>
+      <div class="k">Insurance Expiry</div><div>${vendorTxt(v,'insExp','MM/DD/YY',110,'date')}</div>
+      <div class="k">Licenses</div><div>${vendorTxt(v,'licenses','—',190)}</div>
+      <div class="k">License Expiry</div><div>${vendorTxt(v,'licExp','MM/DD/YY',110,'date')}</div>
+      <div class="k">W9 on File</div><div>${vendorListSelect(v,'w9','vendorW9')}</div>
+      <div class="k">Specific Properties</div><div>${vendorTxt(v,'properties','e.g. Fox-1, Highlands, or All',260)}</div>
+      <div class="k">Referred by</div><div>${vendorTxt(v,'referredBy','—',190)}</div>
+      <div class="k">Work Quality</div><div>${vendorListSelect(v,'quality','workQuality')}</div>
+      <div class="k">Unique ID</div><div class="mono faint" style="font-size:12px">${v.id}</div>
+      <div class="k">YTD Spend</div><div>${vendorTxt(v,'ytd','0',130,'number')}</div>
+      <div class="k">Comments${visTag()}</div><div><textarea style="width:100%;min-height:50px" placeholder="add / update comments…" onchange="updateVendorField('${v.id}','comments',this.value)">${esc(v.comments)}</textarea></div>
+      <div class="k">User Notes${visTag('private')}</div><div><textarea style="width:100%;min-height:50px" placeholder="add / update notes…" onchange="updateVendorField('${v.id}','userNotes',this.value)">${esc(v.userNotes)}</textarea></div>
+    </div></div></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Fields map to Scope §4.9 Maintenance Vendor Directory · all fields optional (blanks allowed); dropdown values can be overridden from Assumptions → Reference Lists.</div>
+    ${ROLE==='admin'?`<div style="margin-top:14px"><button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteVendor('${v.id}')">🗑️ Delete vendor</button></div>`:''}`);
+}
+function refreshVendorUI(id){if(VIEW==='vendors')renderVendors(document.getElementById('view'));if(document.querySelector('.drawer'))openVendor(id);}
+function updateVendorField(id,field,value,kind){
+  const v=vendorById(id);if(!v)return;
+  if((field==='trade'||field==='svctype')&&ROLE!=='admin'){toast('Only Senior Admin can change Service Category/Type');refreshVendorUI(id);return;}
+  const prev=v[field];
+  if(kind==='number'){const t=value.trim();v[field]=t===''?null:(isNaN(Number(t))?v[field]:Number(t));}
+  else if(kind==='date'){
+    const t=value.trim();
+    if(t===''){v[field]=null;}
+    else{const d=parseMDYY(t);if(!d){toast('Enter a date as MM/DD/YY');return;}v[field]=toISODate(d);}
+  }
+  else{v[field]=value.trim()===''?null:value;}
+  if(v._backend==='supabase'){
+    const col=VENDOR_FIELD_TO_COLUMN[field];
+    if(col){dbUpdateVendor(v.id,{[col]:v[field]}).then(ok=>{if(!ok){v[field]=prev;refreshVendorUI(id);}});}
+  } else saveState();
+  toast('Updated — override saved');
+  refreshVendorUI(id);
+}
 
 /* ===== compliance & inspections — portfolio level (Scope §4.2) ===== */
 function renderCompliance(el){
@@ -1690,7 +1861,7 @@ function openAddTicket(){
   const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
   const svcOpts=Object.keys(CAT);
   const svcTypeOpts=SVC_TYPES.slice(); // was a stale hardcoded duplicate of SVC_TYPES; now stays in sync with Reference Lists edits
-  const todayStr=new Date().toISOString().slice(0,10);
+  const todayStr=mdyy(new Date());
   drawer(
     `<div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:19px;font-weight:800">New ticket</div></div>`,
     `${SUPA_CONFIGURED&&!plist.length?'<div class="muted" style="margin-bottom:10px">No properties set up yet — add one in Supabase (Table Editor → properties) first.</div>':''}
@@ -1709,7 +1880,7 @@ function openAddTicket(){
       </select>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Created</label>
-      <input type="date" id="nt_created" value="${todayStr}" style="width:100%">
+      <input type="text" id="nt_created" value="${todayStr}" placeholder="MM/DD/YY" style="width:100%">
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Description</label>
       <textarea id="nt_desc" style="width:100%;min-height:70px" placeholder="What's the issue?"></textarea>
@@ -1784,8 +1955,8 @@ async function submitNewTicket(){
   if(!desc){errEl.textContent='Add a short description.';return;}
   let cost=null;
   if(costRaw!==''){const n=Number(costRaw);if(isNaN(n)){errEl.textContent='Cost must be a number.';return;}cost=n;}
-  let created=createdRaw?new Date(createdRaw+'T00:00:00'):new Date();
-  if(isNaN(created))created=new Date();
+  let created=createdRaw?parseMDYY(createdRaw):null;
+  if(!created)created=new Date();
   const p=propById(propId);
   const title=desc.slice(0,60);
 
@@ -1953,6 +2124,251 @@ async function processBulkTicketRows(rows){
   if(skipped.length)alert('Skipped rows:\n\n'+skipped.join('\n'));
 }
 
+/* ===== vendor directory: add / bulk add (Scope §4.9) ===== */
+function openAddVendor(){
+  const metroOpts=REF_LISTS.metro.values;
+  const primaryOpts=REF_LISTS.vendorPrimarySecondary.values;
+  const qualityOpts=REF_LISTS.workQuality.values;
+  const catFields=ROLE==='admin'?`<div class="field" style="margin-top:10px"><label class="f">Service Category (Default)</label>
+      <select id="nv_trade" style="width:100%"><option value="">— optional —</option>${Object.keys(CAT).map(c=>`<option value="${esc(c)}">${CAT[c]||''} ${esc(c)}</option>`).join('')}</select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Service Type (Default)</label>
+      <select id="nv_svctype" style="width:100%"><option value="">— optional —</option>${SVC_TYPES.map(s=>`<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select>
+    </div>`:`<div class="muted" style="font-size:12px;margin-top:10px">Service Category/Type can only be set by Senior Admin — edit later from the vendor record.</div>`;
+  drawer(
+    `<div style="flex:1"><div class="faint" style="font-size:12px">Vendor Directory</div><div style="font-size:19px;font-weight:800">New vendor</div></div>`,
+    `<div class="field"><label class="f">Vendor name</label><input type="text" id="nv_name" style="width:100%" placeholder="Required"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Metro</label>
+      <select id="nv_metro" style="width:100%"><option value="">— optional —</option>${metroOpts.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select>
+    </div>
+    ${catFields}
+    <div class="field" style="margin-top:10px"><label class="f">Primary/Secondary</label>
+      <select id="nv_primary" style="width:100%"><option value="">— optional —</option>${primaryOpts.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('')}</select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Pricing</label><input type="text" id="nv_pricing" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">After-Hours Service</label><input type="text" id="nv_afterhours" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Contact Name</label><input type="text" id="nv_contact" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Phone</label><input type="text" id="nv_phone" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Email</label><input type="text" id="nv_email" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Portal/Website</label><input type="text" id="nv_portal" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Login Info</label><input type="text" id="nv_login" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Insurance Expiry</label><input type="text" id="nv_insexp" style="width:100%" placeholder="MM/DD/YY"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Licenses</label><input type="text" id="nv_licenses" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">License Expiry</label><input type="text" id="nv_licexp" style="width:100%" placeholder="MM/DD/YY"></div>
+    <div class="field" style="margin-top:10px"><label class="f">W9 on File</label>
+      <select id="nv_w9" style="width:100%"><option value="">— optional —</option><option value="Yes">Yes</option><option value="No">No</option></select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Referred by</label><input type="text" id="nv_referredby" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Work Quality</label>
+      <select id="nv_quality" style="width:100%"><option value="">— optional —</option>${qualityOpts.map(q=>`<option value="${esc(q)}">${esc(q)}</option>`).join('')}</select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">YTD Spend ($)</label><input type="text" id="nv_ytd" inputmode="decimal" placeholder="optional" style="width:100%"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></label><textarea id="nv_comments" style="width:100%;min-height:50px" placeholder="optional"></textarea></div>
+    <div class="field" style="margin-top:10px"><label class="f">Specific Properties</label><input type="text" id="nv_properties" style="width:100%" placeholder="e.g. Fox-1, Highlands, or All"></div>
+    <div class="field" style="margin-top:10px"><label class="f">User Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></label><textarea id="nv_usernotes" style="width:100%;min-height:50px" placeholder="optional"></textarea></div>
+    <div id="nv_error" style="color:var(--red,#c0392b);font-size:12.5px;margin-top:10px;min-height:16px"></div>
+    <button class="btn" style="width:100%;margin-top:14px" onclick="submitNewVendor()">Create vendor</button>`
+  );
+}
+async function submitNewVendor(){
+  const g=id=>{const e=document.getElementById(id);return e?e.value:'';};
+  const name=g('nv_name').trim();
+  const errEl=document.getElementById('nv_error');if(errEl)errEl.textContent='';
+  if(!name){if(errEl)errEl.textContent='Enter a vendor name.';return;}
+  const trade=(ROLE==='admin'?g('nv_trade'):'')||null;
+  const svctype=(ROLE==='admin'?g('nv_svctype'):'')||null;
+  const metro=g('nv_metro')||null;
+  const primary=g('nv_primary')||null;
+  const pricing=g('nv_pricing').trim()||null;
+  const afterHours=g('nv_afterhours').trim()||null;
+  const contact=g('nv_contact').trim()||null;
+  const phone=g('nv_phone').trim()||null;
+  const email=g('nv_email').trim()||null;
+  const portal=g('nv_portal').trim()||null;
+  const login=g('nv_login').trim()||null;
+  const insExpRaw=g('nv_insexp').trim();
+  const insExpDate=insExpRaw?parseMDYY(insExpRaw):null;
+  if(insExpRaw&&!insExpDate){if(errEl)errEl.textContent='Insurance Expiry must be MM/DD/YY.';return;}
+  const licExpRaw=g('nv_licexp').trim();
+  const licExpDate=licExpRaw?parseMDYY(licExpRaw):null;
+  if(licExpRaw&&!licExpDate){if(errEl)errEl.textContent='License Expiry must be MM/DD/YY.';return;}
+  const licenses=g('nv_licenses').trim()||null;
+  const w9=g('nv_w9')||null;
+  const referredBy=g('nv_referredby').trim()||null;
+  const quality=g('nv_quality')||null;
+  const ytdRaw=g('nv_ytd').trim();
+  const ytd=ytdRaw?(isNaN(Number(ytdRaw))?0:Number(ytdRaw)):0;
+  const comments=g('nv_comments').trim()||null;
+  const userNotes=g('nv_usernotes').trim()||null;
+  const properties=g('nv_properties').trim()||null;
+
+  if(SUPA_CONFIGURED){
+    const payload={name,trade,service_type:svctype,metro,primary_secondary:primary,pricing,after_hours:afterHours,
+      contact,phone,email,portal,login,licenses,lic_exp:licExpDate?toISODate(licExpDate):null,
+      ins_exp:insExpDate?toISODate(insExpDate):null,w9,referred_by:referredBy,quality,ytd,comments,user_notes:userNotes,properties};
+    const {data,error}=await sb.from('vendors').insert(payload).select().single();
+    if(error){if(errEl)errEl.textContent='Could not create vendor: '+error.message;return;}
+    VENDORS.push(rowToVendor(data));
+    closeDrawer();
+    toast('Vendor created: '+name);
+    if(VIEW==='vendors')renderVendors(document.getElementById('view'));
+    return;
+  }
+  const v={id:'v'+Date.now(),name,trade,svctype,metro,primary,pricing,area:null,afterHours,contact,phone,email,portal,login,
+    licenses,licExp:licExpDate?toISODate(licExpDate):null,insExp:insExpDate?toISODate(insExpDate):null,w9,referredBy,quality,
+    ytd,comments,userNotes,properties};
+  VENDORS.push(v);saveState();
+  closeDrawer();
+  toast('Vendor created: '+name);
+  if(VIEW==='vendors')renderVendors(document.getElementById('view'));
+}
+
+/* ===== bulk vendor entry: in-app paste grid + spreadsheet upload ===== */
+const BULK_VENDOR_HEADERS=['Vendor','Metro','Service Category','Service Type','Primary/Secondary','Pricing','After-Hours Service','Contact Name','Phone','Email','Portal/Website','Login Info','Insurance Expiry','Licenses','License Expiry','W9 on File','Referred By','Work Quality','YTD Spend','Specific Properties','Comments','User Notes'];
+let BULK_VENDOR_GRID=[];
+function openBulkVendorGrid(){
+  BULK_VENDOR_GRID=Array.from({length:20},()=>BULK_VENDOR_HEADERS.map(()=>''));
+  document.getElementById('drawerRoot').innerHTML=bulkVendorGridMarkup();
+}
+function bulkVendorGridMarkup(){
+  return `<div class="scrim" style="justify-content:center;align-items:center" onclick="if(event.target===this)closeDrawer()">
+    <div style="background:var(--bg);width:96vw;max-width:1500px;height:92vh;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+      <div style="padding:16px 20px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px">
+        <div style="flex:1"><div class="faint" style="font-size:12px">Vendor Directory</div><div style="font-size:19px;font-weight:800">Bulk add vendors</div>
+        <div class="muted" style="font-size:12.5px;margin-top:4px">Type directly into cells, or copy a range from Excel or Google Sheets and paste anywhere in the grid — it fills starting from the cell you paste into. Dates as MM/DD/YY.${ROLE!=='admin'?' Service Category/Type are Senior Admin only and will be ignored if filled in.':''}</div></div>
+        <button class="x" onclick="closeDrawer()">✕</button>
+      </div>
+      <div style="flex:1;overflow:auto;padding:14px 20px" id="bulkVendorGridWrap">${bulkVendorGridTable()}</div>
+      <div style="padding:12px 20px;border-top:1px solid var(--line);background:var(--panel);display:flex;gap:10px;align-items:center">
+        <button class="btn sec sm" onclick="addBulkVendorGridRows(10)">+ Add 10 rows</button>
+        <span id="bulkVendorGridMsg" class="muted" style="font-size:12.5px"></span>
+        <button class="btn" style="margin-left:auto" onclick="importBulkVendorGrid()">Import all</button>
+      </div>
+    </div>
+  </div>`;
+}
+function bulkVendorGridTable(){
+  return `<table style="border-collapse:collapse;min-width:1550px">
+    <thead><tr>${BULK_VENDOR_HEADERS.map(h=>`<th style="position:sticky;top:0;background:var(--panel2);border:1px solid var(--line);padding:6px 8px;font-size:11.5px;text-align:left;white-space:nowrap;z-index:1">${h}</th>`).join('')}</tr></thead>
+    <tbody>${BULK_VENDOR_GRID.map((row,r)=>`<tr>${row.map((val,c)=>`<td style="border:1px solid var(--line);padding:0"><input value="${esc(val)}" oninput="setBulkVendorCell(${r},${c},this.value)" onpaste="bulkVendorGridPaste(event,${r},${c})" style="width:130px;border:0;padding:6px 8px;font-size:12.5px;background:transparent"></td>`).join('')}</tr>`).join('')}</tbody>
+  </table>`;
+}
+function setBulkVendorCell(r,c,val){if(BULK_VENDOR_GRID[r])BULK_VENDOR_GRID[r][c]=val;}
+function bulkVendorGridPaste(event,r,c){
+  const text=(event.clipboardData||window.clipboardData).getData('text');
+  if(!text||(!text.includes('\t')&&!text.includes('\n')))return;
+  event.preventDefault();
+  const lines=text.replace(/\r/g,'').split('\n').filter((l,i,arr)=>!(i===arr.length-1&&l===''));
+  lines.forEach((line,ri)=>{
+    while(!BULK_VENDOR_GRID[r+ri])BULK_VENDOR_GRID.push(BULK_VENDOR_HEADERS.map(()=>''));
+    const cells=line.split('\t');
+    cells.forEach((cell,ci)=>{
+      const col=c+ci;
+      if(col<BULK_VENDOR_HEADERS.length)BULK_VENDOR_GRID[r+ri][col]=cell.trim();
+    });
+  });
+  document.getElementById('bulkVendorGridWrap').innerHTML=bulkVendorGridTable();
+}
+function addBulkVendorGridRows(n){
+  for(let i=0;i<n;i++)BULK_VENDOR_GRID.push(BULK_VENDOR_HEADERS.map(()=>''));
+  document.getElementById('bulkVendorGridWrap').innerHTML=bulkVendorGridTable();
+}
+function importBulkVendorGrid(){
+  const rows=BULK_VENDOR_GRID.map(row=>{
+    const obj={};
+    BULK_VENDOR_HEADERS.forEach((h,i)=>{obj[h]=row[i];});
+    return obj;
+  }).filter(obj=>Object.values(obj).some(v=>String(v||'').trim()!==''));
+  if(!rows.length){const m=document.getElementById('bulkVendorGridMsg');if(m)m.textContent='Nothing to import yet — fill in at least one row.';return;}
+  closeDrawer();
+  processBulkVendorRows(rows);
+}
+const VENDOR_UPLOAD_FIELD_MAP={vendor:'name',vendorname:'name',name:'name',metro:'metro',servicecategory:'trade',category:'trade',
+  servicetype:'svctype',type:'svctype',primarysecondary:'primary',primary:'primary',pricing:'pricing',
+  afterhoursservice:'afterHours',afterhours:'afterHours',contactname:'contact',contact:'contact',phone:'phone',phonenumber:'phone',
+  email:'email',portalwebsite:'portal',portal:'portal',website:'portal',logininfo:'login',login:'login',
+  insuranceexpiry:'insExp',insexp:'insExp',licenses:'licenses',licenseexpiry:'licExp',licexp:'licExp',
+  w9onfile:'w9',w9:'w9',referredby:'referredBy',workquality:'quality',quality:'quality',
+  ytdspend:'ytd',ytd:'ytd',specificproperties:'properties',properties:'properties',comments:'comments',usernotes:'userNotes',notes:'userNotes'};
+function handleBulkVendorUploadFile(input){
+  const file=input.files&&input.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+      processBulkVendorRows(rows);
+    }catch(err){
+      toast('Could not read that file: '+err.message);
+    }finally{
+      input.value='';
+    }
+  };
+  reader.onerror=function(){toast('Could not read that file.');input.value='';};
+  reader.readAsArrayBuffer(file);
+}
+function bulkParseDate(v){
+  if(v==null||v==='')return null;
+  if(v instanceof Date)return isNaN(v.getTime())?null:toISODate(v);
+  const s=String(v).trim();
+  const mdyy=parseMDYY(s);if(mdyy)return toISODate(mdyy);
+  const d=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T00:00:00'):new Date(s);
+  return isNaN(d.getTime())?null:toISODate(d);
+}
+async function processBulkVendorRows(rows){
+  if(!rows||!rows.length){toast('That file has no rows to import.');return;}
+  const W9_OPTS=['Yes','No'];
+  const parsed=[],skipped=[];
+  rows.forEach((row,i)=>{
+    const f={};
+    Object.keys(row).forEach(k=>{const mapped=VENDOR_UPLOAD_FIELD_MAP[normHeaderKey(k)];if(mapped&&!(mapped in f))f[mapped]=row[k];});
+    const rowNum=i+2;
+    const name=String(f.name||'').trim();
+    if(!name){skipped.push('Row '+rowNum+': missing Vendor name');return;}
+    let w9=String(f.w9||'').trim();
+    w9=W9_OPTS.find(o=>o.toLowerCase()===w9.toLowerCase())||null;
+    let ytd=0;
+    if(f.ytd!=null&&String(f.ytd).trim()!==''){const n=Number(String(f.ytd).replace(/[^0-9.\-]/g,''));if(!isNaN(n))ytd=n;}
+    const trade=(ROLE==='admin')?(String(f.trade||'').trim()||null):null;
+    const svctype=(ROLE==='admin')?(String(f.svctype||'').trim()||null):null;
+    parsed.push({name,metro:String(f.metro||'').trim()||null,trade,svctype,primary:String(f.primary||'').trim()||null,
+      pricing:String(f.pricing||'').trim()||null,afterHours:String(f.afterHours||'').trim()||null,
+      contact:String(f.contact||'').trim()||null,phone:String(f.phone||'').trim()||null,email:String(f.email||'').trim()||null,
+      portal:String(f.portal||'').trim()||null,login:String(f.login||'').trim()||null,
+      insExp:bulkParseDate(f.insExp),licenses:String(f.licenses||'').trim()||null,licExp:bulkParseDate(f.licExp),
+      w9,referredBy:String(f.referredBy||'').trim()||null,quality:String(f.quality||'').trim()||null,ytd,
+      comments:String(f.comments||'').trim()||null,userNotes:String(f.userNotes||'').trim()||null,properties:String(f.properties||'').trim()||null});
+  });
+  if(!parsed.length){alert('No rows could be imported.'+(skipped.length?'\n\n'+skipped.join('\n'):''));return;}
+  let created=0;
+  if(SUPA_CONFIGURED){
+    const payloads=parsed.map(r=>({name:r.name,metro:r.metro,trade:r.trade,service_type:r.svctype,primary_secondary:r.primary,
+      pricing:r.pricing,after_hours:r.afterHours,contact:r.contact,phone:r.phone,email:r.email,portal:r.portal,login:r.login,
+      ins_exp:r.insExp,licenses:r.licenses,lic_exp:r.licExp,w9:r.w9,referred_by:r.referredBy,quality:r.quality,ytd:r.ytd,
+      comments:r.comments,user_notes:r.userNotes,properties:r.properties}));
+    const {data,error}=await sb.from('vendors').insert(payloads).select();
+    if(error){toast('Bulk import failed: '+error.message);return;}
+    data.forEach(row=>{VENDORS.push(rowToVendor(row));created++;});
+  }else{
+    parsed.forEach(r=>{
+      VENDORS.push({id:'v'+Date.now()+Math.random().toString(36).slice(2,6),name:r.name,trade:r.trade,svctype:r.svctype,
+        ytd:r.ytd,primary:r.primary,pricing:r.pricing,area:null,metro:r.metro,afterHours:r.afterHours,contact:r.contact,
+        phone:r.phone,email:r.email,portal:r.portal,login:r.login,licenses:r.licenses,licExp:r.licExp,insExp:r.insExp,
+        w9:r.w9,referredBy:r.referredBy,quality:r.quality,comments:r.comments,userNotes:r.userNotes,properties:r.properties});
+      created++;
+    });
+    saveState();
+  }
+  if(VIEW==='vendors')renderVendors(document.getElementById('view'));
+  let msg=created+' vendor'+(created===1?'':'s')+' imported.';
+  if(skipped.length)msg+=' '+skipped.length+' row'+(skipped.length===1?'':'s')+' skipped.';
+  toast(msg);
+  if(skipped.length)alert('Skipped rows:\n\n'+skipped.join('\n'));
+}
+
 /* ===== mobile ===== */
 let MB={tab:'home',step:0,draft:{}};
 function renderMobile(){const app=document.getElementById('mobileApp');let body='';if(MB.tab==='home')body=mHome();else if(MB.tab==='report')body=mReport();else if(MB.tab==='reports')body=mReports();
@@ -2038,7 +2454,7 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
   // 2026-07: Service Category/Type were curated down to a single clean canonical list per Scope v0.8
   // (see CAT/SVC_TYPES above) — strip the specific old near-duplicates a browser might still have saved
   // from before that cleanup, so they don't get re-merged back in below.
-  const DEPRECATED_CAT=['Handyman','Electrical','Outdoor lawn/snow','Appliance','Structural','Safety','Outdoor Roof/Gutter','Other/Miscel','Outdoor Lawn/Snow'];
+  const DEPRECATED_CAT=['Handyman','Electrical','Outdoor lawn/snow','Structural','Safety','Outdoor Roof/Gutter','Other/Miscel','Outdoor Lawn/Snow','Appliances','Furniture/Cabinets'];
   const DEPRECATED_SVC_TYPES=['Routine/Prevent.'];
   // Order-preserving merges: Reference Lists items can now be reordered (see move* functions), so a saved
   // snapshot's key/array order must win for anything already in it — only append hardcoded defaults the
