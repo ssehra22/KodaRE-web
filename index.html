@@ -430,6 +430,42 @@ async function loadRealLicensingChecklists(){
   if(error){toast('Could not load licensing checklists: '+error.message);return;}
   (data||[]).forEach(row=>{const p=PROPS.find(x=>x.id===row.property_id);if(p){p.licensingChk=row.items||{};p._licensingRowId=row.id;}});
 }
+async function dbUpsertReferenceList(key,data){
+  const {error}=await sb.from('reference_lists').upsert({key,data},{onConflict:'key'});
+  if(error){toast('Save failed: '+error.message);return false;}
+  return true;
+}
+// Loads Service Category, Service Type, and every REF_LISTS picklist from the shared
+// reference_lists table, order-preserving merged on top of the hardcoded defaults — same
+// convention as loadState()'s local-storage merge: a saved list's order/contents win for
+// anything already in it, and only brand-new hardcoded defaults not yet saved get appended.
+async function loadRealReferenceLists(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('reference_lists').select('*');
+  if(error){toast('Could not load reference lists: '+error.message);return;}
+  const rows=data||[];
+  const catRow=rows.find(r=>r.key==='CAT');
+  if(catRow&&catRow.data&&typeof catRow.data==='object'&&!Array.isArray(catRow.data)){
+    const merged={};Object.keys(catRow.data).forEach(k=>{merged[k]=catRow.data[k];});
+    Object.keys(CAT).forEach(k=>{if(!(k in merged))merged[k]=CAT[k];});
+    Object.keys(CAT).forEach(k=>delete CAT[k]);
+    Object.keys(merged).forEach(k=>{CAT[k]=merged[k];});
+  }
+  const svcRow=rows.find(r=>r.key==='SVC_TYPES');
+  if(svcRow&&Array.isArray(svcRow.data)){
+    const merged=svcRow.data.slice();
+    SVC_TYPES.forEach(v=>{if(!merged.includes(v))merged.push(v);});
+    SVC_TYPES.length=0;merged.forEach(v=>SVC_TYPES.push(v));
+  }
+  Object.keys(REF_LISTS).forEach(key=>{
+    const row=rows.find(r=>r.key===key);
+    if(row&&Array.isArray(row.data)){
+      const merged=row.data.slice();
+      REF_LISTS[key].values.forEach(v=>{if(!merged.includes(v))merged.push(v);});
+      REF_LISTS[key].values=merged;
+    }
+  });
+}
 async function authSignIn(){
   const email=document.getElementById('authEmail').value.trim();
   const password=document.getElementById('authPassword').value;
@@ -443,7 +479,7 @@ async function authSignOut(){if(sb){await sb.auth.signOut();}location.reload();}
 async function enterLiveApp(){
   document.getElementById('authGate').classList.add('hidden');
   const foot=document.getElementById('footStatus');
-  if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases, Compliance, Acquisition, Disposition & Licensing Checklists are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
+  if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases, Compliance, Acquisition, Disposition, Licensing Checklists & Reference Lists are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
   await loadRealProperties();
   await loadRealTickets();
   await loadRealVendors();
@@ -452,6 +488,7 @@ async function enterLiveApp(){
   await loadRealPurchaseChecklists();
   await loadRealDispositionChecklists();
   await loadRealLicensingChecklists();
+  await loadRealReferenceLists();
   computeHealth();
   buildNav();
   navigate(VIEW);
@@ -1382,7 +1419,7 @@ function referenceListsSection(){
   const typeRows=SVC_TYPES.map((n,i)=>{const used=TICKETS.filter(t=>t.svctype===n).length;const esc=n.replace(/'/g,"\\'");
     const mv=`<button class="btn sec sm" ${i===0?'disabled style="opacity:.35;cursor:not-allowed"':''} onclick="moveSvcTypeEntry('${esc}',-1)" title="Move up">↑</button><button class="btn sec sm" ${i===SVC_TYPES.length-1?'disabled style="opacity:.35;cursor:not-allowed"':''} onclick="moveSvcTypeEntry('${esc}',1)" title="Move down">↓</button>`;
     return `<tr><td style="white-space:nowrap">${mv}</td><td class="b">${n}</td><td class="muted">${used?used+' ticket'+(used===1?'':'s'):'—'}</td><td>${used?'<span class="muted" style="font-size:12px">In use</span>':`<button class="btn sec sm" onclick="removeSvcTypeEntry('${esc}')">Remove</button>`}</td></tr>`;}).join('');
-  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">Per Scope v0.8, Service Category and Service Type are each a single canonical list shared by Maintenance tickets (§4.7) and Vendor Directory's "(Default)" fields (§4.9) — one edit here updates the picklist everywhere it's used. They're reference values, not numbers driving a calculation, so there's nothing to compute here — just the list of valid options. Renaming an existing value isn't supported since tickets already reference it by name; retire the old value once it's unused and add the new one instead. Saved locally in this browser for now.</div>
+  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">Per Scope v0.8, Service Category and Service Type are each a single canonical list shared by Maintenance tickets (§4.7) and Vendor Directory's "(Default)" fields (§4.9) — one edit here updates the picklist everywhere it's used. They're reference values, not numbers driving a calculation, so there's nothing to compute here — just the list of valid options. Renaming an existing value isn't supported since tickets already reference it by name; retire the old value once it's unused and add the new one instead. ${SUPA_CONFIGURED?"Shared across all devices — saved to the database immediately.":"Saved locally in this browser for now."}</div>
   <div class="card" style="margin-bottom:16px"><h3>🔧 Service Category <span class="muted" style="font-weight:400;font-size:11.5px;margin-left:auto">§4.7 Maintenance + §4.9 Vendor Directory (Default)</span></h3><div class="body">
   <table><thead><tr><th></th><th>Icon</th><th>Category</th><th>Usage</th><th></th></tr></thead><tbody>
   ${catRows}
@@ -1428,7 +1465,8 @@ function moveRefListValue(key,idx,dir){
   const d=REF_LISTS[key];if(!d)return;
   const j=idx+dir;if(j<0||j>=d.values.length)return;
   [d.values[idx],d.values[j]]=[d.values[j],d.values[idx]];
-  saveState();renderAssumptions(document.getElementById('view'));
+  if(SUPA_CONFIGURED)dbUpsertReferenceList(key,d.values);else saveState();
+  renderAssumptions(document.getElementById('view'));
 }
 function addRefListValue(key){
   const d=REF_LISTS[key];if(!d)return;
@@ -1436,19 +1474,23 @@ function addRefListValue(key){
   const v=(el.value||'').trim();
   if(!v){toast('Enter a value');return;}
   if(d.values.includes(v)){toast('That value already exists');return;}
-  d.values.push(v);saveState();toast('Value added');renderAssumptions(document.getElementById('view'));
+  d.values.push(v);
+  if(SUPA_CONFIGURED)dbUpsertReferenceList(key,d.values);else saveState();
+  toast('Value added');renderAssumptions(document.getElementById('view'));
 }
 function removeRefListValue(key,val){
   const d=REF_LISTS[key];if(!d)return;
   if(d.values.length<=1){toast('Keep at least one value');return;}
   if(!confirm(`Remove "${val}" from ${d.label}?`))return;
   const ix=d.values.indexOf(val);if(ix>-1)d.values.splice(ix,1);
-  saveState();toast('Value removed');renderAssumptions(document.getElementById('view'));
+  if(SUPA_CONFIGURED)dbUpsertReferenceList(key,d.values);else saveState();
+  toast('Value removed');renderAssumptions(document.getElementById('view'));
 }
 function updateCatIcon(name,val){
   if(!(name in CAT))return;
   CAT[name]=(val||'').trim().slice(0,2)||'🛠️';
-  saveState();toast('Category icon updated');renderAssumptions(document.getElementById('view'));
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',CAT);else saveState();
+  toast('Category icon updated');renderAssumptions(document.getElementById('view'));
 }
 function addCatEntry(){
   const nameEl=document.getElementById('newCatName'),iconEl=document.getElementById('newCatIcon');
@@ -1456,12 +1498,16 @@ function addCatEntry(){
   const icon=(iconEl.value||'').trim().slice(0,2)||'🛠️';
   if(!name){toast('Enter a category name');return;}
   if(CAT[name]){toast('That category already exists');return;}
-  CAT[name]=icon;saveState();toast('Category added');renderAssumptions(document.getElementById('view'));
+  CAT[name]=icon;
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',CAT);else saveState();
+  toast('Category added');renderAssumptions(document.getElementById('view'));
 }
 function removeCatEntry(name){
   if(TICKETS.some(t=>t.svc===name)){toast('Still in use — cannot remove');return;}
   if(!confirm(`Remove "${name}" from Service Category?`))return;
-  delete CAT[name];saveState();toast('Category removed');renderAssumptions(document.getElementById('view'));
+  delete CAT[name];
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',CAT);else saveState();
+  toast('Category removed');renderAssumptions(document.getElementById('view'));
 }
 function moveCatEntry(name,dir){
   const keys=Object.keys(CAT);
@@ -1471,26 +1517,31 @@ function moveCatEntry(name,dir){
   const reordered={};keys.forEach(k=>reordered[k]=CAT[k]);
   Object.keys(CAT).forEach(k=>delete CAT[k]);
   Object.keys(reordered).forEach(k=>{CAT[k]=reordered[k];});
-  saveState();renderAssumptions(document.getElementById('view'));
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',CAT);else saveState();
+  renderAssumptions(document.getElementById('view'));
 }
 function addSvcTypeEntry(){
   const el=document.getElementById('newSvcType');
   const name=(el.value||'').trim();
   if(!name){toast('Enter a service type');return;}
   if(SVC_TYPES.includes(name)){toast('That service type already exists');return;}
-  SVC_TYPES.push(name);saveState();toast('Service type added');renderAssumptions(document.getElementById('view'));
+  SVC_TYPES.push(name);
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('SVC_TYPES',SVC_TYPES);else saveState();
+  toast('Service type added');renderAssumptions(document.getElementById('view'));
 }
 function removeSvcTypeEntry(name){
   if(TICKETS.some(t=>t.svctype===name)){toast('Still in use — cannot remove');return;}
   if(!confirm(`Remove "${name}" from Service Type?`))return;
   const ix=SVC_TYPES.indexOf(name);if(ix>-1)SVC_TYPES.splice(ix,1);
-  saveState();toast('Service type removed');renderAssumptions(document.getElementById('view'));
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('SVC_TYPES',SVC_TYPES);else saveState();
+  toast('Service type removed');renderAssumptions(document.getElementById('view'));
 }
 function moveSvcTypeEntry(name,dir){
   const i=SVC_TYPES.indexOf(name);const j=i+dir;
   if(i<0||j<0||j>=SVC_TYPES.length)return;
   [SVC_TYPES[i],SVC_TYPES[j]]=[SVC_TYPES[j],SVC_TYPES[i]];
-  saveState();renderAssumptions(document.getElementById('view'));
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('SVC_TYPES',SVC_TYPES);else saveState();
+  renderAssumptions(document.getElementById('view'));
 }
 function estAge(seed,mod){return (seed*7+mod)%18+2;}
 function propComponents(p){const names=Object.keys(LIFE_TABLE);const seed=parseInt((p.id||'p0').replace('p',''))||1;
