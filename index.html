@@ -444,9 +444,17 @@ async function loadRealReferenceLists(){
   const {data,error}=await sb.from('reference_lists').select('*');
   if(error){toast('Could not load reference lists: '+error.message);return;}
   const rows=data||[];
+  // CAT is saved as an ordered array of [name, icon] pairs, not a plain object — Postgres
+  // jsonb does NOT preserve object key order on round-trip (only array element order is
+  // guaranteed), so a plain {name:icon} object would silently scramble on every reload.
+  // Also accepts the old object shape (from before this fix) so nothing already saved is lost;
+  // the next edit re-saves it in the stable array format.
   const catRow=rows.find(r=>r.key==='CAT');
-  if(catRow&&catRow.data&&typeof catRow.data==='object'&&!Array.isArray(catRow.data)){
-    const merged={};Object.keys(catRow.data).forEach(k=>{merged[k]=catRow.data[k];});
+  if(catRow&&catRow.data){
+    let pairs=[];
+    if(Array.isArray(catRow.data))pairs=catRow.data.filter(p=>Array.isArray(p)&&p.length===2);
+    else if(typeof catRow.data==='object')pairs=Object.entries(catRow.data);
+    const merged={};pairs.forEach(([k,v])=>{merged[k]=v;});
     Object.keys(CAT).forEach(k=>{if(!(k in merged))merged[k]=CAT[k];});
     Object.keys(CAT).forEach(k=>delete CAT[k]);
     Object.keys(merged).forEach(k=>{CAT[k]=merged[k];});
@@ -1489,7 +1497,7 @@ function removeRefListValue(key,val){
 function updateCatIcon(name,val){
   if(!(name in CAT))return;
   CAT[name]=(val||'').trim().slice(0,2)||'🛠️';
-  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',CAT);else saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',Object.entries(CAT));else saveState();
   toast('Category icon updated');renderAssumptions(document.getElementById('view'));
 }
 function addCatEntry(){
@@ -1499,14 +1507,14 @@ function addCatEntry(){
   if(!name){toast('Enter a category name');return;}
   if(CAT[name]){toast('That category already exists');return;}
   CAT[name]=icon;
-  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',CAT);else saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',Object.entries(CAT));else saveState();
   toast('Category added');renderAssumptions(document.getElementById('view'));
 }
 function removeCatEntry(name){
   if(TICKETS.some(t=>t.svc===name)){toast('Still in use — cannot remove');return;}
   if(!confirm(`Remove "${name}" from Service Category?`))return;
   delete CAT[name];
-  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',CAT);else saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',Object.entries(CAT));else saveState();
   toast('Category removed');renderAssumptions(document.getElementById('view'));
 }
 function moveCatEntry(name,dir){
@@ -1517,7 +1525,7 @@ function moveCatEntry(name,dir){
   const reordered={};keys.forEach(k=>reordered[k]=CAT[k]);
   Object.keys(CAT).forEach(k=>delete CAT[k]);
   Object.keys(reordered).forEach(k=>{CAT[k]=reordered[k];});
-  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',CAT);else saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('CAT',Object.entries(CAT));else saveState();
   renderAssumptions(document.getElementById('view'));
 }
 function addSvcTypeEntry(){
