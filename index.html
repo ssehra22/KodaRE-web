@@ -232,6 +232,7 @@
 <!-- Supabase client (only loaded/used when config.js has real project values — see config.js) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="config.js"></script>
 <script>
 /* ===== Supabase live-data layer (Phase 1: Maintenance module only) =====
@@ -751,10 +752,21 @@ function updateSvcType(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;c
   if(t._backend==='supabase')dbUpdateTicket(id,{service_type:t.svctype}).then(ok=>{if(!ok){t.svctype=prev;refresh(id);}});
   else saveState();
   toast('Service type updated');refresh(id);}
-function updateVendor(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const prev=t.vendor;t.vendor=val||null;
-  if(t._backend==='supabase')dbUpdateTicket(id,{vendor:t.vendor}).then(ok=>{if(!ok){t.vendor=prev;refresh(id);}});
-  else saveState();
-  toast(t.vendor?'Vendor updated':'Vendor cleared');refresh(id);}
+function updateVendor(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const prev=t.vendor,prevSvc=t.svc,prevSvcType=t.svctype;
+  t.vendor=val||null;
+  // Service Category (Default) / Service Type (Default) from the Vendor Directory kick in
+  // whenever a vendor is (re)assigned — still editable afterward by Office Staff/Senior Admin.
+  const v=t.vendor?VENDORS.find(x=>x.name===t.vendor):null;
+  let defaulted=false;
+  if(v){if(v.trade){t.svc=v.trade;defaulted=true;}if(v.svctype){t.svctype=v.svctype;defaulted=true;}}
+  if(t._backend==='supabase'){
+    const patch={vendor:t.vendor};
+    if(v){if(v.trade)patch.service_category=t.svc;if(v.svctype)patch.service_type=t.svctype;}
+    dbUpdateTicket(id,patch).then(ok=>{if(!ok){t.vendor=prev;t.svc=prevSvc;t.svctype=prevSvcType;refresh(id);}});
+  } else saveState();
+  toast(t.vendor?(defaulted?'Vendor updated — service category/type defaulted from vendor':'Vendor updated'):'Vendor cleared');
+  refresh(id);}
 function updatePriority(id,val){
   if(ROLE!=='admin'){toast('Only Senior Admin can change priority');return;}
   const t=TICKETS.find(x=>x.id===id);if(!t)return;const prev=t.urgency;t.urgency=val;
@@ -1008,12 +1020,12 @@ function updatePropField(pid,field,value,kind){
 }
 
 /* ===== router ===== */
-let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all',svc:'all',vendor:'all',payment:'all',invoice:'all',selectedOnly:false,createdFrom:'',createdTo:'',descQuery:'',notesQuery:'',costMin:'',costMax:''};
+let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all',svc:'all',vendor:'all',payment:'all',invoice:'all',metro:'all',selectedOnly:false,createdFrom:'',createdTo:'',descQuery:'',notesQuery:'',costMin:'',costMax:''};
 let SELECTED=new Set();
 let TRASH=[];
 let PFILTER={metro:'all'};
 const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'reports',ic:'📊',label:'Reports'},{id:'assumptions',ic:'🧮',label:'Assumptions'},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length},{id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length}];
-const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & onboarding'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently']};
+const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently']};
 function setRole(r){ROLE=r;document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
   const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
@@ -1075,9 +1087,15 @@ function renderTickets(el){
     ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
     <select onchange="setF('${key}',this.value)" style="${fSel};width:100%" title="Filter by ${label}"><option value="all"${FILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>
   </th>`;
-  const activeFilterCount=['status','urgency','prop','svc','vendor','payment','invoice'].filter(k=>FILTER[k]!=='all').length
+  const metroOpts=REF_LISTS.metro.values.slice();
+  const activeFilterCount=['status','urgency','prop','svc','vendor','payment','invoice','metro'].filter(k=>FILTER[k]!=='all').length
     + ['createdFrom','createdTo','descQuery','notesQuery','costMin','costMax'].filter(k=>FILTER[k]).length;
-  el.innerHTML=MT+`
+  const metroBar=`<div class="toolbar" style="flex-wrap:wrap;row-gap:8px"><span class="b" style="margin-right:2px">📍 Metro:</span>
+    <span class="chip ${FILTER.metro==='all'?'active':''}" onclick="setF('metro','all')">All</span>
+    ${metroOpts.map(m=>`<span class="chip ${FILTER.metro===m?'active':''}" onclick="setF('metro','${esc(m)}')">${esc(m)}</span>`).join('')}
+    <span class="faint" style="font-size:11.5px;margin-left:4px">— filter to your area first; different Metros are used by different regional teams</span>
+  </div>`;
+  el.innerHTML=MT+metroBar+`
   <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Add ticket</button>
     <button class="btn sec sm" onclick="openBulkGrid()">📋 Bulk add tickets</button>
     <button class="btn sec sm" onclick="document.getElementById('bulkTicketFile').click()">⬆ Upload spreadsheet</button>
@@ -1097,8 +1115,9 @@ function renderTickets(el){
       <a onclick="document.getElementById('bulkInvFile').click()">or choose file</a>
     </div></div>
   ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
-  <div class="card" style="overflow-x:auto"><table style="min-width:1380px"><thead><tr>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1500px"><thead><tr>
     <th style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
+    ${thSel('metro','Metro',[{v:'__blank__',l:'— none —'},...metroOpts.map(m=>({v:m,l:m}))])}
     ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})))}
     ${thSel('status','Status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))}
     <th style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
@@ -1161,10 +1180,11 @@ async function deleteSelectedTickets(){
 function filtered(){
   const cf=parseMDYY(FILTER.createdFrom);
   const ct=parseMDYY(FILTER.createdTo);
-  return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
+  return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(FILTER.metro==='all'||(FILTER.metro==='__blank__'?!propById(t.prop).metro:propById(t.prop).metro===FILTER.metro))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
 }
 function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
   <td onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
+  <td class="muted">${propById(t.prop).metro||'<span class="faint">—</span>'}</td>
   <td class="b">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
   <td class="muted mono" style="white-space:nowrap">${fdate(t.created)}</td>
@@ -1178,7 +1198,7 @@ function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" o
   <td onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add note…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
 function drawTickets(){
   const rows=filtered();
-  document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
+  document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="13" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
   const totalCost=rows.reduce((s,t)=>s+(t.cost||0),0);
   const costedCount=rows.filter(t=>t.cost!=null).length;
   const cd=document.getElementById('costTotalDisplay');
@@ -1194,7 +1214,7 @@ function clearFilter(key){
   if(VIEW==='tickets')renderTickets(document.getElementById('view'));
 }
 function clearAllFilters(){
-  FILTER.status='all';FILTER.urgency='all';FILTER.prop='all';FILTER.svc='all';FILTER.vendor='all';FILTER.payment='all';FILTER.invoice='all';
+  FILTER.status='all';FILTER.urgency='all';FILTER.prop='all';FILTER.svc='all';FILTER.vendor='all';FILTER.payment='all';FILTER.invoice='all';FILTER.metro='all';
   FILTER.createdFrom='';FILTER.createdTo='';FILTER.descQuery='';FILTER.notesQuery='';FILTER.costMin='';FILTER.costMax='';
   toast('All filters cleared');
   if(VIEW==='tickets')renderTickets(document.getElementById('view'));
@@ -1285,7 +1305,7 @@ function renderProperties(el){
   const list=[...PROPS].filter(p=>PFILTER.metro==='all'||p.metro===PFILTER.metro).sort((a,b)=>a.name.localeCompare(b.name));
   el.innerHTML=`<div class="toolbar"><span class="b">${list.length} of ${PROPS.length} properties</span>
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
-    <span style="margin-left:auto"></span><button class="btn sec sm" onclick="startOnboard()">+ Onboard property</button></div>
+    <span style="margin-left:auto"></span><button class="btn sec sm" onclick="startOnboard()">+ New property</button></div>
   <div class="card"><table><thead><tr><th>Property</th><th>Type</th><th>Status</th><th>Stage</th><th>Open</th><th>Total items</th><th class="right">Maint. spend</th><th style="text-align:left;min-width:130px">Metro
     <select onchange="setPF('metro',this.value)" style="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer;margin-top:4px" title="Filter by Metro"><option value="all"${PFILTER.metro==='all'?' selected':''}>All</option>${metroOpts.map(m=>`<option value="${esc(m)}"${PFILTER.metro===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
   </th></tr></thead><tbody>
@@ -1831,13 +1851,13 @@ function vendorsFiltered(){
   ).sort((a,b)=>{const r=catRank(a)-catRank(b);return r!==0?r:a.name.localeCompare(b.name);});
 }
 function vrow(v){return `<tr class="clickable" onclick="openVendor('${v.id}')">
+    <td class="muted">${(v.metro&&v.metro.length)?esc(v.metro.join(', ')):'<span class="faint">—</span>'}</td>
     <td class="b">${v.name}</td>
     <td class="muted">${v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>'}</td>
     <td>${v.primary||'<span class="faint">—</span>'}</td>
     <td>${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td>
     <td class="muted">${v.email&&v.email!=='—'?v.email:'<span class="faint">—</span>'}</td>
     <td class="muted">${v.phone&&v.phone!=='—'?v.phone:'<span class="faint">—</span>'}</td>
-    <td class="muted">${(v.metro&&v.metro.length)?esc(v.metro.join(', ')):'<span class="faint">—</span>'}</td>
   </tr>`;}
 function drawVendors(){
   const rows=vendorsFiltered();
@@ -1874,7 +1894,12 @@ function renderVendors(el){
   </th>`;
   const activeFilterCount=['trade','primary','metro'].filter(k=>VFILTER[k]!=='all').length
     + ['nameQuery','contactQuery','emailQuery','phoneQuery'].filter(k=>VFILTER[k]).length;
-  el.innerHTML=`<div class="toolbar"><button class="btn sm" onclick="openAddVendor()">+ Add vendor</button>
+  const metroBar=`<div class="toolbar" style="flex-wrap:wrap;row-gap:8px"><span class="b" style="margin-right:2px">📍 Metro:</span>
+    <span class="chip ${VFILTER.metro==='all'?'active':''}" onclick="setVF('metro','all')">All</span>
+    ${metroOpts.map(m=>`<span class="chip ${VFILTER.metro===m?'active':''}" onclick="setVF('metro','${esc(m)}')">${esc(m)}</span>`).join('')}
+    <span class="faint" style="font-size:11.5px;margin-left:4px">— filter to your area first; different Metros are used by different regional teams</span>
+  </div>`;
+  el.innerHTML=metroBar+`<div class="toolbar"><button class="btn sm" onclick="openAddVendor()">+ Add vendor</button>
     <button class="btn sec sm" onclick="openBulkVendorGrid()">📋 Bulk add vendors</button>
     <button class="btn sec sm" onclick="document.getElementById('bulkVendorFile').click()">⬆ Upload spreadsheet</button>
     <input type="file" id="bulkVendorFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkVendorUploadFile(this)">
@@ -1884,13 +1909,13 @@ function renderVendors(el){
     </span></div>
   <div class="toolbar"><span class="b">${vendorsFiltered().length} of ${VENDORS.length} vendors</span></div>
   <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr>
+    ${thSel('metro','Metro',[{v:'__blank__',l:'— none —'},...metroOpts.map(m=>({v:m,l:m}))])}
     ${thText('nameQuery','Vendor')}
     ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})))}
     ${thSel('primary','Primary/Secondary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))])}
     ${thText('contactQuery','Contact Name')}
     ${thText('emailQuery','Email')}
     ${thText('phoneQuery','Phone Number')}
-    ${thSel('metro','Metro',[{v:'__blank__',l:'— none —'},...metroOpts.map(m=>({v:m,l:m}))])}
   </tr></thead><tbody id="vtbody"></tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Fields map to Scope §4.9 Maintenance Vendor Directory · click a vendor for full details.</div>`;
   drawVendors();
@@ -2011,18 +2036,51 @@ function renderClientExpenses(el){el.innerHTML=`
 /* ===== reports & analytics (Scope §4.11) ===== */
 let REPTAB='operational';
 function renderReports(el){
-  const tabs=['operational','compliance','financial','capital','executive'];
-  const labels={operational:'Operational',compliance:'Compliance',financial:'Financial',capital:'Capital planning',executive:'Executive dashboard'};
+  const tabs=['operational','maintspend','compliance','financial','capital','executive'];
+  const labels={operational:'Operational',maintspend:'Maintenance spend',compliance:'Compliance',financial:'Financial',capital:'Capital planning',executive:'Executive dashboard'};
   el.innerHTML=`<div class="tabs">${tabs.map(t=>`<button class="tab ${REPTAB===t?'active':''}" onclick="REPTAB='${t}';renderReports(document.getElementById('view'))">${labels[t]}</button>`).join('')}</div>
   <div id="repBody">${reportBody(REPTAB)}</div>`;
+  if(REPTAB==='maintspend')renderMaintSpendCharts();
 }
 function reportBody(tab){
   if(tab==='operational'){
     const closed90=TICKETS.filter(t=>!isOpen(t)&&ageDays(t)<=90);
     const byVendor={};TICKETS.forEach(t=>{if(t.vendor){byVendor[t.vendor]=byVendor[t.vendor]||{n:0,spend:0};byVendor[t.vendor].n++;byVendor[t.vendor].spend+=(t.cost||0);}});
+    const vendorRows=Object.entries(byVendor).map(([v,d])=>({v,n:d.n,spend:d.spend,avg:d.n?d.spend/d.n:0,svc:(VENDORS.find(vv=>vv.name===v)||{}).trade||''})).sort((a,b)=>b.spend-a.spend);
+    const vendorTotal=vendorRows.reduce((s,r)=>s+r.spend,0);
+    const openT=TICKETS.filter(isOpen);
+    const buckets=[['0–7 days',0,7],['8–30 days',8,30],['31–90 days',31,90],['90+ days',91,Infinity]];
+    const agingRows=buckets.map(([label,lo,hi])=>({label,lo,rows:openT.filter(t=>{const a=ageDays(t);return a>=lo&&a<=hi;})}));
     return `<div class="sectitle">Open maintenance tickets — by property</div><div class="card"><table><thead><tr><th>Property</th><th>Open</th><th>Total</th><th class="right">Spend</th></tr></thead><tbody>${PROPS.map(p=>`<tr><td class="b">${p.name}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id).length}</td><td class="right mono">${money(spendFor(p.id))}</td></tr>`).join('')}</tbody></table></div>
+    <div class="sectitle">Open ticket aging <span class="faint">— best practice: flag anything sitting 30+ days</span></div><div class="card"><table><thead><tr><th>Age</th><th>Open tickets</th><th>Of which emergency</th></tr></thead><tbody>${agingRows.map(r=>`<tr><td class="b">${r.label}</td><td class="mono" style="${r.lo>=31&&r.rows.length?'color:var(--'+(r.lo>=91?'red':'amber')+')':''}">${r.rows.length}</td><td class="mono">${r.rows.filter(t=>t.urgency==='Emergency').length}</td></tr>`).join('')}</tbody></table></div>
     <div class="sectitle">Closed tickets — trailing 90 days</div><div class="card"><div class="body">${closed90.length} tickets closed in the last 90 days · avg cost ${money(closed90.length?Math.round(closed90.reduce((s,t)=>s+(t.cost||0),0)/closed90.length):0)}</div></div>
-    <div class="sectitle">Vendor activity</div><div class="card"><table><thead><tr><th>Vendor</th><th>Tickets</th><th class="right">Spend</th></tr></thead><tbody>${Object.entries(byVendor).map(([v,d])=>`<tr><td class="b">${v}</td><td class="mono">${d.n}</td><td class="right mono">${money(d.spend)}</td></tr>`).join('')}</tbody></table></div>`;
+    <div class="sectitle">Vendor activity <span class="faint">— ranked by spend</span></div><div class="card"><table><thead><tr><th>Vendor</th><th>Service category</th><th>Tickets</th><th class="right">Spend</th><th class="right">Avg / ticket</th><th class="right">% of spend</th></tr></thead><tbody>${vendorRows.map(r=>`<tr><td class="b">${r.v}</td><td>${r.svc?(CAT[r.svc]||'')+' '+r.svc:'<span class="faint">—</span>'}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.spend)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${vendorTotal?Math.round(r.spend/vendorTotal*100):0}%</td></tr>`).join('')||'<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No vendor activity yet.</td></tr>'}</tbody></table></div>`;
+  }
+  if(tab==='maintspend'){
+    const priced=TICKETS.filter(t=>t.cost);
+    const propRows=PROPS.map(p=>{const ts=priced.filter(t=>t.prop===p.id);const spend=ts.reduce((s,t)=>s+t.cost,0);return {p,n:ts.length,spend,avg:ts.length?spend/ts.length:0};}).sort((a,b)=>b.spend-a.spend);
+    const totalSpend=propRows.reduce((s,r)=>s+r.spend,0);
+    const totalN=propRows.reduce((s,r)=>s+r.n,0);
+    const catAgg={};priced.forEach(t=>{const k=t.svc||'Uncategorized';catAgg[k]=catAgg[k]||{n:0,spend:0};catAgg[k].n++;catAgg[k].spend+=t.cost;});
+    const catRows=Object.entries(catAgg).map(([k,d])=>({k,n:d.n,spend:d.spend,avg:d.n?d.spend/d.n:0})).sort((a,b)=>b.spend-a.spend);
+    const topCatRow=catRows[0];
+    return `<div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+      <div class="kpi"><div class="lab">Total maintenance spend</div><div class="val">${money(totalSpend)}</div></div>
+      <div class="kpi"><div class="lab">Tickets with cost</div><div class="val">${totalN}</div></div>
+      <div class="kpi"><div class="lab">Avg cost / ticket</div><div class="val">${money(totalN?totalSpend/totalN:0)}</div></div>
+      <div class="kpi"><div class="lab">Top category</div><div class="val" style="font-size:16px">${topCatRow?(CAT[topCatRow.k]||'')+' '+topCatRow.k:'—'}</div></div>
+    </div>
+    <div class="sectitle">Maintenance spend by property <span class="faint">— compare properties side by side</span></div>
+    <div class="card"><div class="body"><div style="height:${Math.max(220,PROPS.length*30)}px"><canvas id="chartPropSpend"></canvas></div></div></div>
+    <div class="sectitle">Spend by property, broken out by service category</div>
+    <div class="card"><div class="body"><div style="height:${Math.max(260,PROPS.length*26)}px"><canvas id="chartMatrix"></canvas></div></div></div>
+    <div class="row" style="display:flex;gap:16px;align-items:stretch;flex-wrap:wrap">
+      <div class="card" style="flex:1;min-width:320px"><div class="sectitle" style="margin-top:0">Portfolio spend by service category</div><div class="body"><div style="height:280px"><canvas id="chartCatSpend"></canvas></div></div></div>
+      <div class="card" style="flex:1;min-width:320px"><div class="sectitle" style="margin-top:0">Monthly spend trend</div><div class="body"><div style="height:280px"><canvas id="chartMonthly"></canvas></div></div></div>
+    </div>
+    <div class="sectitle">Detail — spend by property</div><div class="card"><table><thead><tr><th>Property</th><th>Tickets</th><th class="right">Spend</th><th class="right">Avg / ticket</th><th class="right">% of spend</th></tr></thead><tbody>${propRows.map(r=>`<tr><td class="b">${r.p.name}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.spend)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${totalSpend?Math.round(r.spend/totalSpend*100):0}%</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">No priced tickets yet.</td></tr>'}</tbody></table></div>
+    <div class="sectitle">Detail — spend by service category</div><div class="card"><table><thead><tr><th>Category</th><th>Tickets</th><th class="right">Spend</th><th class="right">Avg / ticket</th><th class="right">% of spend</th></tr></thead><tbody>${catRows.map(r=>`<tr><td class="b">${CAT[r.k]||'🛠️'} ${r.k}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.spend)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${totalSpend?Math.round(r.spend/totalSpend*100):0}%</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">No priced tickets yet.</td></tr>'}</tbody></table></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Spend figures reflect ticket cost fields entered on Maintenance tickets (Scope §4.7); Finance ledger remains system of record for reconciled dollar amounts (see TBD Reconciliation).</div>`;
   }
   if(tab==='compliance'){
     const expiring=CERTS.filter(c=>c.exp&&daysTo(c.exp)>=0&&daysTo(c.exp)<=90);
@@ -2047,6 +2105,41 @@ function reportBody(tab){
   const totalDebt=Object.values(LOANS).flat().reduce((s,l)=>s+l.balance,0);
   return `<div class="kpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div><div class="kpi ${emerg.length?'red':'green'}"><div class="lab">Open emergencies</div><div class="val">${emerg.length}</div></div><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi ${CERTS.filter(c=>c.status==='expired').length?'red':'green'}"><div class="lab">Overdue compliance</div><div class="val">${CERTS.filter(c=>c.status==='expired').length}</div></div></div>
   <div class="sectitle">Trailing spend</div><div class="card"><div class="body">Trailing maintenance spend: <b>${money(TICKETS.filter(t=>t.cost).reduce((s,t)=>s+t.cost,0))}</b></div></div>`;
+}
+
+/* ===== maintenance spend charts (Chart.js — loaded via CDN, see <head>) ===== */
+const CHART_PALETTE=['#2563c9','#7c3fd6','#0e9aa3','#d2701a','#c2306f','#1f9d40','#c9880c','#cf3a32','#5a6a7c','#8a99aa'];
+let MSCHARTS={};
+function destroyMSChart(key){if(MSCHARTS[key]){MSCHARTS[key].destroy();delete MSCHARTS[key];}}
+function renderMaintSpendCharts(){
+  if(typeof Chart==='undefined')return; // CDN unreachable — the detail tables below still show every figure
+  ['chartPropSpend','chartMatrix','chartCatSpend','chartMonthly'].forEach(destroyMSChart);
+  const priced=TICKETS.filter(t=>t.cost);
+  const propRows=PROPS.map(p=>{const ts=priced.filter(t=>t.prop===p.id);const spend=ts.reduce((s,t)=>s+t.cost,0);return {p,spend};}).sort((a,b)=>b.spend-a.spend);
+  const catAgg={};priced.forEach(t=>{const k=t.svc||'Uncategorized';catAgg[k]=catAgg[k]||{n:0,spend:0};catAgg[k].n++;catAgg[k].spend+=t.cost;});
+  const catRows=Object.entries(catAgg).map(([k,d])=>({k,spend:d.spend})).sort((a,b)=>b.spend-a.spend);
+  const TOPN=7;
+  const OTHER_KEY='__other_bucket__';
+  const topCats=catRows.slice(0,TOPN).map(r=>r.k);
+  const hasOther=catRows.length>TOPN;
+  const matrixCats=hasOther?[...topCats,OTHER_KEY]:topCats;
+  const catColor={};matrixCats.forEach((c,i)=>catColor[c]=CHART_PALETTE[i%CHART_PALETTE.length]);
+
+  const c1=document.getElementById('chartPropSpend');
+  if(c1)MSCHARTS.chartPropSpend=new Chart(c1,{type:'bar',data:{labels:propRows.map(r=>r.p.name),datasets:[{label:'Maintenance spend',data:propRows.map(r=>r.spend),backgroundColor:'#2563c9',borderRadius:4,maxBarThickness:22}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>money(ctx.parsed.x)}}},scales:{x:{ticks:{callback:v=>'$'+Number(v).toLocaleString()}},y:{grid:{display:false}}}}});
+
+  const c2=document.getElementById('chartMatrix');
+  if(c2)MSCHARTS.chartMatrix=new Chart(c2,{type:'bar',data:{labels:propRows.map(r=>r.p.name),datasets:matrixCats.map(cat=>({label:cat===OTHER_KEY?'Other categories':((CAT[cat]||'')+' '+cat).trim(),data:propRows.map(r=>priced.filter(t=>t.prop===r.p.id&&(cat===OTHER_KEY?!topCats.includes(t.svc||'Uncategorized'):(t.svc||'Uncategorized')===cat)).reduce((s,t)=>s+t.cost,0)),backgroundColor:catColor[cat],stack:'s'}))},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+money(ctx.parsed.x)}}},scales:{x:{stacked:true,ticks:{callback:v=>'$'+Number(v).toLocaleString()}},y:{stacked:true,grid:{display:false}}}}});
+
+  const c3=document.getElementById('chartCatSpend');
+  if(c3)MSCHARTS.chartCatSpend=new Chart(c3,{type:'doughnut',data:{labels:catRows.map(r=>((CAT[r.k]||'')+' '+r.k).trim()),datasets:[{data:catRows.map(r=>r.spend),backgroundColor:catRows.map((r,i)=>CHART_PALETTE[i%CHART_PALETTE.length])}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>ctx.label+': '+money(ctx.parsed)}}}}});
+
+  const monthKey=d=>{const dt=new Date(d);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');};
+  const monthLabel=k=>{const parts=k.split('-').map(Number);return new Date(parts[0],parts[1]-1,1).toLocaleString('en-US',{month:'short',year:'numeric'});};
+  const monthly={};priced.forEach(t=>{const k=monthKey(t.created);monthly[k]=(monthly[k]||0)+t.cost;});
+  const monthRows=Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0]));
+  const c4=document.getElementById('chartMonthly');
+  if(c4)MSCHARTS.chartMonthly=new Chart(c4,{type:'line',data:{labels:monthRows.map(r=>monthLabel(r[0])),datasets:[{label:'Maintenance spend',data:monthRows.map(r=>r[1]),borderColor:'#2563c9',backgroundColor:'rgba(37,99,201,.12)',fill:true,tension:.25,pointRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>money(ctx.parsed.y)}}},scales:{y:{ticks:{callback:v=>'$'+Number(v).toLocaleString()}}}}});
 }
 
 /* ===== reconciliation ===== */
@@ -2076,11 +2169,22 @@ function renderApprovals(el){const esc=TICKETS.filter(t=>t.urgency==='Emergency'
 /* ===== search ===== */
 function globalSearch(q){q=q.trim().toLowerCase();if(!q){navigate(VIEW);return;}if(VIEW!=='tickets')navigate('tickets');
   const rows=TICKETS.filter(t=>(t.title+' '+t.id+' '+t.svc+' '+propById(t.prop).name+' '+(t.vendor||'')+' '+(t.invoice||'')).toLowerCase().includes(q)).sort(rankSort);
-  const tb=document.getElementById('tbody');if(tb)tb.innerHTML=rows.length?rows.map(trow).join(''):`<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No matches for “${q}”.</td></tr>`;}
+  const tb=document.getElementById('tbody');if(tb)tb.innerHTML=rows.length?rows.map(trow).join(''):`<tr><td colspan="13" class="muted" style="text-align:center;padding:26px">No matches for “${q}”.</td></tr>`;}
 
 /* ===== drawer ===== */
 function drawer(head,body){document.getElementById('drawerRoot').innerHTML=`<div class="scrim" onclick="if(event.target===this)closeDrawer()"><div class="drawer"><div class="dhead">${head}<button class="x" onclick="closeDrawer()">✕</button></div><div class="dbody">${body}</div></div></div>`;}
 function closeDrawer(){document.getElementById('drawerRoot').innerHTML='';}
+/* Vendor Directory defines a Service Category (Default) and Service Type (Default) per
+   vendor (Scope §4.9); whenever a vendor is attached to a ticket those defaults should
+   kick in automatically. Office Staff and Senior Admin can still change them afterward. */
+function applyNewTicketVendorDefaults(vendorName){
+  const v=VENDORS.find(x=>x.name===vendorName);
+  if(!v)return;
+  const svcSel=document.getElementById('nt_svc');
+  const svcTypeSel=document.getElementById('nt_svctype');
+  if(svcSel&&v.trade)svcSel.value=v.trade;
+  if(svcTypeSel&&v.svctype)svcTypeSel.value=v.svctype;
+}
 function openAddTicket(){
   const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
   const svcOpts=Object.keys(CAT);
@@ -2129,10 +2233,11 @@ function openAddTicket(){
       </select>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Vendor</label>
-      <select id="nt_vendor" style="width:100%">
+      <select id="nt_vendor" style="width:100%" onchange="applyNewTicketVendorDefaults(this.value)">
         <option value="">— not assigned yet —</option>
         ${VENDORS.map(v=>`<option value="${v.name}">${v.name} (${v.trade})</option>`).join('')}
       </select>
+      <div class="faint" style="font-size:11px;margin-top:4px">Selecting a vendor fills Service category/type from that vendor's defaults below — you can still change them.</div>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Estimated cost ($)</label>
       <input type="text" id="nt_cost" inputmode="decimal" placeholder="optional" style="width:100%">
@@ -2317,7 +2422,16 @@ async function processBulkTicketRows(rows){
       else{const s=String(f.created).trim();d=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T00:00:00'):new Date(s);}
       if(!isNaN(d))created=d;
     }
-    parsed.push({prop,status,urgency,svc:String(f.svc||'').trim()||null,svctype:String(f.svctype||'').trim()||null,vendor:String(f.vendor||'').trim()||null,cost,invoice:String(f.invoice||'').trim()||null,payment,reporter:String(f.reporter||'').trim()||STAFF.office.name,notes:String(f.notes||'').trim(),desc,title:desc.slice(0,60),created});
+    let svc=String(f.svc||'').trim()||null;
+    let svctype=String(f.svctype||'').trim()||null;
+    const vendorName=String(f.vendor||'').trim()||null;
+    if(vendorName){
+      // Vendor Directory's Service Category (Default) / Service Type (Default) fill in any
+      // category/type left blank on the import row — an explicit value on the row still wins.
+      const vend=VENDORS.find(x=>x.name.toLowerCase()===vendorName.toLowerCase());
+      if(vend){if(!svc&&vend.trade)svc=vend.trade;if(!svctype&&vend.svctype)svctype=vend.svctype;}
+    }
+    parsed.push({prop,status,urgency,svc,svctype,vendor:vendorName,cost,invoice:String(f.invoice||'').trim()||null,payment,reporter:String(f.reporter||'').trim()||STAFF.office.name,notes:String(f.notes||'').trim(),desc,title:desc.slice(0,60),created});
   });
   if(!parsed.length){alert('No rows could be imported.'+(skipped.length?'\n\n'+skipped.join('\n'):''));return;}
   let created=0;
@@ -2723,11 +2837,11 @@ function obNext(){OB.step++;openOnboard();}
 function obBack(){OB.step--;openOnboard();}
 function obCapture(step){const g=id=>{const e=document.getElementById(id);return e?e.value:undefined;};if(step===1){OB.d.name=g('ob_name');OB.d.addr=g('ob_addr');OB.d.beds=g('ob_beds');}if(step===2){if(OB.d.own==='owned'){OB.d.llc=g('ob_llc');OB.d.value=g('ob_val');}else{OB.d.landlord=g('ob_land');OB.d.rent=g('ob_rent');}}}
 function openOnboard(){const s=OB.step,d=OB.d;const prog=`<div class="progress" style="margin-bottom:16px"><i style="width:${(s+1)/4*100}%"></i></div>`;let body='';
-  if(s===0)body=`<div class="sectitle">Step 1 · Acquisition type</div><div class="row"><div class="card" style="flex:1;cursor:pointer;${d.own==='owned'?'box-shadow:0 0 0 2px var(--sys)':''}" onclick="obSet('own','owned')"><div class="body"><div style="font-size:26px">🏠</div><div class="b">Purchase (Owned)</div><div class="muted" style="font-size:12.5px">Flow A — buy & onboard. Held in an LLC.</div></div></div><div class="card" style="flex:1;cursor:pointer;${d.own==='leased'?'box-shadow:0 0 0 2px var(--ten)':''}" onclick="obSet('own','leased')"><div class="body"><div style="font-size:26px">📄</div><div class="b">Lease (Leased)</div><div class="muted" style="font-size:12.5px">Flow B — lease from a landlord.</div></div></div></div><div style="margin-top:18px">${d.own?`<button class="btn" onclick="obNext()">Continue →</button>`:`<button class="btn" disabled style="opacity:.5">Choose a type first</button>`}</div>`;
+  if(s===0)body=`<div class="sectitle">Step 1 · Acquisition type</div><div class="row"><div class="card" style="flex:1;cursor:pointer;${d.own==='owned'?'box-shadow:0 0 0 2px var(--sys)':''}" onclick="obSet('own','owned')"><div class="body"><div style="font-size:26px">🏠</div><div class="b">Purchase (Owned)</div><div class="muted" style="font-size:12.5px">Flow A — purchase. Held in an LLC.</div></div></div><div class="card" style="flex:1;cursor:pointer;${d.own==='leased'?'box-shadow:0 0 0 2px var(--ten)':''}" onclick="obSet('own','leased')"><div class="body"><div style="font-size:26px">📄</div><div class="b">Lease (Leased)</div><div class="muted" style="font-size:12.5px">Flow B — lease from a landlord.</div></div></div></div><div style="margin-top:18px">${d.own?`<button class="btn" onclick="obNext()">Continue →</button>`:`<button class="btn" disabled style="opacity:.5">Choose a type first</button>`}</div>`;
   else if(s===1)body=`<div class="sectitle">Step 2 · Basics</div><div class="field"><label class="f">Property name</label><input type="text" id="ob_name" value="${d.name||''}" placeholder="e.g. Sycamore House" style="width:100%"></div><div class="field"><label class="f">Address</label><input type="text" id="ob_addr" value="${d.addr||''}" placeholder="123 Sycamore St, City ST" style="width:100%"></div><div class="field"><label class="f">Beds</label><input type="text" id="ob_beds" value="${d.beds||''}" placeholder="e.g. 4" style="width:120px"></div><div style="display:flex;gap:10px"><button class="btn sec" onclick="obCapture(1);obBack()">← Back</button><button class="btn" onclick="obCapture(1);obNext()">Continue →</button></div>`;
   else if(s===2)body=`<div class="sectitle">Step 3 · ${d.own==='owned'?'Ownership':'Lease terms'}</div>${d.own==='owned'?`<div class="field"><label class="f">Holding LLC</label><input type="text" id="ob_llc" value="${d.llc||''}" placeholder="e.g. Sycamore Holdings LLC" style="width:100%"></div><div class="field"><label class="f">Purchase price ($)</label><input type="text" id="ob_val" value="${d.value||''}" placeholder="e.g. 350000" style="width:220px"></div>`:`<div class="field"><label class="f">Landlord</label><input type="text" id="ob_land" value="${d.landlord||''}" placeholder="e.g. Riverside Rentals" style="width:100%"></div><div class="field"><label class="f">Monthly rent ($)</label><input type="text" id="ob_rent" value="${d.rent||''}" placeholder="e.g. 3000" style="width:220px"></div>`}<div style="display:flex;gap:10px"><button class="btn sec" onclick="obCapture(2);obBack()">← Back</button><button class="btn" onclick="obCapture(2);obNext()">Continue →</button></div>`;
   else{const p=d;body=`<div class="sectitle">Step 4 · Review</div><div class="card"><div class="body"><div class="kv"><div class="k">Type</div><div class="b">${p.own==='owned'?'Owned (Flow A)':'Leased (Flow B)'}</div><div class="k">Name</div><div class="b">${p.name||'—'}</div><div class="k">Address</div><div>${p.addr||'—'}</div><div class="k">Beds</div><div>${p.beds||'—'}</div>${p.own==='owned'?`<div class="k">LLC</div><div>${p.llc||'—'}</div><div class="k">Value</div><div>${p.value?money(+p.value):'—'}</div>`:`<div class="k">Landlord</div><div>${p.landlord||'—'}</div><div class="k">Rent</div><div>${p.rent?money(+p.rent)+'/mo':'—'}</div>`}</div></div></div><div class="muted" style="font-size:12.5px;margin:10px 0">Created with status <b>New Transaction</b>.</div><div style="display:flex;gap:10px"><button class="btn sec" onclick="obBack()">← Back</button><button class="btn green" onclick="obCreate()">Create property ✓</button></div>`;}
-  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">Onboard property · ${d.own==='owned'?'Flow A':d.own==='leased'?'Flow B':'new'}</div><div style="font-size:19px;font-weight:800">New property</div></div>`,prog+body);}
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">Properties · ${d.own==='owned'?'Flow A':d.own==='leased'?'Flow B':'new'}</div><div style="font-size:19px;font-weight:800">New property</div></div>`,prog+body);}
 async function obCreate(){
   const d=OB.d;
   if(SUPA_CONFIGURED){
@@ -2735,17 +2849,17 @@ async function obCreate(){
     if(d.own==='owned'){payload.llc=d.llc||null;payload.value=parseInt(d.value)||null;}
     else{payload.landlord=d.landlord||null;payload.rent=parseInt(d.rent)||null;}
     const {data,error}=await sb.from('properties').insert(payload).select().single();
-    if(error){toast('Could not onboard property: '+error.message);return;}
+    if(error){toast('Could not create property: '+error.message);return;}
     const p=rowToProperty(data);
     PROPS.push(p);
     if(d.own!=='owned'){
       const {data:leaseRow,error:leaseErr}=await sb.from('leases').insert({property_id:p.id,landlord:p.landlord,rent:p.rent,term:'12 mo',status:'New Transaction',escalated:false}).select().single();
       if(!leaseErr)LEASES.push(rowToLease(leaseRow));
     }
-    closeDrawer();toast('Property onboarded: '+p.name);navigate('properties');
+    closeDrawer();toast('Property created: '+p.name);navigate('properties');
     return;
   }
-  const p={id:'p'+Date.now(),name:d.name||'New Property',addr:d.addr||'',own:d.own,beds:parseInt(d.beds)||null,status:'New Transaction',health:'amber',compliance:null};if(d.own==='owned'){p.llc=d.llc||'—';p.value=parseInt(d.value)||null;p.rent=null;}else{p.landlord=d.landlord||'—';p.rent=parseInt(d.rent)||null;LEASES.push({id:p.id,prop:p.id,landlord:p.landlord,rent:p.rent,term:'12 mo',start:'—',end:'—',next:new Date(today),status:'New Transaction',escalated:false});}PROPS.push(p);saveState();closeDrawer();toast('Property onboarded: '+p.name);navigate('properties');}
+  const p={id:'p'+Date.now(),name:d.name||'New Property',addr:d.addr||'',own:d.own,beds:parseInt(d.beds)||null,status:'New Transaction',health:'amber',compliance:null};if(d.own==='owned'){p.llc=d.llc||'—';p.value=parseInt(d.value)||null;p.rent=null;}else{p.landlord=d.landlord||'—';p.rent=parseInt(d.rent)||null;LEASES.push({id:p.id,prop:p.id,landlord:p.landlord,rent:p.rent,term:'12 mo',start:'—',end:'—',next:new Date(today),status:'New Transaction',escalated:false});}PROPS.push(p);saveState();closeDrawer();toast('Property created: '+p.name);navigate('properties');}
 
 /* ===== boot ===== */
 document.getElementById('switch').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setRole(b.dataset.role);});
