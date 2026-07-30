@@ -696,7 +696,7 @@ function updateNote(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;cons
   else saveState();
   toast('Note saved');}
 function paySelect(t){return `<select onchange="updatePayment('${t.id}',this.value)" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${t.payment==='Paid'?'#eaf7ee':t.payment==='Ready for Payment'?'#fff4e6':t.payment==='Match Proposed'?'#fef7e0':'#fff'}"><option value=""${!t.payment?' selected':''}>—</option><option value="Match Proposed"${t.payment==='Match Proposed'?' selected':''}>⚠ Match Proposed</option><option value="Ready for Payment"${t.payment==='Ready for Payment'?' selected':''}>Ready for Payment</option><option value="Paid"${t.payment==='Paid'?' selected':''}>Paid</option></select>`;}
-function refreshTickets(){if(VIEW==='tickets'&&MAINT_TAB==='items')renderTickets(document.getElementById('view'));}
+function refreshTickets(){computeHealth();if(VIEW==='tickets'&&MAINT_TAB==='items')renderTickets(document.getElementById('view'));}
 function renderTrash(el){
   if(ROLE!=='admin'){el.innerHTML='<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view Trash.</div>';return;}
   const rows=TRASH.slice().sort((a,b)=>new Date(b.deletedAt)-new Date(a.deletedAt));
@@ -1045,13 +1045,21 @@ function refreshPropertiesLanding(){if(VIEW==='properties')renderProperties(docu
 async function refreshPropertiesFromServer(){
   const btn=document.getElementById('propsRefreshBtn');
   if(btn){btn.disabled=true;btn.textContent='🔄 Refreshing…';}
-  if(SUPA_CONFIGURED){
-    await Promise.all([loadRealProperties(),loadRealTickets()]);
-    toast('Properties refreshed');
-  } else {
-    toast('Refreshed (demo mode — no server to sync with)');
+  try{
+    if(SUPA_CONFIGURED){
+      await Promise.all([loadRealProperties(),loadRealTickets()]);
+      computeHealth();
+      toast('Properties refreshed');
+    } else {
+      toast('Refreshed (demo mode — no server to sync with)');
+    }
+  } catch(e){
+    toast('Refresh failed: '+(e&&e.message?e.message:'unknown error'));
+  } finally {
+    if(VIEW==='properties')renderProperties(document.getElementById('view'));
+    const btn2=document.getElementById('propsRefreshBtn');
+    if(btn2){btn2.disabled=false;btn2.textContent='🔄 Refresh';}
   }
-  if(VIEW==='properties')renderProperties(document.getElementById('view'));
 }
 
 function updatePropHoaCondo(pid,value){
@@ -1341,7 +1349,7 @@ function closeTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;
   pushActivity(t,'Closed','Closed & queued for reconciliation');
   if(t._backend==='supabase')dbUpdateTicket(id,{status:'Closed'}).then(ok=>{if(!ok){t.status=prev;refresh(id);}});
   toast('Ticket closed');refresh(id);}
-function refresh(openId){saveState();buildNav();if(VIEW==='tickets')drawTickets();else navigate(VIEW);if(openId&&document.querySelector('.drawer'))openTicket(openId);}
+function refresh(openId){saveState();computeHealth();buildNav();if(VIEW==='tickets')drawTickets();else navigate(VIEW);if(openId&&document.querySelector('.drawer'))openTicket(openId);}
 
 function notesHtml(){
  const rec=['Inspect HVAC systems','Clean plumbing systems','Maintain electrical systems','Clean & inspect appliances','Inspect windows & doors','Flooring & carpet care','Outdoor equipment maintenance','Outdoor safety inspection','Alarm & extinguisher testing','Pest control contracts'];
@@ -2826,12 +2834,14 @@ async function mSubmit(){
     if(d.urgency==='Emergency'){await dbLogActivity(data.id,'Auto-paged','Twilio SMS + email to on-call admin');activity.push({action:'Auto-paged',detail:'Twilio SMS + email to on-call admin',created_at:new Date().toISOString()});}
     const t=rowToTicket(Object.assign({},data,{maintenance_ticket_activity:activity}));
     TICKETS.unshift(t);
+    computeHealth();
     showSuccess(t.id);
     return;
   }
   const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),desc:d.desc||'',svc:d.cat,svctype:'Reported',urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:STAFF.caregiver.name,photos:d.photo?1:0,log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
   if(d.urgency==='Emergency')t.log.push(['Auto-paged','Twilio SMS + email to on-call admin',0]);
   TICKETS.push(t);saveState();
+  computeHealth();
   showSuccess(t.id);
 }
 
