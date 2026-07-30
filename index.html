@@ -310,6 +310,11 @@ function rowToProperty(row){
     landlord:row.landlord, rent:row.rent!=null?Number(row.rent):null, leaseType:row.lease_type,
     mgmtAssocName:row.mgmt_assoc_name, mgmtContactPhone:row.mgmt_contact_phone,
     mgmtPortal:row.mgmt_portal, mgmtPortalLogin:row.mgmt_portal_login, comments:row.comments, userNotes:row.user_notes,
+    loanLender:row.loan_lender, loanContact:row.loan_contact, loanAcctNo:row.loan_acct_no, loanOrigDate:row.loan_orig_date,
+    loanRate:row.loan_rate!=null?Number(row.loan_rate):null, loanRateType:row.loan_rate_type,
+    loanTermMo:row.loan_term_mo!=null?Number(row.loan_term_mo):null, loanMaturity:row.loan_maturity,
+    loanPayment:row.loan_payment!=null?Number(row.loan_payment):null, loanEscrow:row.loan_escrow!=null?Number(row.loan_escrow):null,
+    loanLien:row.loan_lien, loanPrepay:row.loan_prepay,
     status:row.status||'Active', health:row.status==='New Transaction'?'amber':'green', compliance:null
   };
 }
@@ -323,7 +328,10 @@ const PROP_FIELD_TO_COLUMN={addr:'addr',own:'own',beds:'beds',bedrooms:'bedrooms
   totalBuyerCosts:'total_buyer_costs',loanInitial:'loan_initial',loanRemaining:'loan_remaining',value:'value',
   landlord:'landlord',rent:'rent',leaseType:'lease_type',mgmtAssocName:'mgmt_assoc_name',
   mgmtContactPhone:'mgmt_contact_phone',mgmtPortal:'mgmt_portal',mgmtPortalLogin:'mgmt_portal_login',
-  comments:'comments',userNotes:'user_notes'};
+  comments:'comments',userNotes:'user_notes',
+  loanLender:'loan_lender',loanContact:'loan_contact',loanAcctNo:'loan_acct_no',loanOrigDate:'loan_orig_date',
+  loanRate:'loan_rate',loanRateType:'loan_rate_type',loanTermMo:'loan_term_mo',loanMaturity:'loan_maturity',
+  loanPayment:'loan_payment',loanEscrow:'loan_escrow',loanLien:'loan_lien',loanPrepay:'loan_prepay'};
 async function dbUpdateProperty(id,patch){
   const {error}=await sb.from('properties').update(patch).eq('id',id);
   if(error){toast('Save failed: '+error.message);return false;}
@@ -353,6 +361,21 @@ async function dbPermanentlyDeleteVendor(id){
   if(error){toast('Delete failed: '+error.message);return false;}
   return true;
 }
+async function dbDeleteProperty(id){
+  const {error}=await sb.from('properties').update({deleted_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Delete failed: '+error.message);return false;}
+  return true;
+}
+async function dbRestoreProperty(id){
+  const {error}=await sb.from('properties').update({deleted_at:null}).eq('id',id);
+  if(error){toast('Restore failed: '+error.message);return false;}
+  return true;
+}
+async function dbPermanentlyDeleteProperty(id){
+  const {error}=await sb.from('properties').delete().eq('id',id);
+  if(error){toast('Delete failed: '+error.message);return false;}
+  return true;
+}
 async function deleteVendor(id){
   if(ROLE!=='admin'){toast('Only Senior Admin can delete vendors');return;}
   const v=vendorById(id);if(!v)return;
@@ -367,6 +390,28 @@ async function deleteVendor(id){
   closeDrawer();
   toast('Vendor deleted: '+v.name+' — moved to Trash');
   if(VIEW==='vendors')renderVendors(document.getElementById('view'));
+}
+async function deleteProperty(id){
+  if(ROLE!=='admin'){toast('Only Senior Admin can delete properties');return;}
+  const p=propById(id);if(!p||!PROPS.some(x=>x.id===id))return;
+  const openTix=TICKETS.filter(t=>t.prop===id&&isOpen(t)).length;
+  const totalTix=TICKETS.filter(t=>t.prop===id).length;
+  const lease=LEASES.find(l=>l.prop===id);
+  let warn=`Delete property "${p.name}"? This can't be undone.`;
+  if(totalTix||lease){
+    warn+=`\n\nHeads up: this property has ${totalTix} maintenance ticket${totalTix===1?'':'s'}${openTix?` (${openTix} still open)`:''}${lease?' and an active lease record':''}. They will NOT be deleted — they'll just show "—" for property unless this is restored from Trash.`;
+  }
+  if(!confirm(warn))return;
+  if(p._backend==='supabase'){
+    const ok=await dbDeleteProperty(id);
+    if(!ok)return;
+  }
+  const ix=PROPS.findIndex(x=>x.id===id);if(ix>-1)PROPS.splice(ix,1);
+  TRASH.unshift({type:'property',id:p.id,label:p.name,sub:(p.own==='owned'?'Owned':'Leased')+(p.addr?' · '+p.addr:''),deletedAt:new Date().toISOString(),item:p});
+  if(!p._backend||p._backend!=='supabase')saveState();
+  closeDrawer();
+  toast('Property deleted: '+p.name+' — moved to Trash');
+  if(VIEW==='properties')renderProperties(document.getElementById('view'));
 }
 function rowToCert(row){
   return {_backend:'supabase', _id:row.id, prop:row.property_id, type:row.type, authority:row.authority,
@@ -419,7 +464,7 @@ async function loadRealVendors(){
 }
 async function loadRealProperties(){
   if(!SUPA_CONFIGURED)return;
-  const {data,error}=await sb.from('properties').select('*').order('name');
+  const {data,error}=await sb.from('properties').select('*').is('deleted_at',null).order('name');
   if(error){toast('Could not load properties: '+error.message);return;}
   PROPS.length=0;(data||[]).forEach(row=>PROPS.push(rowToProperty(row)));
 }
@@ -436,6 +481,9 @@ async function loadRealTrash(){
   const {data:vRows,error:vErr}=await sb.from('vendors').select('*').not('deleted_at','is',null).order('deleted_at',{ascending:false});
   if(vErr)toast('Could not load trashed vendors: '+vErr.message);
   else (vRows||[]).forEach(row=>{const v=rowToVendor(row);TRASH.push({type:'vendor',id:v.id,label:v.name,sub:(v.trade?(CAT[v.trade]||'')+' '+v.trade:'Vendor'),deletedAt:row.deleted_at,item:v});});
+  const {data:pRows,error:pErr}=await sb.from('properties').select('*').not('deleted_at','is',null).order('deleted_at',{ascending:false});
+  if(pErr)toast('Could not load trashed properties: '+pErr.message);
+  else (pRows||[]).forEach(row=>{const p=rowToProperty(row);TRASH.push({type:'property',id:p.id,label:p.name,sub:(p.own==='owned'?'Owned':'Leased')+(p.addr?' · '+p.addr:''),deletedAt:row.deleted_at,item:p});});
   const {data:tRows,error:tErr}=await sb.from('maintenance_tickets').select('*, maintenance_ticket_activity(action,detail,created_at)').not('deleted_at','is',null).order('deleted_at',{ascending:false});
   if(tErr)toast('Could not load trashed tickets: '+tErr.message);
   else (tRows||[]).forEach(row=>{const t=rowToTicket(row);TRASH.push({type:'ticket',id:t.id,label:t.title,sub:(propById(t.prop).name||'')+(t.svc?' · '+t.svc:''),deletedAt:row.deleted_at,item:t});});
@@ -552,13 +600,13 @@ const VENDORS = [{"id":"v1","name": "Saylor Heating", "trade": "HVAC/Furnace", "
 {"id":"v6","name": "Lawn Love", "trade": "Lawn/Snow", "svctype": "", "ytd": 0, "primary": "Primary", "pricing": "Seasonal contract", "area": "Harrisburg / Mechanicsburg / Middletown, PA", "metro": ["Harrisburg"], "afterHours": "No", "contact": "—", "phone": "(888) 606-0611", "email": "support@lawnlove.example", "portal": "lawnlove.example.com", "login": "—", "licenses": "—", "licExp": "—", "insExp": "2027-01-01", "w9": "Yes", "properties": "", "referredBy": "—", "quality": "Excellent", "comments": "", "userNotes": ""}];
 const PROPS = [{"id": "p1", "name": "Fox-1", "addr": "400 Fox Street, Flr 1, Harrisburg, PA 17109", "own": "leased", "beds": null, "status": "Active", "health": "green", "compliance": null, "landlord": "—", "rent": null, "leaseType": "ResHab", "metro": "Harrisburg", "county": "Dauphin", "bedrooms": 4, "bathrooms": 2, "sqft": 1650, "levels": 1, "parkingType": "Off-street lot", "mgmtAssocName": "—", "mgmtContactPhone": "—", "mgmtPortal": "—", "mgmtPortalLogin": "—", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
 {"id": "p2", "name": "Fox-2", "addr": "400 Fox Street, Flr 2, Harrisburg, PA 17109", "own": "leased", "beds": null, "status": "Active", "health": "green", "compliance": null, "landlord": "—", "rent": null, "leaseType": "ResHab", "metro": "Harrisburg", "county": "Dauphin", "bedrooms": 3, "bathrooms": 1, "sqft": 1400, "levels": 1, "parkingType": "Off-street lot", "mgmtAssocName": "—", "mgmtContactPhone": "—", "mgmtPortal": "—", "mgmtPortalLogin": "—", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
-{"id": "p3", "name": "Highlands", "addr": "6206 N. Highlands Ct, Harrisburg, PA 17111", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Highlands Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Highlands Holdings LLC", "purchaseDate": "2021-03-15", "settlementDate": "2021-03-15", "purchasePrice": 248000, "totalBuyerCosts": 9800, "loanInitial": 292000, "loanRemaining": 268400, "bedrooms": 4, "bathrooms": 2, "sqft": 1980, "yearBuilt": 1994, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-041-062", "mls": "PACB2011245", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Mohammed (House Manager)"},
+{"id": "p3", "name": "Highlands", "addr": "6206 N. Highlands Ct, Harrisburg, PA 17111", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Highlands Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Highlands Holdings LLC", "purchaseDate": "2021-03-15", "settlementDate": "2021-03-15", "purchasePrice": 248000, "totalBuyerCosts": 9800, "loanInitial": 292000, "loanRemaining": 268400, "loanLender": "First National Bank", "loanContact": "(717) 555-0140", "loanAcctNo": "FNB-4471", "loanOrigDate": "Mar 2021", "loanRate": 3.75, "loanRateType": "Fixed", "loanTermMo": 360, "loanMaturity": "Mar 2051", "loanPayment": 1352, "loanEscrow": 410, "loanLien": "1st", "loanPrepay": "None", "bedrooms": 4, "bathrooms": 2, "sqft": 1980, "yearBuilt": 1994, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-041-062", "mls": "PACB2011245", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Mohammed (House Manager)"},
 {"id": "p4", "name": "Monticello", "addr": "2767 Monticello Lane, Harrisburg PA 17112", "own": "leased", "beds": null, "status": "Active", "health": "green", "compliance": null, "landlord": "MH Townhomes, LLC", "rent": 2650, "leaseType": "Corp", "metro": "Harrisburg", "county": "Dauphin", "bedrooms": 4, "bathrooms": 2.5, "sqft": 2100, "levels": 3, "parkingType": "Driveway", "mgmtAssocName": "MH Townhomes, LLC", "mgmtContactPhone": "(717) 555-0199", "mgmtPortal": "mhtownhomes-portal.example.com", "mgmtPortalLogin": "reshab_monticello", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Sonia S. (Office Staff)"},
-{"id": "p5", "name": "Progress", "addr": "4520 N. Progress Ave, Harrisburg, PA 17110", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Progress Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Progress Holdings LLC", "purchaseDate": "2020-07-10", "settlementDate": "2020-07-10", "purchasePrice": 205000, "totalBuyerCosts": 8100, "loanInitial": 210000, "loanRemaining": 190500, "bedrooms": 3, "bathrooms": 1.5, "sqft": 1520, "yearBuilt": 1988, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Brick", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Susquehanna Township", "schoolDistrict": "Central Dauphin School District", "taxId": "62-018-114", "mls": "PACB2009982", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Seth (House Manager)"},
-{"id": "p6", "name": "Country Hill", "addr": "1109 Country Hill Dr, Harrisburg PA 17111", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Country Hill Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Country Hill Holdings LLC", "purchaseDate": "2022-01-20", "settlementDate": "2022-01-20", "purchasePrice": 239000, "totalBuyerCosts": 9400, "loanInitial": 240000, "loanRemaining": 228900, "bedrooms": 4, "bathrooms": 2, "sqft": 1875, "yearBuilt": 1999, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "Yes", "hoaFee": 45, "hoaAssocName": "Country Hill HOA", "hoaAssocContact": "(717) 555-0166", "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-052-091", "mls": "PACB2010877", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
-{"id": "p7", "name": "Nassau", "addr": "6114 Nassau Rd, Harrisburg PA 17112", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Nassau Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Nassau Holdings LLC", "purchaseDate": "2019-09-05", "settlementDate": "2019-09-05", "purchasePrice": 202000, "totalBuyerCosts": 7900, "loanInitial": 205000, "loanRemaining": 178200, "bedrooms": 3, "bathrooms": 2, "sqft": 1610, "yearBuilt": 1985, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-039-027", "mls": "PACB2008714", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
-{"id": "p8", "name": "Winston", "addr": "133 Winston Dr, Mechanicsburg PA 17055", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Winston Holdings LLC", "value": null, "rent": null, "metro": "Mechanicsburg", "county": "Cumberland", "buyerLLC": "Winston Holdings LLC", "purchaseDate": "2026-02-27", "settlementDate": "2026-02-27", "purchasePrice": 239500, "totalBuyerCosts": 10200, "loanInitial": 236170, "loanRemaining": 236170, "bedrooms": 4, "bathrooms": 2, "sqft": 1840, "yearBuilt": 2001, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Upper Allen Township", "schoolDistrict": "Cumberland Valley School District", "taxId": "40-027-155", "mls": "PACB2013390", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
-{"id": "p9", "name": "Nissley", "addr": "27 Nissley Dr, Middletown PA 17057", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Nissley Holdings LLC", "value": null, "rent": null, "metro": "Middletown", "county": "Dauphin", "buyerLLC": "Nissley Holdings LLC", "purchaseDate": "2021-11-12", "settlementDate": "2021-11-12", "purchasePrice": 189000, "totalBuyerCosts": 7500, "loanInitial": 185000, "loanRemaining": 172400, "bedrooms": 3, "bathrooms": 1.5, "sqft": 1480, "yearBuilt": 1978, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Brick", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Middletown Borough", "schoolDistrict": "Middletown Area School District", "taxId": "42-014-039", "mls": "PACB2007561", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Mohammed (House Manager)"},
+{"id": "p5", "name": "Progress", "addr": "4520 N. Progress Ave, Harrisburg, PA 17110", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Progress Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Progress Holdings LLC", "purchaseDate": "2020-07-10", "settlementDate": "2020-07-10", "purchasePrice": 205000, "totalBuyerCosts": 8100, "loanInitial": 210000, "loanRemaining": 190500, "loanLender": "M&T Bank", "loanContact": "(717) 555-0182", "loanAcctNo": "MT-8830", "loanOrigDate": "Jul 2020", "loanRate": 3.5, "loanRateType": "Fixed", "loanTermMo": 360, "loanMaturity": "Jul 2050", "loanPayment": 943, "loanEscrow": 300, "loanLien": "1st", "loanPrepay": "None", "bedrooms": 3, "bathrooms": 1.5, "sqft": 1520, "yearBuilt": 1988, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Brick", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Susquehanna Township", "schoolDistrict": "Central Dauphin School District", "taxId": "62-018-114", "mls": "PACB2009982", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Seth (House Manager)"},
+{"id": "p6", "name": "Country Hill", "addr": "1109 Country Hill Dr, Harrisburg PA 17111", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Country Hill Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Country Hill Holdings LLC", "purchaseDate": "2022-01-20", "settlementDate": "2022-01-20", "purchasePrice": 239000, "totalBuyerCosts": 9400, "loanInitial": 240000, "loanRemaining": 228900, "loanLender": "First National Bank", "loanContact": "(717) 555-0140", "loanAcctNo": "FNB-5120", "loanOrigDate": "Jan 2022", "loanRate": 4.25, "loanRateType": "Fixed", "loanTermMo": 360, "loanMaturity": "Jan 2052", "loanPayment": 1181, "loanEscrow": 350, "loanLien": "1st", "loanPrepay": "None", "bedrooms": 4, "bathrooms": 2, "sqft": 1875, "yearBuilt": 1999, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "Yes", "hoaFee": 45, "hoaAssocName": "Country Hill HOA", "hoaAssocContact": "(717) 555-0166", "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-052-091", "mls": "PACB2010877", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
+{"id": "p7", "name": "Nassau", "addr": "6114 Nassau Rd, Harrisburg PA 17112", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Nassau Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Nassau Holdings LLC", "purchaseDate": "2019-09-05", "settlementDate": "2019-09-05", "purchasePrice": 202000, "totalBuyerCosts": 7900, "loanInitial": 205000, "loanRemaining": 178200, "loanLender": "PNC Bank", "loanContact": "(888) 762-2265", "loanAcctNo": "PNC-2213", "loanOrigDate": "Sep 2019", "loanRate": 3.9, "loanRateType": "Fixed", "loanTermMo": 360, "loanMaturity": "Sep 2049", "loanPayment": 967, "loanEscrow": 320, "loanLien": "1st", "loanPrepay": "None", "bedrooms": 3, "bathrooms": 2, "sqft": 1610, "yearBuilt": 1985, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Lower Paxton Township", "schoolDistrict": "Central Dauphin School District", "taxId": "35-039-027", "mls": "PACB2008714", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
+{"id": "p8", "name": "Winston", "addr": "133 Winston Dr, Mechanicsburg PA 17055", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Winston Holdings LLC", "value": null, "rent": null, "metro": "Mechanicsburg", "county": "Cumberland", "buyerLLC": "Winston Holdings LLC", "purchaseDate": "2026-02-27", "settlementDate": "2026-02-27", "purchasePrice": 239500, "totalBuyerCosts": 10200, "loanInitial": 236170, "loanRemaining": 236170, "loanLender": "Mid Penn Bank", "loanContact": "349 Union St, Millersburg PA 17061", "loanAcctNo": "Guidance Line Sub-Note (Master Note 7/11/2025)", "loanOrigDate": "Feb 27, 2026", "loanRate": 6.5, "loanRateType": "Fixed 5 yrs, then WSJ Prime + 1.00% (floor 4.00%)", "loanTermMo": 240, "loanMaturity": "Feb 27, 2046", "loanPayment": 1773.57, "loanEscrow": 0, "loanLien": "1st (secured by property)", "loanPrepay": "5%/4%/3%/2%/1% in yrs 1\u20135+; waived on insurance payoff or sale to unrelated third party", "bedrooms": 4, "bathrooms": 2, "sqft": 1840, "yearBuilt": 2001, "levels": 2, "parkingType": "Attached garage", "typeStyle": "Colonial", "constructionMaterial": "Vinyl siding", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Upper Allen Township", "schoolDistrict": "Cumberland Valley School District", "taxId": "40-027-155", "mls": "PACB2013390", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Keira (House Manager)"},
+{"id": "p9", "name": "Nissley", "addr": "27 Nissley Dr, Middletown PA 17057", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Nissley Holdings LLC", "value": null, "rent": null, "metro": "Middletown", "county": "Dauphin", "buyerLLC": "Nissley Holdings LLC", "purchaseDate": "2021-11-12", "settlementDate": "2021-11-12", "purchasePrice": 189000, "totalBuyerCosts": 7500, "loanInitial": 185000, "loanRemaining": 172400, "loanLender": "M&T Bank", "loanContact": "(717) 555-0182", "loanAcctNo": "MT-9041", "loanOrigDate": "Nov 2021", "loanRate": 3.6, "loanRateType": "Fixed", "loanTermMo": 360, "loanMaturity": "Nov 2051", "loanPayment": 841, "loanEscrow": 290, "loanLien": "1st", "loanPrepay": "None", "bedrooms": 3, "bathrooms": 1.5, "sqft": 1480, "yearBuilt": 1978, "levels": 1, "parkingType": "Driveway", "typeStyle": "Ranch", "constructionMaterial": "Brick", "zoning": "R-1 Residential", "propertyType": "Single family", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Middletown Borough", "schoolDistrict": "Middletown Area School District", "taxId": "42-014-039", "mls": "PACB2007561", "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": "Mohammed (House Manager)"},
 {"id": "p10", "name": "Corporate", "addr": "Corporate office", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "Corporate Holdings LLC", "value": null, "rent": null, "metro": "Harrisburg", "county": "Dauphin", "buyerLLC": "Corporate Holdings LLC", "purchaseDate": "—", "settlementDate": "—", "purchasePrice": null, "totalBuyerCosts": null, "loanInitial": null, "loanRemaining": null, "bedrooms": null, "bathrooms": null, "sqft": null, "yearBuilt": null, "levels": null, "parkingType": "—", "typeStyle": "Office", "constructionMaterial": "—", "zoning": "Commercial", "propertyType": "Corporate office", "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "—", "schoolDistrict": "—", "taxId": "—", "mls": "—", "operatingProgram": "Corporate / administrative", "houseManager": "—"},
 {"id": "p11", "name": "Medinah", "addr": "6 Medinah Ct, Greensburg, PA 15601", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "CHS Property 5 LLC", "value": null, "rent": null, "metro": "Greensburg", "county": "Westmoreland", "buyerLLC": "CHS Property 5 LLC", "purchaseDate": null, "settlementDate": null, "purchasePrice": null, "totalBuyerCosts": null, "loanInitial": null, "loanRemaining": null, "bedrooms": null, "bathrooms": null, "sqft": null, "yearBuilt": null, "levels": null, "parkingType": null, "typeStyle": null, "constructionMaterial": null, "zoning": null, "propertyType": null, "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Greensburg", "schoolDistrict": null, "taxId": null, "mls": null, "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": null},
 {"id": "p12", "name": "Lakeview", "addr": "1104 Lakeview Dr, Latrobe, PA 15650", "own": "owned", "beds": null, "status": "Active", "health": "green", "compliance": null, "llc": "CHS Property 9 LLC", "value": null, "rent": null, "metro": "Latrobe", "county": "Westmoreland", "buyerLLC": "CHS Property 9 LLC", "purchaseDate": null, "settlementDate": null, "purchasePrice": null, "totalBuyerCosts": null, "loanInitial": null, "loanRemaining": null, "bedrooms": null, "bathrooms": null, "sqft": null, "yearBuilt": null, "levels": null, "parkingType": null, "typeStyle": null, "constructionMaterial": null, "zoning": null, "propertyType": null, "hoaCondo": "No", "hoaFee": null, "hoaAssocName": null, "hoaAssocContact": null, "municipality": "Latrobe", "schoolDistrict": null, "taxId": null, "mls": null, "operatingProgram": "IDD Waiver — Residential Habilitation", "houseManager": null}];
@@ -652,11 +700,11 @@ function refreshTickets(){if(VIEW==='tickets'&&MAINT_TAB==='items')renderTickets
 function renderTrash(el){
   if(ROLE!=='admin'){el.innerHTML='<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view Trash.</div>';return;}
   const rows=TRASH.slice().sort((a,b)=>new Date(b.deletedAt)-new Date(a.deletedAt));
-  el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:10px">Deleted vendors and tickets land here first. Restore brings them back exactly as they were, or delete permanently to remove them for good.</div>
+  el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:10px">Deleted properties, vendors, and tickets land here first. Restore brings them back exactly as they were, or delete permanently to remove them for good.</div>
   <div class="card"><div class="body">${rows.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="text-align:left;padding:8px 6px">Type</th><th style="text-align:left;padding:8px 6px">Item</th><th style="text-align:left;padding:8px 6px">Deleted</th><th style="padding:8px 6px"></th>
   </tr></thead><tbody>${rows.map(r=>`<tr style="border-top:1px solid var(--line)">
-    <td style="padding:8px 6px">${r.type==='vendor'?'🧰 Vendor':'🎫 Ticket'}</td>
+    <td style="padding:8px 6px">${r.type==='vendor'?'🧰 Vendor':r.type==='property'?'🏠 Property':'🎫 Ticket'}</td>
     <td style="padding:8px 6px"><div class="b">${esc(r.label||'')}</div><div class="muted" style="font-size:12px">${esc(r.sub||'')}</div></td>
     <td class="muted mono" style="padding:8px 6px;white-space:nowrap">${fdate(new Date(r.deletedAt))}</td>
     <td style="padding:8px 6px;text-align:right;white-space:nowrap">
@@ -673,6 +721,11 @@ async function restoreTrashItem(type,id){
     VENDORS.push(entry.item);
     if(entry.item._backend!=='supabase')saveState();
     if(VIEW==='vendors')renderVendors(document.getElementById('view'));
+  } else if(type==='property'){
+    if(entry.item._backend==='supabase'){const ok=await dbRestoreProperty(id);if(!ok)return;}
+    PROPS.push(entry.item);
+    if(entry.item._backend!=='supabase')saveState();
+    if(VIEW==='properties')renderProperties(document.getElementById('view'));
   } else {
     if(entry.item._backend==='supabase'){const ok=await dbRestoreTicket(id);if(!ok)return;}
     TICKETS.push(entry.item);
@@ -680,7 +733,7 @@ async function restoreTrashItem(type,id){
     refreshTickets();
   }
   TRASH.splice(ix,1);
-  toast((type==='vendor'?'Vendor':'Ticket')+' restored: '+entry.label);
+  toast((type==='vendor'?'Vendor':type==='property'?'Property':'Ticket')+' restored: '+entry.label);
   if(VIEW==='trash')renderTrash(document.getElementById('view'));
 }
 async function permanentlyDeleteTrashItem(type,id){
@@ -689,12 +742,12 @@ async function permanentlyDeleteTrashItem(type,id){
   const entry=TRASH[ix];
   if(!confirm(`Permanently delete "${entry.label}"? This cannot be undone.`))return;
   if(entry.item._backend==='supabase'){
-    const ok=type==='vendor'?await dbPermanentlyDeleteVendor(id):await dbPermanentlyDeleteTicket(id);
+    const ok=type==='vendor'?await dbPermanentlyDeleteVendor(id):type==='property'?await dbPermanentlyDeleteProperty(id):await dbPermanentlyDeleteTicket(id);
     if(!ok)return;
   }
   TRASH.splice(ix,1);
   saveState();
-  toast((type==='vendor'?'Vendor':'Ticket')+' permanently deleted');
+  toast((type==='vendor'?'Vendor':type==='property'?'Property':'Ticket')+' permanently deleted');
   if(VIEW==='trash')renderTrash(document.getElementById('view'));
 }
 function invoiceGroups(list){
@@ -885,15 +938,6 @@ let NOTES=[
  {id:5,tag:'Open item',pinned:false,text:'Nassau: replace carpeting in LR, DR & stairs — Empire scheduled for Aug 6.'},
 ];
 
-const LOANS={
- p3:[{lender:'First National Bank',contact:'(717) 555-0140',loanNo:'FNB-4471',principal:292000,origDate:'Mar 2021',rate:3.75,rateType:'Fixed',termMo:360,maturity:'Mar 2051',payment:1352,escrow:410,balance:268400,lien:'1st',prepay:'None'}],
- p5:[{lender:'M&T Bank',contact:'(717) 555-0182',loanNo:'MT-8830',principal:210000,origDate:'Jul 2020',rate:3.5,rateType:'Fixed',termMo:360,maturity:'Jul 2050',payment:943,escrow:300,balance:190500,lien:'1st',prepay:'None'}],
- p6:[{lender:'First National Bank',contact:'(717) 555-0140',loanNo:'FNB-5120',principal:240000,origDate:'Jan 2022',rate:4.25,rateType:'Fixed',termMo:360,maturity:'Jan 2052',payment:1181,escrow:350,balance:228900,lien:'1st',prepay:'None'}],
- p7:[{lender:'PNC Bank',contact:'(888) 762-2265',loanNo:'PNC-2213',principal:205000,origDate:'Sep 2019',rate:3.9,rateType:'Fixed',termMo:360,maturity:'Sep 2049',payment:967,escrow:320,balance:178200,lien:'1st',prepay:'None'}],
- p8:[{lender:'Mid Penn Bank',contact:'349 Union St, Millersburg PA 17061',loanNo:'Guidance Line Sub-Note (Master Note 7/11/2025)',principal:236170,origDate:'Feb 27, 2026',rate:6.5,rateType:'Fixed 5 yrs, then WSJ Prime + 1.00% (floor 4.00%)',termMo:240,maturity:'Feb 27, 2046',payment:1773.57,escrow:0,balance:236170,lien:'1st (secured by property)',prepay:'5%/4%/3%/2%/1% in yrs 1–5+; waived on insurance payoff or sale to unrelated third party'}],
- p9:[{lender:'M&T Bank',contact:'(717) 555-0182',loanNo:'MT-9041',principal:185000,origDate:'Nov 2021',rate:3.6,rateType:'Fixed',termMo:360,maturity:'Nov 2051',payment:841,escrow:290,balance:172400,lien:'1st',prepay:'None'}]
-};
-
 /* ===== compliance: certificates & inspections (Scope §4.2) ===== */
 const CERTS=[
  {prop:'p3',type:'Certificate of Occupancy',authority:'City of Harrisburg',certNo:'CO-2021-0456',issue:'2021-03-20',exp:null,cadence:'Perpetual',status:'active',resp:'Sonia S.',cost:0},
@@ -992,15 +1036,34 @@ function uploadDoc(pid){
   }
   document.getElementById('propTabBody').innerHTML=propDocs(p);
 }
+// The Properties landing table (list view) is only rendered from renderProperties();
+// editing a property inside its drawer mutates PROPS in memory but doesn't touch that
+// table's DOM by itself. Call this after any property edit so the row behind the open
+// drawer (Metro, Status, Maint. spend, etc.) reflects the change immediately instead of
+// looking "stuck" until the next full navigation.
+function refreshPropertiesLanding(){if(VIEW==='properties')renderProperties(document.getElementById('view'));}
+async function refreshPropertiesFromServer(){
+  const btn=document.getElementById('propsRefreshBtn');
+  if(btn){btn.disabled=true;btn.textContent='🔄 Refreshing…';}
+  if(SUPA_CONFIGURED){
+    await Promise.all([loadRealProperties(),loadRealTickets()]);
+    toast('Properties refreshed');
+  } else {
+    toast('Refreshed (demo mode — no server to sync with)');
+  }
+  if(VIEW==='properties')renderProperties(document.getElementById('view'));
+}
+
 function updatePropHoaCondo(pid,value){
   const p=propById(pid);if(!p)return;
   const prev=p.hoaCondo;
   p.hoaCondo=value;
   if(p._backend==='supabase'){
-    dbUpdateProperty(pid,{hoa_condo:value}).then(ok=>{if(!ok){p.hoaCondo=prev;document.getElementById('propTabBody').innerHTML=propDetails(p);}});
+    dbUpdateProperty(pid,{hoa_condo:value}).then(ok=>{if(!ok){p.hoaCondo=prev;document.getElementById('propTabBody').innerHTML=propDetails(p);refreshPropertiesLanding();}});
   } else saveState();
   toast('Updated — override saved');
   document.getElementById('propTabBody').innerHTML=propDetails(p);
+  refreshPropertiesLanding();
 }
 function updatePropField(pid,field,value,kind){
   const p=propById(pid);if(!p)return;
@@ -1014,9 +1077,10 @@ function updatePropField(pid,field,value,kind){
   else{p[field]=value.trim()===''?null:value;}
   if(p._backend==='supabase'){
     const col=PROP_FIELD_TO_COLUMN[field];
-    if(col){dbUpdateProperty(pid,{[col]:p[field]}).then(ok=>{if(!ok)p[field]=prev;});}
+    if(col){dbUpdateProperty(pid,{[col]:p[field]}).then(ok=>{if(!ok){p[field]=prev;refreshPropertiesLanding();}});}
   } else saveState();
   toast('Updated — override saved');
+  refreshPropertiesLanding();
 }
 
 /* ===== router ===== */
@@ -1305,7 +1369,8 @@ function renderProperties(el){
   const list=[...PROPS].filter(p=>PFILTER.metro==='all'||p.metro===PFILTER.metro).sort((a,b)=>a.name.localeCompare(b.name));
   el.innerHTML=`<div class="toolbar"><span class="b">${list.length} of ${PROPS.length} properties</span>
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
-    <span style="margin-left:auto"></span><button class="btn sec sm" onclick="startOnboard()">+ New property</button></div>
+    <span style="margin-left:auto"></span><button class="btn sec sm" id="propsRefreshBtn" onclick="refreshPropertiesFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
+    <button class="btn sec sm" onclick="startOnboard()">+ New property</button></div>
   <div class="card"><table><thead><tr><th>Property</th><th>Type</th><th>Status</th><th>Stage</th><th>Open</th><th>Total items</th><th class="right">Maint. spend</th><th style="text-align:left;min-width:130px">Metro
     <select onchange="setPF('metro',this.value)" style="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer;margin-top:4px" title="Filter by Metro"><option value="all"${PFILTER.metro==='all'?' selected':''}>All</option>${metroOpts.map(m=>`<option value="${esc(m)}"${PFILTER.metro===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
   </th></tr></thead><tbody>
@@ -1323,7 +1388,7 @@ function renderProperties(el){
 function openProperty(id){const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
   const tabList=p.own==='owned'?['Overview','Details','Acquisition','Disposition','Compliance','Licensing','Loan','Components','Documents','Maintenance']:['Overview','Details','Acquisition','Compliance','Licensing','Components','Documents','Maintenance'];const tabsHtml=tabList.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="propTab(this,'${id}','${t}')">${t}</button>`).join('');
   drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${p.own==='owned'?'Owned · '+(p.llc||'LLC'):'Leased · '+(p.landlord||'—')}</div><div style="font-size:19px;font-weight:800;margin-top:2px">${p.name}</div><div class="faint" style="font-size:12.5px">${p.addr||'—'}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">● ${p.status}</span></div></div>`,
-    `<div class="tabs">${tabsHtml}</div><div id="propTabBody">${propOverview(p,tks)}</div>`);
+    `<div class="tabs">${tabsHtml}</div><div id="propTabBody">${propOverview(p,tks)}</div>${ROLE==='admin'?`<div style="margin-top:14px"><button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteProperty('${id}')">🗑️ Delete property</button></div>`:''}`);
 }
 function propTab(btn,id,name){document.querySelectorAll('.drawer .tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
   document.getElementById('propTabBody').innerHTML={Overview:propOverview(p,tks),Details:propDetails(p),Acquisition:propChecklist(p),Disposition:propDisposition(p),Compliance:propComplianceTab(p),Licensing:propLicensing(p),Loan:propLoan(p),Components:propComponents(p),Documents:propDocs(p),Maintenance:propTickets(tks)}[name];}
@@ -1775,22 +1840,24 @@ function setChkText(pid,ix,val){const p=propById(pid);const it=chkListFor(p)[ix]
 
 function propLoan(p){
   if(p.own!=='owned') return '<div class="card"><div class="body muted">Loans apply to owned properties only.</div></div>';
-  const loans=LOANS[p.id]||[];
-  if(!loans.length) return '<div class="card"><div class="body">No loan on file — property owned outright.</div></div>';
-  const bal=loans.reduce((s,l)=>s+l.balance,0),svc=loans.reduce((s,l)=>s+l.payment+(l.escrow||0),0);
-  return `<div class="mrow" style="margin-bottom:12px"><div class="b">${loans.length} loan${loans.length>1?'s':''}</div><div class="pill">Balance ${money(bal)} · debt service ${money(svc)}/mo</div></div>`
-   + loans.map(l=>`<div class="card" style="margin-bottom:12px"><div class="body"><div class="kv">
-      <div class="k">Lender</div><div><b>${l.lender}</b> · ${l.contact||'—'}</div>
-      <div class="k">Loan / account #</div><div>${l.loanNo}</div>
-      <div class="k">Original principal</div><div>${money(l.principal)} · ${l.origDate}</div>
-      <div class="k">Interest rate</div><div>${l.rate}% · ${l.rateType}</div>
-      <div class="k">Term / maturity</div><div>${l.termMo} mo · matures ${l.maturity}</div>
-      <div class="k">Monthly payment</div><div><b>$${l.payment.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</b> P&I${l.escrow?' + '+money(l.escrow)+' escrow':''}</div>
-      <div class="k">Current balance</div><div><b>${money(l.balance)}</b></div>
-      <div class="k">Lien position</div><div>${l.lien}</div>
-      <div class="k">Prepayment penalty</div><div>${l.prepay||'None'}</div>
-    </div></div></div>`).join('')
-   + '<div class="muted" style="font-size:12px">Sample loan data · maps to Scope §4.4 Loan & Debt Tracking (multiple loans per property supported).</div>';
+  const hasLoan=p.loanLender||p.loanInitial!=null||p.loanRemaining!=null;
+  const svc=(p.loanPayment||0)+(p.loanEscrow||0);
+  return `${hasLoan?`<div class="mrow" style="margin-bottom:12px"><div class="b">Loan on file</div><div class="pill">Balance ${money(p.loanRemaining)}${svc?' · debt service '+money(svc)+'/mo':''}</div></div>`:''}
+  <div class="card"><div class="body"><div class="kv">
+    <div class="k">Lender</div><div>${propTxt(p,'loanLender','—',220)}</div>
+    <div class="k">Lender contact</div><div>${propTxt(p,'loanContact','—',220)}</div>
+    <div class="k">Loan / account #</div><div>${propTxt(p,'loanAcctNo','—',220)}</div>
+    <div class="k">Original principal</div><div>${propTxt(p,'loanInitial','—',150,'number',money)}</div>
+    <div class="k">Origination date</div><div>${propTxt(p,'loanOrigDate','e.g. Mar 2021',140)}</div>
+    <div class="k">Interest rate</div><div>${propTxt(p,'loanRate','—',80,'number',v=>v+'%')} <span class="muted">·</span> ${propTxt(p,'loanRateType','e.g. Fixed',210)}</div>
+    <div class="k">Term / maturity</div><div>${propTxt(p,'loanTermMo','—',80,'number',v=>v+' mo')} <span class="muted">·</span> ${propTxt(p,'loanMaturity','e.g. Mar 2051',140)}</div>
+    <div class="k">Monthly payment</div><div>${propTxt(p,'loanPayment','—',130,'number',v=>'$'+Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}))} <span class="muted">P&I</span></div>
+    <div class="k">Escrow (monthly)</div><div>${propTxt(p,'loanEscrow','—',130,'number',money)}</div>
+    <div class="k">Current balance</div><div>${propTxt(p,'loanRemaining','—',150,'number',money)}</div>
+    <div class="k">Lien position</div><div>${propTxt(p,'loanLien','e.g. 1st',90)}</div>
+    <div class="k">Prepayment penalty</div><div>${propTxt(p,'loanPrepay','e.g. None',300)}</div>
+  </div></div></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">${ROLE!=='admin'?'Editable by Senior Admin only. ':''}Maps to Scope §4.4 Loan &amp; Debt Tracking. Tracks one loan per property — a refinance or second lien can be reflected by updating these fields directly.</div>`;
 }
 
 /* ===== leases ===== */
@@ -1851,7 +1918,6 @@ function vendorsFiltered(){
   ).sort((a,b)=>{const r=catRank(a)-catRank(b);return r!==0?r:a.name.localeCompare(b.name);});
 }
 function vrow(v){return `<tr class="clickable" onclick="openVendor('${v.id}')">
-    <td class="muted">${(v.metro&&v.metro.length)?esc(v.metro.join(', ')):'<span class="faint">—</span>'}</td>
     <td class="b">${v.name}</td>
     <td class="muted">${v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>'}</td>
     <td>${v.primary||'<span class="faint">—</span>'}</td>
@@ -1862,7 +1928,7 @@ function vrow(v){return `<tr class="clickable" onclick="openVendor('${v.id}')">
 function drawVendors(){
   const rows=vendorsFiltered();
   const tb=document.getElementById('vtbody');
-  if(tb)tb.innerHTML=rows.length?rows.map(vrow).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:26px">No vendors match these filters.</td></tr>';
+  if(tb)tb.innerHTML=rows.length?rows.map(vrow).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:26px">No vendors match these filters.</td></tr>';
 }
 function setVF(k,v){VFILTER[k]=v;if(VIEW==='vendors')renderVendors(document.getElementById('view'));}
 function setVFLive(k,v){VFILTER[k]=v;drawVendors();}
@@ -1909,7 +1975,6 @@ function renderVendors(el){
     </span></div>
   <div class="toolbar"><span class="b">${vendorsFiltered().length} of ${VENDORS.length} vendors</span></div>
   <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr>
-    ${thSel('metro','Metro',[{v:'__blank__',l:'— none —'},...metroOpts.map(m=>({v:m,l:m}))])}
     ${thText('nameQuery','Vendor')}
     ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})))}
     ${thSel('primary','Primary/Secondary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))])}
@@ -2090,10 +2155,11 @@ function reportBody(tab){
     <div class="sectitle">Portfolio compliance health</div><div class="card"><div class="body row">${PROPS.map(p=>{const pc=CERTS.filter(c=>c.prop===p.id);const bad=pc.some(c=>c.status==='expired');return `<span class="pill" style="border-color:var(--${bad?'red':'green'});color:var(--${bad?'red':'green'})">${p.name}</span>`;}).join('')}</div></div>`;
   }
   if(tab==='financial'){
-    const totalDebt=Object.values(LOANS).flat().reduce((s,l)=>s+l.balance,0);
-    const svc=Object.values(LOANS).flat().reduce((s,l)=>s+l.payment+(l.escrow||0),0);
-    return `<div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi"><div class="lab">Monthly debt service</div><div class="val">${money(svc)}</div></div><div class="kpi"><div class="lab">Properties w/ loans</div><div class="val">${Object.keys(LOANS).length}</div></div></div>
-    <div class="sectitle">Loans — balance &amp; maturity</div><div class="card"><table><thead><tr><th>Property</th><th>Lender</th><th class="right">Balance</th><th>Maturity</th></tr></thead><tbody>${Object.entries(LOANS).map(([pid,ls])=>ls.map(l=>`<tr><td class="b">${propById(pid).name}</td><td class="muted">${l.lender}</td><td class="right mono">${money(l.balance)}</td><td class="mono">${l.maturity}</td></tr>`).join('')).join('')}</tbody></table></div>
+    const loaned=PROPS.filter(p=>p.own==='owned'&&(p.loanLender||p.loanRemaining!=null));
+    const totalDebt=loaned.reduce((s,p)=>s+(p.loanRemaining||0),0);
+    const svc=loaned.reduce((s,p)=>s+(p.loanPayment||0)+(p.loanEscrow||0),0);
+    return `<div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi"><div class="lab">Monthly debt service</div><div class="val">${money(svc)}</div></div><div class="kpi"><div class="lab">Properties w/ loans</div><div class="val">${loaned.length}</div></div></div>
+    <div class="sectitle">Loans — balance &amp; maturity</div><div class="card"><table><thead><tr><th>Property</th><th>Lender</th><th class="right">Balance</th><th>Maturity</th></tr></thead><tbody>${loaned.map(p=>`<tr class="clickable" onclick="openProperty('${p.id}')"><td class="b">${p.name}</td><td class="muted">${p.loanLender||'—'}</td><td class="right mono">${money(p.loanRemaining)}</td><td class="mono">${p.loanMaturity||'—'}</td></tr>`).join('')||'<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">No loans on file yet — add one from a property\'s Loan tab.</td></tr>'}</tbody></table></div>
     <div class="muted" style="font-size:12px;margin-top:8px">Market valuations (AVM/RentCast) are out of this prototype's sample scope — table reflects loan data only.</div>`;
   }
   if(tab==='capital'){
@@ -2102,7 +2168,7 @@ function reportBody(tab){
     <div class="muted" style="font-size:12px;margin-top:8px">5/10-year capital forecast and reserve-adequacy views are illustrative only — component ages are sample estimates (Scope §4.6/§4.9.5).</div>`;
   }
   const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');
-  const totalDebt=Object.values(LOANS).flat().reduce((s,l)=>s+l.balance,0);
+  const totalDebt=PROPS.filter(p=>p.own==='owned').reduce((s,p)=>s+(p.loanRemaining||0),0);
   return `<div class="kpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div><div class="kpi ${emerg.length?'red':'green'}"><div class="lab">Open emergencies</div><div class="val">${emerg.length}</div></div><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi ${CERTS.filter(c=>c.status==='expired').length?'red':'green'}"><div class="lab">Overdue compliance</div><div class="val">${CERTS.filter(c=>c.status==='expired').length}</div></div></div>
   <div class="sectitle">Trailing spend</div><div class="card"><div class="body">Trailing maintenance spend: <b>${money(TICKETS.filter(t=>t.cost).reduce((s,t)=>s+t.cost,0))}</b></div></div>`;
 }
