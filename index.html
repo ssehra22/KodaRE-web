@@ -183,6 +183,7 @@
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
     <button data-role="caregiver"><span class="rc" style="background:var(--cg)"></span>Caregiver · Mobile</button>
   </div>
+  <div class="switch hidden" id="liveRoleBadge" style="cursor:default" title="Your role is assigned by a Senior Admin in User Management — Scope §3.2"><span class="rc" id="liveRoleDot" style="background:var(--os)"></span><span id="liveRoleText">Signed in</span></div>
   <button onclick="resetDemo()" title="Reset all sample data to the original demo" style="background:#1b2836;color:#b7c5d6;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-left:8px">↺ Reset demo</button>
 </div>
 
@@ -489,6 +490,21 @@ async function loadRealTrash(){
   else (tRows||[]).forEach(row=>{const t=rowToTicket(row);TRASH.push({type:'ticket',id:t.id,label:t.title,sub:(propById(t.prop).name||'')+(t.svc?' · '+t.svc:''),deletedAt:row.deleted_at,item:t});});
   TRASH.sort((a,b)=>new Date(b.deletedAt)-new Date(a.deletedAt));
 }
+let USER_ROLES=[];
+// Senior-Admin-only: loads every row of user_roles (Scope §3.2 User management capability).
+// Non-admins never call this — RLS would filter it to just their own row anyway, but there's
+// no reason to fetch a list they can't act on.
+async function loadRealUserRoles(){
+  if(!SUPA_CONFIGURED||ROLE!=='admin')return;
+  const {data,error}=await sb.from('user_roles').select('*').order('email');
+  if(error){toast('Could not load User Management: '+error.message);return;}
+  USER_ROLES=data||[];
+}
+async function dbUpdateUserRole(userId,role){
+  const {error}=await sb.from('user_roles').update({role,updated_at:new Date().toISOString()}).eq('user_id',userId);
+  if(error){toast('Could not update role: '+error.message);return false;}
+  return true;
+}
 async function dbUpsertChecklist(table,propertyId,items){
   const {error}=await sb.from(table).upsert({property_id:propertyId,items},{onConflict:'property_id'});
   if(error){toast('Save failed: '+error.message);return false;}
@@ -566,10 +582,48 @@ async function authSignIn(){
   await enterLiveApp();
 }
 async function authSignOut(){if(sb){await sb.auth.signOut();}location.reload();}
+// Scope §3.2 Permissions Matrix: resolves the signed-in user's real role from the user_roles
+// table (schema_phase15.sql). First-ever login self-registers as 'office' (the safe default) —
+// a Senior Admin then promotes/reassigns from User Management. Falls back to 'office' on any
+// error so a hiccup here never silently grants elevated access.
+async function dbResolveMyRole(){
+  const {data:{user}}=await sb.auth.getUser();
+  if(!user)return {role:'office',name:'',email:''};
+  const {data,error}=await sb.from('user_roles').select('*').eq('user_id',user.id).maybeSingle();
+  if(error){toast('Could not load your role — defaulted to Office Staff: '+error.message);return {role:'office',name:user.email,email:user.email};}
+  if(data)return {role:data.role,name:data.name||data.email,email:data.email};
+  const{error:insErr}=await sb.from('user_roles').insert({user_id:user.id,email:user.email,name:user.email,role:'office'});
+  if(insErr){toast('Could not set up your account — defaulted to Office Staff: '+insErr.message);}
+  else toast('Welcome! Your account was set up as Office Staff — ask a Senior Admin to update your role in User Management if needed.');
+  return {role:'office',name:user.email,email:user.email};
+}
+const LIVE_ROLE_LABEL={admin:'Senior Admin',office:'Office Staff',caregiver:'Caregiver'};
+const LIVE_ROLE_COLOR={admin:'var(--sa)',office:'var(--os)',caregiver:'var(--cg)'};
+// Applies a real, DB-assigned role to the live app — replaces the free demo role-switcher
+// (which stays available only when SUPA_CONFIGURED is false / no real login is involved).
+function applyLiveRole(role,displayName){
+  ROLE=role;
+  document.getElementById('switch').classList.add('hidden');
+  const badge=document.getElementById('liveRoleBadge');
+  badge.classList.remove('hidden');
+  document.getElementById('liveRoleDot').style.background=LIVE_ROLE_COLOR[role]||'var(--os)';
+  document.getElementById('liveRoleText').textContent=(displayName?displayName+' · ':'')+(LIVE_ROLE_LABEL[role]||role);
+  const mobile=role==='caregiver';
+  document.getElementById('desktop').classList.toggle('hidden',mobile);
+  document.getElementById('mobile').classList.toggle('hidden',!mobile);
+  if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
+  else{
+    document.getElementById('sideName').textContent=displayName||'—';
+    document.getElementById('sideRole').textContent=LIVE_ROLE_LABEL[role]||role;
+    const av=document.getElementById('sideAvatar');av.textContent=initials(displayName||'?');av.style.background=LIVE_ROLE_COLOR[role]||'var(--os)';
+  }
+}
 async function enterLiveApp(){
   document.getElementById('authGate').classList.add('hidden');
   const foot=document.getElementById('footStatus');
   if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases, Compliance, Acquisition, Disposition, Licensing Checklists & Reference Lists are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
+  const me=await dbResolveMyRole();
+  applyLiveRole(me.role,me.name);
   await loadRealProperties();
   await loadRealTickets();
   await loadRealVendors();
@@ -580,10 +634,14 @@ async function enterLiveApp(){
   await loadRealLicensingChecklists();
   await loadRealReferenceLists();
   await loadRealTrash();
+  if(ROLE==='admin')await loadRealUserRoles();
   computeHealth();
   buildNav();
-  navigate(VIEW);
+  navigate(mobile_role_safe_view());
 }
+// After a real role is resolved, land on a view that role can actually see (a caregiver
+// signing in shouldn't land on the desktop 'dashboard' VIEW value behind the scenes).
+function mobile_role_safe_view(){return ROLE==='caregiver'?'dashboard':VIEW;}
 async function initLiveMode(){
   if(!SUPA_CONFIGURED)return;
   const {data:{session}}=await sb.auth.getSession();
@@ -711,6 +769,38 @@ function renderTrash(el){
       <button class="btn sec sm" onclick="restoreTrashItem('${r.type}','${r.id}')">↩ Restore</button>
       <button class="btn sec sm" style="border-color:var(--red);color:var(--red);margin-left:6px" onclick="permanentlyDeleteTrashItem('${r.type}','${r.id}')">🗑️ Delete permanently</button>
     </td></tr>`).join('')}</tbody></table>`:'<div class="muted" style="text-align:center;padding:26px">Trash is empty.</div>'}</div></div>`;
+}
+function renderUserManagement(el){
+  if(ROLE!=='admin'){el.innerHTML='<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view User Management.</div>';return;}
+  const roleOpts=[['admin','Senior Admin'],['office','Office Staff'],['caregiver','Caregiver']];
+  el.innerHTML=`<div class="toolbar"><span class="muted" style="font-size:12.5px;max-width:560px">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</span>
+    <span style="margin-left:auto"></span><button class="btn sec sm" onclick="refreshUserRoles()">🔄 Refresh</button></div>
+  <div class="card"><div class="body">${USER_ROLES.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="text-align:left;padding:8px 6px">Name</th><th style="text-align:left;padding:8px 6px">Email</th><th style="text-align:left;padding:8px 6px">Role</th><th style="text-align:left;padding:8px 6px">Since</th>
+  </tr></thead><tbody>${USER_ROLES.map(u=>`<tr style="border-top:1px solid var(--line)">
+    <td style="padding:8px 6px">${esc(u.name||'—')}</td>
+    <td class="muted" style="padding:8px 6px">${esc(u.email)}</td>
+    <td style="padding:8px 6px"><select onchange="setUserRole('${u.user_id}',this.value,'${esc(u.email)}')" style="font-size:13px">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
+    <td class="muted mono" style="padding:8px 6px;white-space:nowrap">${fdate(new Date(u.created_at))}</td>
+  </tr>`).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
+  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" is Senior Admin read/write only.</div>`;
+}
+async function refreshUserRoles(){await loadRealUserRoles();if(VIEW==='users')renderUserManagement(document.getElementById('view'));}
+async function setUserRole(userId,role,email){
+  const {data:{user}}=await sb.auth.getUser();
+  const isSelf=user&&user.email===email;
+  if(isSelf&&role!=='admin'){
+    if(!confirm('This changes your own role away from Senior Admin. You will lose access to this screen and other admin-only areas immediately. Continue?')){
+      if(VIEW==='users')renderUserManagement(document.getElementById('view'));
+      return;
+    }
+  }
+  const ok=await dbUpdateUserRole(userId,role);
+  if(!ok){if(VIEW==='users')renderUserManagement(document.getElementById('view'));return;}
+  const row=USER_ROLES.find(u=>u.user_id===userId);if(row)row.role=role;
+  toast('Role updated: '+email+' → '+(LIVE_ROLE_LABEL[role]||role));
+  if(isSelf){applyLiveRole(role,row?row.name:email);buildNav();navigate(ROLE==='admin'?'users':'dashboard');}
+  else if(VIEW==='users')renderUserManagement(document.getElementById('view'));
 }
 async function restoreTrashItem(type,id){
   if(ROLE!=='admin'){toast('Only Senior Admin can restore items');return;}
@@ -1097,18 +1187,18 @@ let SELECTED=new Set();
 let TRASH=[];
 let PFILTER={metro:'all'};
 const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'reports',ic:'📊',label:'Reports'},{id:'assumptions',ic:'🧮',label:'Assumptions'},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length},{id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length}];
-const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently']};
+const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2']};
 function setRole(r){ROLE=r;document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
   const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
   else{const s=STAFF[r];document.getElementById('sideName').textContent=s.name;document.getElementById('sideRole').textContent=s.role;const av=document.getElementById('sideAvatar');av.textContent=initials(s.name);av.style.background=s.color;navigate('dashboard');}}
-function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});}
+function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});}
   nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
-function navigate(v){if((v==='assumptions'||v==='trash')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
+function navigate(v){if((v==='assumptions'||v==='trash'||v==='users')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
   if(v==='approvals'){document.getElementById('viewTitle').textContent='Approvals';document.getElementById('crumb').textContent='Sign-offs & escalations';}
   else{document.getElementById('viewTitle').textContent=t[0];document.getElementById('crumb').textContent=t[1];}
   const el=document.getElementById('view');el.scrollTop=0;
-  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash}[v]||renderDashboard)(el);}
+  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement}[v]||renderDashboard)(el);}
 function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast">✓ ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);}
 function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};return (U[a.urgency]-U[b.urgency])||(new Date(b.created)-new Date(a.created));}
 
