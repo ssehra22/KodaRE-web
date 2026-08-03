@@ -197,12 +197,25 @@
   .uroles-access-all{display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:var(--faint);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
   .uroles-edit{color:var(--uroles-accent2);font-weight:700;font-size:12px;cursor:pointer;margin-left:8px;white-space:nowrap}
   .uroles-foot{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.55}
+  .uroles-matrix-head{margin:22px 0 10px}
+  .uroles-matrix-head h3{font-size:14px;font-weight:800;margin:0 0 3px}
+  .uroles-matrix-head .sub{font-size:12px;color:var(--muted)}
+  .uroles-permtable{width:100%;border-collapse:collapse}
+  .uroles-permtable thead th{text-align:left;padding:10px 14px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--panel2);border-bottom:1px solid var(--line)}
+  .uroles-permtable thead th.c{text-align:center}
+  .uroles-permtable tbody td{padding:10px 14px;border-top:1px solid var(--line);font-size:12.5px}
+  .uroles-permtable tbody td.c{text-align:center}
+  .uroles-permtable tbody tr:hover{background:var(--panel2)}
+  .uroles-permbadge{display:inline-flex;align-items:center;justify-content:center;min-width:38px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px;border:1px solid transparent}
+  .uroles-permbadge.rw{background:rgba(13,148,136,.13);color:var(--uroles-accent2);border-color:rgba(13,148,136,.3)}
+  .uroles-permbadge.r{background:#eef1f5;color:#5a6a7c;border-color:#dce3ec}
+  .uroles-permbadge.none{background:transparent;color:var(--faint);border-color:transparent}
 </style>
 </head>
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 7:38pm</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 7:50pm</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -891,7 +904,39 @@ function renderUserManagement(el){
     <td>${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
     <td class="muted mono" style="white-space:nowrap;font-size:12px">${fdate(new Date(u.created_at))}</td>
   </tr>`;}).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
-  <div class="uroles-foot">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>`;
+  <div class="uroles-foot">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>
+  ${permissionsMatrixHtml()}`;
+}
+function permBadge(v){
+  if(v==='—')return '<span class="uroles-permbadge none">—</span>';
+  if(v==='R')return '<span class="uroles-permbadge r">R</span>';
+  return `<span class="uroles-permbadge rw">${esc(v)}</span>`;
+}
+function permissionsMatrixHtml(){
+  const rows=[
+    ['Property records — basic info (address, contacts)','R*','R','R/W'],
+    ['Property cost basis & purchase history','—','R','R/W'],
+    ['Property documents (deeds, photos, etc.)','R*','R/W (loading docs only)','R/W'],
+    ['Compliance: CO, licenses, inspections','R*','R/W','R/W'],
+    ['Inspection scheduling & reminders','—','R/W','R/W'],
+    ['Loans & debt','—','R','R/W'],
+    ['Valuations & equity reports','—','R','R/W'],
+    ['Capital components & reserves','—','R','R/W'],
+    ['Maintenance tickets — submit','W/R*','R/W','R/W'],
+    ['Maintenance tickets — triage & assign','—','R/W','R/W'],
+    ['Vendor directory','R*','R/W','R/W'],
+    ['Expenses & invoices','—','R/W','R/W'],
+    ['Reports — operational','—','R','R'],
+    ['Reports — financial / executive','—','—','R'],
+    ['User management (add/remove, role changes)','—','—','R/W'],
+    ['Property assignment to caregivers','—','R','R/W'],
+    ['Audit log','—','—','R'],
+  ];
+  return `<div class="uroles-matrix-head"><h3>Permissions matrix</h3><div class="sub">What each role can read and write — Scope §3.2</div></div>
+  <div class="card uroles-card"><div class="body" style="padding:0"><table class="uroles-permtable"><thead><tr>
+    <th>Capability</th><th class="c">Field Staff</th><th class="c">Office Staff</th><th class="c">Senior Admin</th>
+  </tr></thead><tbody>${rows.map(([cap,fs,os,sa])=>`<tr><td>${esc(cap)}</td><td class="c">${permBadge(fs)}</td><td class="c">${permBadge(os)}</td><td class="c">${permBadge(sa)}</td></tr>`).join('')}</tbody></table></div></div>
+  <div class="uroles-foot">R = Read, W = Write/Edit, — = No access. * Field Staff "R" access is scoped only to properties they're assigned to, and to records flagged for Field Staff visibility (approved vendors, posted compliance documents) — never other properties or unposted documents. "Property records — basic info" shows Office Staff as read-only (R), reflecting the redlined refinement in §3.2 that only Senior Admin can edit property address/characteristics — this matches what's actually enforced in the app, superseding the matrix's original R/W value. Leases & Rent and the Purchase/Disposition/Licensing checklists aren't listed in the source matrix at all; per your direction, Field Staff have zero access to those today, enforced in the app's navigation.</div>`;
 }
 function openPropertyAssignments(userId,email){
   const assigned=new Set(PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===userId).map(a=>a.property_id));
