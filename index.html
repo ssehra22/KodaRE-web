@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KodaRE — Interactive Prototype</title>
+<title>KodaRE — Property Management Platform</title>
 <style>
   :root{
     --bg:#eef1f5; --panel:#ffffff; --panel2:#f4f6f9; --line:#dce3ec;
@@ -177,7 +177,7 @@
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Interactive Prototype · v0.3 · build jul 20, 6:05pm</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · v1.0 · build aug 3, 2026</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -195,7 +195,7 @@
       <div><div class="nm" id="sideName">Dana Cruz</div><div class="rl" id="sideRole">Office Staff</div></div>
     </div>
     <nav id="nav"></nav>
-    <div class="foot" id="footStatus">KodaRE — Property Management Platform<br>Prototype for team review · not live data</div>
+    <div class="foot" id="footStatus">KodaRE — Property Management Platform<br>Live — connected to Supabase</div>
   </aside>
   <div class="main">
     <div class="topbar">
@@ -433,6 +433,48 @@ async function loadRealCertsAndInspections(){
   if(inspErr)toast('Could not load inspections: '+inspErr.message);
   else {INSPECTIONS.length=0;(inspRows||[]).forEach(row=>INSPECTIONS.push(rowToInspection(row)));}
 }
+/* ===== Documents — real Supabase Storage + documents table (Phase 17) ===== */
+function rowToDocument(row){
+  return {id:row.id, _backend:'supabase', prop:row.property_id, type:row.doc_type, file:row.file_name,
+    path:row.file_path, size:fmtBytes(row.file_size), uploaded:new Date(row.created_at), status:'On file', note:row.note||''};
+}
+async function loadRealDocuments(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('documents').select('*').order('created_at',{ascending:false});
+  if(error){toast('Could not load documents: '+error.message);return;}
+  DOCS.length=0;(data||[]).forEach(row=>DOCS.push(rowToDocument(row)));
+}
+async function dbInsertDocument(propertyId,docType,fileName,filePath,fileSize){
+  const {data,error}=await sb.from('documents').insert({property_id:propertyId,doc_type:docType,file_name:fileName,file_path:filePath,file_size:fileSize}).select().single();
+  if(error){toast('Could not save document record: '+error.message);return null;}
+  return data;
+}
+async function dbDeleteDocument(id,path){
+  const {error}=await sb.from('documents').delete().eq('id',id);
+  if(error){toast('Delete failed: '+error.message);return false;}
+  if(path){const {error:rmErr}=await sb.storage.from('documents').remove([path]);if(rmErr)console.error('storage cleanup failed',rmErr);}
+  return true;
+}
+/* ===== Team Notes — real Supabase table (Phase 17) ===== */
+function rowToNote(row){
+  return {id:row.id, _backend:'supabase', tag:row.tag, pinned:row.pinned, text:row.text};
+}
+async function loadRealNotes(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('team_notes').select('*').order('pinned',{ascending:false}).order('created_at',{ascending:false});
+  if(error){toast('Could not load notes: '+error.message);return;}
+  NOTES.length=0;(data||[]).forEach(row=>NOTES.push(rowToNote(row)));
+}
+async function dbInsertNote(text){
+  const {data,error}=await sb.from('team_notes').insert({tag:'Note',pinned:false,text}).select().single();
+  if(error){toast('Could not save note: '+error.message);return null;}
+  return data;
+}
+async function dbDeleteNote(id){
+  const {error}=await sb.from('team_notes').delete().eq('id',id);
+  if(error){toast('Delete failed: '+error.message);return false;}
+  return true;
+}
 function rowToLease(row){
   return {id:row.id, _backend:'supabase', prop:row.property_id, landlord:row.landlord,
     rent:row.rent!=null?Number(row.rent):null, term:row.term, start:row.start_label, end:row.end_label,
@@ -571,6 +613,10 @@ async function loadRealReferenceLists(){
       REF_LISTS[key].values=merged;
     }
   });
+  const lifeRow=rows.find(r=>r.key==='LIFE_TABLE');
+  if(lifeRow&&lifeRow.data&&typeof lifeRow.data==='object'){
+    Object.keys(lifeRow.data).forEach(k=>{if(Array.isArray(lifeRow.data[k]))LIFE_TABLE[k]=lifeRow.data[k];});
+  }
 }
 async function authSignIn(){
   const email=document.getElementById('authEmail').value.trim();
@@ -621,7 +667,7 @@ function applyLiveRole(role,displayName){
 async function enterLiveApp(){
   document.getElementById('authGate').classList.add('hidden');
   const foot=document.getElementById('footStatus');
-  if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases, Compliance, Acquisition, Disposition, Licensing Checklists & Reference Lists are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
+  if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases, Compliance, Acquisition, Disposition, Licensing Checklists, Reference Lists, Documents & Notes are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
   const me=await dbResolveMyRole();
   applyLiveRole(me.role,me.name);
   await loadRealProperties();
@@ -633,6 +679,8 @@ async function enterLiveApp(){
   await loadRealDispositionChecklists();
   await loadRealLicensingChecklists();
   await loadRealReferenceLists();
+  await loadRealDocuments();
+  await loadRealNotes();
   await loadRealTrash();
   if(ROLE==='admin')await loadRealUserRoles();
   computeHealth();
@@ -1076,38 +1124,17 @@ function docTypesFor(p){
 }
 function docBadge(type){const m={'Deed':'📄','Lease':'📄','Insurance':'🛡️','Certificate of Occupancy':'📜','Inspection Report':'🔍','Loan Documents':'🏦','Invoice':'🧾','Photos / Videos':'🖼️'};return m[type]||'📄';}
 let DOC_ID=100;
-let DOCS=[
- {id:'d1',prop:'p3',type:'Deed',file:'Highlands_deed.pdf',uploaded:new Date('2021-03-16'),status:'Extracted',note:'Auto-filled: purchase price, settlement date, buyer LLC, tax ID.'},
- {id:'d2',prop:'p4',type:'Lease',file:'Monticello_lease.pdf',uploaded:new Date('2026-06-02'),status:'Extracted',note:'Auto-filled: landlord, rent, lease type.'},
- {id:'d3',prop:'p6',type:'Certificate of Occupancy',file:'CountryHill_CO.pdf',uploaded:new Date('2022-01-26'),status:'Extracted',note:'Auto-filled: Certificate of Occupancy (Compliance tab).'},
-];
+// Real documents load from Supabase via loadRealDocuments() once connected (Phase 17).
+// Empty here — this is only the pre-connection/demo-mode starting state.
+let DOCS=[];
 function fmtISO(d){const dt=new Date(d);const m=(dt.getMonth()+1+'').padStart(2,'0');const day=(dt.getDate()+'').padStart(2,'0');return dt.getFullYear()+'-'+m+'-'+day;}
 function addYears(d,n){const dt=new Date(d);dt.setFullYear(dt.getFullYear()+n);return dt;}
-function extractIntoProperty(p,type){
-  const applied=[];
-  if(type==='Deed'&&p.own==='owned'){
-    if(!p.purchasePrice){p.purchasePrice=Math.round(180000+Math.random()*80000);applied.push('purchase price');}
-    if(!p.settlementDate||p.settlementDate==='—'){p.settlementDate=fmtISO(today);applied.push('settlement date');}
-    if(!p.purchaseDate||p.purchaseDate==='—'){p.purchaseDate=fmtISO(today);applied.push('purchase date');}
-    if(!p.buyerLLC){p.buyerLLC=p.name+' Holdings LLC';applied.push('buyer LLC');}
-    if(!p.taxId){p.taxId=String(Math.floor(10+Math.random()*80))+'-'+String(Math.floor(100+Math.random()*800))+'-'+String(Math.floor(100+Math.random()*800));applied.push('tax ID');}
-  }
-  if(type==='Lease'&&p.own==='leased'){
-    if(!p.landlord||p.landlord==='—'){p.landlord='Extracted Landlord LLC';applied.push('landlord');}
-    if(!p.rent){p.rent=Math.round(1800+Math.random()*1200);applied.push('rent');}
-    if(!p.leaseType){p.leaseType='ResHab';applied.push('lease type');}
-  }
-  if(type==='Certificate of Occupancy'){
-    CERTS.push({prop:p.id,type:'Certificate of Occupancy',authority:'Local municipality',certNo:'CO-'+(2020+Math.floor(Math.random()*6))+'-'+Math.floor(1000+Math.random()*9000),issue:fmtISO(today),exp:null,cadence:'Perpetual',status:'active',resp:'Office Staff',cost:0});
-    applied.push('Certificate of Occupancy (Compliance tab)');
-  }
-  if(type==='Inspection Report'){
-    INSPECTIONS.push({prop:p.id,type:'General inspection',inspector:'Vendor (from document)',scheduled:fmtISO(today),completed:fmtISO(today),result:'Passed',findings:'',corrective:'',due:null,cost:0,nextDue:fmtISO(addYears(today,1))});
-    applied.push('inspection record (Compliance tab)');
-  }
-  return applied;
-}
-function uploadDoc(pid){
+// NOTE: the old extractIntoProperty() function that lived here has been removed (Phase 17).
+// It used to fabricate random purchase price / tax ID / buyer LLC / lease values and inject
+// them straight into real property records whenever a Deed/Lease/CO/Inspection Report was
+// uploaded — it never actually read the uploaded file. Real OCR/document-AI extraction is a
+// future capability; uploading a document today just files it for reference (see uploadDoc()).
+async function uploadDoc(pid){
   const p=propById(pid);
   const typeSel=document.getElementById('docType_'+pid);
   const fileInp=document.getElementById('docFile_'+pid);
@@ -1115,14 +1142,19 @@ function uploadDoc(pid){
   const picked=(fileInp&&fileInp.files&&fileInp.files[0])?fileInp.files[0]:null;
   if(!picked){toast('Choose a file first');return;}
   if(!docTypesFor(p).includes(type)){toast(type+' doesn\'t apply to '+(p.own==='owned'?'an owned':'a leased')+' property like '+p.name);return;}
-  let url=null;try{url=URL.createObjectURL(picked);}catch(e){}
-  const rec={id:'d'+(++DOC_ID),prop:pid,type,file:picked.name,size:fmtBytes(picked.size),url,uploaded:new Date(today),status:'On file',note:''};
-  {
-    const applied=extractIntoProperty(p,type);
-    rec.status='Extracted';
-    rec.note=applied.length?('Auto-filled: '+applied.join(', ')+' — review and edit as needed.'):'No mapped fields for this document type in the prototype; filed for reference.';
+  if(SUPA_CONFIGURED){
+    const path=`${pid}/${Date.now()}_${picked.name}`;
+    const {error:upErr}=await sb.storage.from('documents').upload(path,picked,{upsert:true});
+    if(upErr){toast('Upload failed: '+upErr.message);return;}
+    const row=await dbInsertDocument(pid,type,picked.name,path,picked.size);
+    if(!row){await sb.storage.from('documents').remove([path]);return;}
+    DOCS.unshift(rowToDocument(row));
+    toast('Document uploaded and filed under '+p.name);
+  } else {
+    let url=null;try{url=URL.createObjectURL(picked);}catch(e){}
+    const rec={id:'d'+(++DOC_ID),prop:pid,type,file:picked.name,size:fmtBytes(picked.size),url,uploaded:new Date(today),status:'On file',note:''};
     DOCS.push(rec);saveState();
-    toast(applied.length?'Extracted from '+type+' — fields updated, review below':'Document filed');
+    toast('Document filed (demo mode — not saved to a server)');
   }
   document.getElementById('propTabBody').innerHTML=propDocs(p);
 }
@@ -1446,13 +1478,34 @@ function notesHtml(){
  const spring=['Clean gutters & downspouts','Inspect roof for damage / leaks','Clean exterior doors & windows','Landscape & clear yard debris','Pressure-wash walks & driveways','Service outdoor lighting'];
  return `<div class="sectitle">Maintenance notes <span class="faint">— running notes & open items (saved)</span></div>
   <div class="card"><div class="body"><textarea id="noteInput" rows="2" style="width:100%" placeholder="Add a maintenance note or open item…"></textarea><div style="margin-top:8px"><button class="btn sm" onclick="addNote()">+ Add note</button></div></div></div>
-  <div style="margin-top:12px">${NOTES.map(n=>`<div class="card" style="margin-bottom:10px"><div class="body"><div class="mrow"><span class="pill">${n.tag}${n.pinned?' · pinned':''}</span>${n.pinned?'':`<a onclick="delNote(${n.id})" class="faint" style="font-size:12px">Delete</a>`}</div><div style="margin-top:8px">${n.text}</div></div></div>`).join('')}</div>
+  <div style="margin-top:12px">${NOTES.map(n=>`<div class="card" style="margin-bottom:10px"><div class="body"><div class="mrow"><span class="pill">${n.tag}${n.pinned?' · pinned':''}</span>${n.pinned?'':`<a onclick="delNote('${n.id}')" class="faint" style="font-size:12px">Delete</a>`}</div><div style="margin-top:8px">${n.text}</div></div></div>`).join('')}</div>
   <div class="sectitle">Preventive maintenance — recurring best practices</div>
   <div class="card"><div class="body row">${rec.map((r,i)=>`<span class="pill">${i+1}. ${r}</span>`).join('')}</div></div>
   <div class="sectitle">Seasonal checklist — Spring</div>
   <div class="card"><div class="body row">${spring.map(r=>`<span class="pill">${r}</span>`).join('')}</div></div>`;}
-function addNote(){const ta=document.getElementById('noteInput');const v=(ta.value||'').trim();if(!v)return;NOTES.unshift({id:++NOTEID,tag:'Note',pinned:false,text:v});saveState();renderTickets(document.getElementById('view'));}
-function delNote(id){NOTES=NOTES.filter(n=>n.id!==id);saveState();renderTickets(document.getElementById('view'));}
+async function addNote(){
+  const ta=document.getElementById('noteInput');const v=(ta.value||'').trim();if(!v)return;
+  if(SUPA_CONFIGURED){
+    const row=await dbInsertNote(v);
+    if(!row)return;
+    NOTES.unshift(rowToNote(row));
+  } else {
+    NOTES.unshift({id:++NOTEID,tag:'Note',pinned:false,text:v});
+    saveState();
+  }
+  ta.value='';
+  renderTickets(document.getElementById('view'));
+}
+async function delNote(id){
+  const n=NOTES.find(x=>String(x.id)===String(id));if(!n)return;
+  if(n._backend==='supabase'){
+    const ok=await dbDeleteNote(n.id);
+    if(!ok)return;
+  }
+  NOTES=NOTES.filter(x=>String(x.id)!==String(id));
+  if(!SUPA_CONFIGURED)saveState();
+  renderTickets(document.getElementById('view'));
+}
 
 /* ===== properties ===== */
 function propStage(p){
@@ -1708,7 +1761,7 @@ function updateAssumption(key,val){
 }
 function capitalReservesSection(){
   const names=Object.keys(LIFE_TABLE);
-  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">These are the portfolio-wide average lifespan and replacement cost assumptions used to flag components nearing end-of-life on every property's Components tab (Scope §4.8). Edit any value below — changes apply across all properties immediately. Saved locally in this browser for now.</div>
+  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">These are the portfolio-wide average lifespan and replacement cost assumptions used on every property's Components tab (Scope §4.8). Edit any value below — changes are saved for your whole team, Senior Admin only.</div>
   <div class="card" style="margin-bottom:12px"><table><thead><tr><th>Assumption</th><th>Value</th></tr></thead><tbody>
   <tr><td class="b">Annual inflation adjustment</td><td><input type="number" min="0" step="0.5" value="${ASSUMPTIONS.capitalReserveInflationPct}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('capitalReserveInflationPct',this.value)"> %</td></tr>
   </tbody></table></div>
@@ -1722,7 +1775,7 @@ function updateLifeTable(name,idx,val){
   const n=Number(val);
   if(isNaN(n)||n<0){toast('Enter a valid number');renderAssumptions(document.getElementById('view'));return;}
   LIFE_TABLE[name][idx]=n;
-  saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('LIFE_TABLE',LIFE_TABLE);else saveState();
   toast('Assumption updated');
 }
 function valuationSection(){
@@ -1879,27 +1932,25 @@ function moveSvcTypeEntry(name,dir){
   if(SUPA_CONFIGURED)dbUpsertReferenceList('SVC_TYPES',SVC_TYPES);else saveState();
   renderAssumptions(document.getElementById('view'));
 }
-function estAge(seed,mod){return (seed*7+mod)%18+2;}
-function propComponents(p){const names=Object.keys(LIFE_TABLE);const seed=parseInt((p.id||'p0').replace('p',''))||1;
-  const rows=names.map((n,ix)=>{const [life,cost]=LIFE_TABLE[n];const age=estAge(seed,ix);const yearsLeft=life-age;const risk=yearsLeft<=2;
-    return {n,age,life,cost,yearsLeft,risk};});
-  return `<div class="card"><table><thead><tr><th>Component</th><th>Est. age</th><th>Avg. lifespan</th><th>Replacement cost</th><th>Status</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td class="b">${r.n}</td><td class="mono">${r.age} yr</td><td class="muted">${r.life} yr</td><td class="right mono">${money(r.cost)}</td><td>${r.risk?`<span class="badge b-red">⚠ ${r.yearsLeft<=0?'Past life':r.yearsLeft+'y left'}</span>`:`<span class="badge b-resolved">✓ OK</span>`}</td></tr>`).join('')}
+function propComponents(p){const names=Object.keys(LIFE_TABLE);
+  const rows=names.map(n=>{const [life,cost]=LIFE_TABLE[n];return {n,life,cost};});
+  return `<div class="card"><table><thead><tr><th>Component</th><th>Avg. lifespan</th><th>Replacement cost</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr><td class="b">${r.n}</td><td class="muted">${r.life} yr</td><td class="right mono">${money(r.cost)}</td></tr>`).join('')}
   </tbody></table></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Estimated ages are illustrative (sample data). Replacement costs &amp; average lifespans per Scope §4.8 Life of Appliances reference table; components flagged when within 2 years of projected end-of-life.</div>`;}
+  <div class="muted" style="font-size:12px;margin-top:8px">Replacement costs &amp; average lifespans per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions). Per-property component age/install-date tracking and end-of-life flagging aren't built yet — this table shows portfolio-wide assumptions only, not this property's actual components.</div>`;}
 function propTickets(tks){return tks.length?`<div class="card"><table><thead><tr><th>Description</th><th>Priority</th><th>Status</th><th class="right">Cost</th></tr></thead><tbody>${tks.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td>${CAT[t.svc]||'🛠️'} ${t.title}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="right mono">${t.cost!=null?money(t.cost):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card"><div class="body muted">No maintenance items for this property.</div></div>';}
 function propDocs(p){
   const docs=DOCS.filter(x=>x.prop===p.id).sort((a,b)=>new Date(b.uploaded)-new Date(a.uploaded));
   const typeOpts=docTypesFor(p).map(t=>`<option value="${t}">${t}</option>`).join('');
   return `<div class="card" style="margin-bottom:14px"><div class="body">
     <div class="b" style="margin-bottom:8px">Upload a document</div>
-    <div class="muted" style="font-size:12.5px;margin-bottom:10px;line-height:1.5">The platform reads uploaded documents and, where possible, uses them to populate the property record automatically (deeds, leases, certificates, inspection reports). Extracted fields are always reviewable and editable afterward — see the highlighted fields in Details/Compliance. Vendor invoices are handled differently: they're routed to invoice–ticket matching for staff confirmation before anything is finalized (Scope §4.10), not auto-applied here.</div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:10px;line-height:1.5">Files are stored securely and filed against this property (deeds, leases, certificates, inspection reports, photos). Automatic field extraction (reading a document and filling in property fields for you) is not built yet — enter or update those fields directly on Details/Compliance. Vendor invoices are handled differently: they're attached directly to maintenance tickets, not uploaded here (Scope §4.10).</div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <select id="docType_${p.id}" style="min-width:190px">${typeOpts}</select>
       <input type="file" id="docFile_${p.id}" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style="max-width:230px;font-size:12.5px">
-      <button class="btn sm" onclick="uploadDoc('${p.id}')">⬆ Upload &amp; extract</button>
+      <button class="btn sm" onclick="uploadDoc('${p.id}')">⬆ Upload</button>
     </div>
-    <div class="muted" style="font-size:11.5px;margin-top:8px">Pick a real file from your computer — it's filed against this property and viewable below. Field extraction is simulated with sample values in this prototype; real OCR/document-AI extraction happens in the built platform.</div>
+    <div class="muted" style="font-size:11.5px;margin-top:8px">Pick a real file from your computer — it's saved for real and viewable below by anyone on your team with access.</div>
   </div></div>
   <div class="card"><div class="body">
   ${docs.length?docs.map(x=>`<div class="mrow" style="padding:9px 0;border-bottom:1px solid var(--line);align-items:flex-start">
@@ -1908,11 +1959,27 @@ function propDocs(p){
   </div>`).join(''):'<div class="muted" style="padding:6px 0">No documents uploaded yet for this property.</div>'}
   </div></div>`;}
 function fmtBytes(n){if(n==null)return '';if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
-function viewDoc(id){const d=DOCS.find(x=>x.id===id);if(d&&d.url){window.open(d.url,'_blank');}else{toast('No file attached to this sample record — prototype stub');}}
-function deleteDoc(id){
+async function viewDoc(id){
+  const d=DOCS.find(x=>x.id===id);if(!d)return;
+  if(d._backend==='supabase'&&d.path){
+    const {data,error}=await sb.storage.from('documents').createSignedUrl(d.path,60*60);
+    if(error||!data){toast('Could not open file: '+(error?error.message:'unknown error'));return;}
+    window.open(data.signedUrl,'_blank');
+    return;
+  }
+  if(d.url){window.open(d.url,'_blank');}else{toast('No file attached to this record');}
+}
+async function deleteDoc(id){
   if(!confirm('Delete this document? This cannot be undone.'))return;
   const idx=DOCS.findIndex(x=>x.id===id);if(idx===-1)return;
-  const doc=DOCS[idx];DOCS.splice(idx,1);saveState();toast('Document deleted');
+  const doc=DOCS[idx];
+  if(doc._backend==='supabase'){
+    const ok=await dbDeleteDocument(doc.id,doc.path);
+    if(!ok)return;
+  }
+  DOCS.splice(idx,1);
+  if(!SUPA_CONFIGURED)saveState();
+  toast('Document deleted');
   const p=propById(doc.prop);document.getElementById('propTabBody').innerHTML=propDocs(p);
 }
 
@@ -2266,9 +2333,9 @@ function reportBody(tab){
     <div class="muted" style="font-size:12px;margin-top:8px">Market valuations (AVM/RentCast) are out of this prototype's sample scope — table reflects loan data only.</div>`;
   }
   if(tab==='capital'){
-    const atRisk=PROPS.filter(p=>p.own==='owned').flatMap(p=>{const seed=parseInt(p.id.replace('p',''))||1;return Object.keys(LIFE_TABLE).map((n,ix)=>{const [life,cost]=LIFE_TABLE[n];const age=estAge(seed,ix);const left=life-age;return {p,n,left,cost};}).filter(r=>r.left<=2);});
-    return `<div class="sectitle">At-risk components — within 2 years of end-of-life</div><div class="card"><table><thead><tr><th>Property</th><th>Component</th><th>Years left</th><th class="right">Replacement cost</th></tr></thead><tbody>${atRisk.map(r=>`<tr><td class="b">${r.p.name}</td><td>${r.n}</td><td class="mono">${r.left<=0?'Past life':r.left+'y'}</td><td class="right mono">${money(r.cost)}</td></tr>`).join('')||'<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">Nothing at risk.</td></tr>'}</tbody></table></div>
-    <div class="muted" style="font-size:12px;margin-top:8px">5/10-year capital forecast and reserve-adequacy views are illustrative only — component ages are sample estimates (Scope §4.6/§4.9.5).</div>`;
+    const names=Object.keys(LIFE_TABLE);
+    return `<div class="sectitle">Life of Appliances — reference assumptions</div><div class="card"><table><thead><tr><th>Component</th><th>Avg. lifespan</th><th class="right">Replacement cost</th></tr></thead><tbody>${names.map(n=>{const [life,cost]=LIFE_TABLE[n];return `<tr><td class="b">${n}</td><td class="mono">${life} yr</td><td class="right mono">${money(cost)}</td></tr>`;}).join('')}</tbody></table></div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Per-property component tracking (actual install dates, real end-of-life flagging, and 5/10-year capital forecasts) isn't built yet — these are portfolio-wide assumptions only (Scope §4.6/§4.9.5), editable by Senior Admin in Assumptions.</div>`;
   }
   const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');
   const totalDebt=PROPS.filter(p=>p.own==='owned').reduce((s,p)=>s+(p.loanRemaining||0),0);
@@ -2916,7 +2983,7 @@ async function mSubmit(){
   const d=MB.draft;
   const p=propById(d.prop);
   function showSuccess(displayId){
-    document.querySelector('#mobile .mbody').innerHTML=`<div style="text-align:center;padding:30px 10px"><div style="font-size:60px">✅</div><div class="mtitle" style="margin-top:10px">Report submitted!</div><div class="muted" style="margin-bottom:6px">Ticket <b>${displayId}</b> created${d.urgency==='Emergency'?' — admin paged 🚨':''}.</div><div class="muted" style="font-size:12.5px">Office staff will triage and assign a vendor.</div><button class="bigbtn" style="margin-top:22px" onclick="mGo('reports')">View my reports</button><button class="opt" style="width:100%;margin-top:10px" onclick="mGo('home')">Done</button></div>`;
+    document.querySelector('#mobile .mbody').innerHTML=`<div style="text-align:center;padding:30px 10px"><div style="font-size:60px">✅</div><div class="mtitle" style="margin-top:10px">Report submitted!</div><div class="muted" style="margin-bottom:6px">Ticket <b>${displayId}</b> created${d.urgency==='Emergency'?' — flagged Emergency':''}.</div><div class="muted" style="font-size:12.5px">${d.urgency==='Emergency'?'Call your office/admin directly for anything urgent — automatic paging isn\'t built yet. ':''}Office staff will triage and assign a vendor.</div><button class="bigbtn" style="margin-top:22px" onclick="mGo('reports')">View my reports</button><button class="opt" style="width:100%;margin-top:10px" onclick="mGo('home')">Done</button></div>`;
     toast('Ticket '+displayId+' created');
   }
   if(p&&p._backend==='supabase'){
@@ -2926,7 +2993,10 @@ async function mSubmit(){
     const detail='Submitted from mobile'+(d.desc?': '+d.desc:'');
     await dbLogActivity(data.id,'Reported',detail);
     const activity=[{action:'Reported',detail,created_at:new Date().toISOString()}];
-    if(d.urgency==='Emergency'){await dbLogActivity(data.id,'Auto-paged','Twilio SMS + email to on-call admin');activity.push({action:'Auto-paged',detail:'Twilio SMS + email to on-call admin',created_at:new Date().toISOString()});}
+    // NOTE (Phase 17): this used to log a fake "Auto-paged: Twilio SMS + email to on-call
+    // admin" entry and tell the field worker "admin paged" — no SMS/email integration has
+    // ever existed in this app, so that was a false notification claim on real emergency
+    // tickets. Removed; real paging (Twilio/SendGrid) is still an open build item.
     const t=rowToTicket(Object.assign({},data,{maintenance_ticket_activity:activity}));
     TICKETS.unshift(t);
     computeHealth();
@@ -2934,7 +3004,6 @@ async function mSubmit(){
     return;
   }
   const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),desc:d.desc||'',svc:d.cat,svctype:'Reported',urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:STAFF.caregiver.name,photos:d.photo?1:0,log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
-  if(d.urgency==='Emergency')t.log.push(['Auto-paged','Twilio SMS + email to on-call admin',0]);
   TICKETS.push(t);saveState();
   computeHealth();
   showSuccess(t.id);
