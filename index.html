@@ -177,7 +177,7 @@
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 3:27pm</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 6:49pm</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -436,7 +436,7 @@ async function loadRealCertsAndInspections(){
 /* ===== Documents — real Supabase Storage + documents table (Phase 17) ===== */
 function rowToDocument(row){
   return {id:row.id, _backend:'supabase', prop:row.property_id, type:row.doc_type, file:row.file_name,
-    path:row.file_path, size:fmtBytes(row.file_size), uploaded:new Date(row.created_at), status:'On file', note:row.note||''};
+    path:row.file_path, size:fmtBytes(row.file_size), uploaded:new Date(row.created_at), status:'On file', note:row.note||'', posted:!!row.posted};
 }
 async function loadRealDocuments(){
   if(!SUPA_CONFIGURED)return;
@@ -454,6 +454,19 @@ async function dbDeleteDocument(id,path){
   if(error){toast('Delete failed: '+error.message);return false;}
   if(path){const {error:rmErr}=await sb.storage.from('documents').remove([path]);if(rmErr)console.error('storage cleanup failed',rmErr);}
   return true;
+}
+async function dbUpdateDocument(id,patch){
+  const {error}=await sb.from('documents').update(patch).eq('id',id);
+  if(error){toast('Save failed: '+error.message);return false;}
+  return true;
+}
+async function toggleDocPosted(id,checked){
+  const d=DOCS.find(x=>x.id===id);if(!d)return;
+  const prev=d.posted;d.posted=checked;
+  const ok=await dbUpdateDocument(id,{posted:checked});
+  if(!ok){d.posted=prev;}
+  toast(checked?'Document posted — Field Staff assigned to this property can now see it':'Document set back to draft — hidden from Field Staff');
+  const p=propById(d.prop);if(p)document.getElementById('propTabBody').innerHTML=propDocs(p);
 }
 /* ===== Team Notes — real Supabase table (Phase 17) ===== */
 function rowToNote(row){
@@ -497,7 +510,7 @@ function rowToVendor(row){
     primary:row.primary_secondary, pricing:row.pricing, area:row.area, metro:Array.isArray(row.metro)?row.metro:(row.metro?[row.metro]:[]), afterHours:row.after_hours,
     contact:row.contact, phone:row.phone, email:row.email, portal:row.portal, login:row.login,
     licenses:row.licenses, licExp:row.lic_exp, insExp:row.ins_exp, w9:row.w9, properties:row.properties||'',
-    referredBy:row.referred_by, quality:row.quality, comments:row.comments, userNotes:row.user_notes};
+    referredBy:row.referred_by, quality:row.quality, comments:row.comments, userNotes:row.user_notes, approved:!!row.approved};
 }
 async function loadRealVendors(){
   if(!SUPA_CONFIGURED)return;
@@ -541,6 +554,23 @@ async function loadRealUserRoles(){
   const {data,error}=await sb.from('user_roles').select('*').order('email');
   if(error){toast('Could not load User Management: '+error.message);return;}
   USER_ROLES=data||[];
+}
+let PROPERTY_ASSIGNMENTS=[]; // [{user_id, property_id}, ...] — Scope §3.2 "Property assignment to caregivers"
+async function loadRealPropertyAssignments(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('user_property_assignments').select('*');
+  if(error){toast('Could not load property assignments: '+error.message);return;}
+  PROPERTY_ASSIGNMENTS=data||[];
+}
+async function dbAssignProperty(userId,propertyId){
+  const {error}=await sb.from('user_property_assignments').insert({user_id:userId,property_id:propertyId});
+  if(error){toast('Could not assign property: '+error.message);return false;}
+  return true;
+}
+async function dbUnassignProperty(userId,propertyId){
+  const {error}=await sb.from('user_property_assignments').delete().eq('user_id',userId).eq('property_id',propertyId);
+  if(error){toast('Could not remove assignment: '+error.message);return false;}
+  return true;
 }
 async function dbUpdateUserRole(userId,role){
   const {error}=await sb.from('user_roles').update({role,updated_at:new Date().toISOString()}).eq('user_id',userId);
@@ -682,7 +712,7 @@ async function enterLiveApp(){
   await loadRealDocuments();
   await loadRealNotes();
   await loadRealTrash();
-  if(ROLE==='admin')await loadRealUserRoles();
+  if(ROLE==='admin'){await loadRealUserRoles();await loadRealPropertyAssignments();}
   computeHealth();
   buildNav();
   navigate(mobile_role_safe_view());
@@ -824,14 +854,40 @@ function renderUserManagement(el){
   el.innerHTML=`<div class="toolbar"><span class="muted" style="font-size:12.5px;max-width:560px">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" onclick="refreshUserRoles()">🔄 Refresh</button></div>
   <div class="card"><div class="body">${USER_ROLES.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
-    <th style="text-align:left;padding:8px 6px">Name</th><th style="text-align:left;padding:8px 6px">Email</th><th style="text-align:left;padding:8px 6px">Role</th><th style="text-align:left;padding:8px 6px">Since</th>
-  </tr></thead><tbody>${USER_ROLES.map(u=>`<tr style="border-top:1px solid var(--line)">
+    <th style="text-align:left;padding:8px 6px">Name</th><th style="text-align:left;padding:8px 6px">Email</th><th style="text-align:left;padding:8px 6px">Role</th><th style="text-align:left;padding:8px 6px">Assigned properties</th><th style="text-align:left;padding:8px 6px">Since</th>
+  </tr></thead><tbody>${USER_ROLES.map(u=>{
+    const mine=PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===u.user_id);
+    const names=mine.map(a=>{const p=PROPS.find(x=>x.id===a.property_id);return p?p.name:null;}).filter(Boolean);
+    return `<tr style="border-top:1px solid var(--line)">
     <td style="padding:8px 6px">${esc(u.name||'—')}</td>
     <td class="muted" style="padding:8px 6px">${esc(u.email)}</td>
     <td style="padding:8px 6px"><select onchange="setUserRole('${u.user_id}',this.value,'${esc(u.email)}')" style="font-size:13px">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
+    <td style="padding:8px 6px">${u.role==='caregiver'?`<span class="muted" style="font-size:12.5px">${names.length?esc(names.join(', ')):'None assigned yet'}</span> <a style="margin-left:6px" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="faint" style="font-size:12px">— (sees all)</span>'}</td>
     <td class="muted mono" style="padding:8px 6px;white-space:nowrap">${fdate(new Date(u.created_at))}</td>
-  </tr>`).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
-  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" is Senior Admin read/write only.</div>`;
+  </tr>`;}).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
+  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>`;
+}
+function openPropertyAssignments(userId,email){
+  const assigned=new Set(PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===userId).map(a=>a.property_id));
+  const rows=PROPS.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">User Management</div><div style="font-size:18px;font-weight:800;margin-top:2px">Assigned properties</div><div class="muted" style="font-size:12.5px;margin-top:4px">${esc(email)}</div></div>`,
+    `<div class="card"><div class="body">
+      <div class="muted" style="font-size:12.5px;margin-bottom:10px;line-height:1.5">Check every property this Field Staff person should be able to see. They'll see nothing for properties left unchecked — no Properties, Compliance, Maintenance tickets, approved Vendors, or posted Documents outside this list.</div>
+      ${rows.map(p=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);cursor:pointer"><input type="checkbox" ${assigned.has(p.id)?'checked':''} onchange="togglePropertyAssignment('${userId}','${p.id}',this.checked)"><span>${esc(p.name)}</span></label>`).join('')}
+    </div></div>`);
+}
+async function togglePropertyAssignment(userId,propertyId,checked){
+  if(checked){
+    const ok=await dbAssignProperty(userId,propertyId);
+    if(ok)PROPERTY_ASSIGNMENTS.push({user_id:userId,property_id:propertyId});
+    else{if(VIEW==='users')renderUserManagement(document.getElementById('view'));return;}
+  } else {
+    const ok=await dbUnassignProperty(userId,propertyId);
+    if(ok)PROPERTY_ASSIGNMENTS=PROPERTY_ASSIGNMENTS.filter(a=>!(a.user_id===userId&&a.property_id===propertyId));
+    else{if(VIEW==='users')renderUserManagement(document.getElementById('view'));return;}
+  }
+  toast('Property assignments updated');
+  if(VIEW==='users')renderUserManagement(document.getElementById('view'));
 }
 async function refreshUserRoles(){await loadRealUserRoles();if(VIEW==='users')renderUserManagement(document.getElementById('view'));}
 async function setUserRole(userId,role,email){
@@ -1955,7 +2011,7 @@ function propDocs(p){
   <div class="card"><div class="body">
   ${docs.length?docs.map(x=>`<div class="mrow" style="padding:9px 0;border-bottom:1px solid var(--line);align-items:flex-start">
     <div><div>${docBadge(x.type)} <span class="b">${x.type}</span> <span class="muted" style="font-size:12px">· ${esc(x.file)}${x.size?' · '+x.size:''}</span></div><div class="faint" style="font-size:11px;margin-top:2px">Uploaded ${fdate(x.uploaded)}${x.note?' · '+esc(x.note):''}</div></div>
-    <div style="display:flex;gap:10px;align-items:center;white-space:nowrap">${x.status==='Extracted'?'<span class="badge b-resolved">✓ Extracted</span>':x.status==='Routed'?'<span class="badge b-progress">↪ Routed</span>':'<span class="badge b-closed">On file</span>'}<a onclick="viewDoc('${x.id}')">View</a><a onclick="deleteDoc('${x.id}')" style="color:var(--red)">Delete</a></div>
+    <div style="display:flex;gap:10px;align-items:center;white-space:nowrap">${x._backend==='supabase'&&(ROLE==='admin'||ROLE==='office')?`<label style="display:flex;align-items:center;gap:4px;cursor:pointer" title="Posted documents are visible to Field Staff assigned to this property; unposted stays office/admin only"><input type="checkbox" ${x.posted?'checked':''} onchange="toggleDocPosted('${x.id}',this.checked)" style="margin:0"><span style="font-size:11.5px" class="muted">${x.posted?'Posted':'Draft'}</span></label>`:(x.posted?'<span class="badge b-resolved">Posted</span>':'<span class="badge b-closed">Draft</span>')}<a onclick="viewDoc('${x.id}')">View</a><a onclick="deleteDoc('${x.id}')" style="color:var(--red)">Delete</a></div>
   </div>`).join(''):'<div class="muted" style="padding:6px 0">No documents uploaded yet for this property.</div>'}
   </div></div>`;}
 function fmtBytes(n){if(n==null)return '';if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
@@ -2190,6 +2246,7 @@ function openVendor(id){const v=vendorById(id);if(!v)return;
       <div class="k">Service Category (Default)</div><div>${ROLE==='admin'?vendorCatSelect(v):((v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>')+' <span class="faint" style="font-size:10.5px">(Senior Admin only)</span>')}</div>
       <div class="k">Service Type (Default)</div><div>${ROLE==='admin'?vendorTypeSelect(v):((v.svctype?esc(v.svctype):'<span class="faint">—</span>')+' <span class="faint" style="font-size:10.5px">(Senior Admin only)</span>')}</div>
       <div class="k">Primary/Secondary</div><div>${vendorListSelect(v,'primary','vendorPrimarySecondary')}</div>
+      <div class="k">Approved for Field Staff</div><div><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${v.approved?'checked':''} onchange="toggleVendorApproved('${v.id}',this.checked)"><span class="muted" style="font-size:12.5px">${v.approved?'Yes — visible to Field Staff serving this vendor\'s metro':'No — hidden from Field Staff'}</span></label></div>
       <div class="k">Pricing</div><div>${vendorTxt(v,'pricing','—',210)}</div>
       <div class="k">After-Hours Service</div><div>${vendorTxt(v,'afterHours','—',150)}</div>
       <div class="k">Contact Name</div><div>${vendorTxt(v,'contact','—',210)}</div>
@@ -2213,6 +2270,16 @@ function openVendor(id){const v=vendorById(id);if(!v)return;
     ${ROLE==='admin'?`<div style="margin-top:14px"><button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteVendor('${v.id}')">🗑️ Delete vendor</button></div>`:''}`);
 }
 function refreshVendorUI(id){if(VIEW==='vendors')renderVendors(document.getElementById('view'));if(document.querySelector('.drawer'))openVendor(id);}
+async function toggleVendorApproved(id,checked){
+  const v=vendorById(id);if(!v)return;
+  const prev=v.approved;v.approved=checked;
+  if(v._backend==='supabase'){
+    const ok=await dbUpdateVendor(id,{approved:checked});
+    if(!ok){v.approved=prev;refreshVendorUI(id);return;}
+  } else saveState();
+  toast(checked?'Vendor approved for Field Staff visibility':'Vendor hidden from Field Staff');
+  refreshVendorUI(id);
+}
 function updateVendorField(id,field,value,kind){
   const v=vendorById(id);if(!v)return;
   if((field==='trade'||field==='svctype')&&ROLE!=='admin'){toast('Only Senior Admin can change Service Category/Type');refreshVendorUI(id);return;}
