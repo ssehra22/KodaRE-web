@@ -10,6 +10,7 @@
     --ink:#15202b; --muted:#5a6a7c; --faint:#8a99aa;
     --cg:#0e9aa3; --os:#2563c9; --sa:#7c3fd6; --sys:#1f9d40; --ext:#d2701a; --ten:#c2306f;
     --red:#cf3a32; --amber:#c9880c; --green:#1f9d40; --blue:#2563c9;
+    --uroles-accent:#0d9488; --uroles-accent2:#0f766e;
     --shadow:0 1px 3px rgba(20,40,70,.10),0 6px 24px rgba(20,40,70,.06);
   }
   *{box-sizing:border-box}
@@ -172,12 +173,36 @@
     .kpis{grid-template-columns:repeat(2,1fr)}
     .grid2,.grid-props{grid-template-columns:1fr}
   }
+
+  /* ===== Users & Roles page — scoped restyle, does not affect other pages ===== */
+  .uroles-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+  .uroles-headtext{font-size:12.5px;color:var(--muted);max-width:620px;line-height:1.55}
+  .uroles-refresh{background:var(--uroles-accent);border:0;color:#fff;font-weight:700;font-size:12.5px;border-radius:8px;padding:9px 15px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+  .uroles-refresh:hover{background:var(--uroles-accent2)}
+  .uroles-card{border-radius:12px;border:1px solid var(--line);overflow:hidden;background:var(--panel);padding:0}
+  .uroles-table{width:100%;border-collapse:collapse}
+  .uroles-table thead th{text-align:left;padding:11px 16px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--panel2);border-bottom:1px solid var(--line)}
+  .uroles-table tbody td{padding:13px 16px;border-top:1px solid var(--line);vertical-align:middle}
+  .uroles-table tbody tr:hover{background:var(--panel2)}
+  .uroles-person{display:flex;align-items:center;gap:10px}
+  .uroles-avatar{width:30px;height:30px;border-radius:50%;background:var(--uroles-accent);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .uroles-name{font-weight:700;font-size:13.5px;color:var(--ink)}
+  .uroles-email{font-size:12px;color:var(--muted)}
+  select.uroles-rolepill{border:1px solid transparent;border-radius:999px;padding:5px 28px 5px 13px;font-size:11.5px;font-weight:700;cursor:pointer;appearance:none;-webkit-appearance:none;background-repeat:no-repeat;background-position:right 10px center;background-size:11px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a6a7c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")}
+  select.uroles-rolepill.r-admin{background-color:rgba(13,148,136,.13);color:var(--uroles-accent2);border-color:rgba(13,148,136,.3)}
+  select.uroles-rolepill.r-office{background-color:#eef1f5;color:#5a6a7c;border-color:#dce3ec}
+  select.uroles-rolepill.r-caregiver{background-color:#fff4e6;color:#a8550f;border-color:#f6ddbb}
+  .uroles-access{font-size:12.5px;color:var(--muted)}
+  .uroles-access.none{color:var(--faint);font-style:italic}
+  .uroles-access-all{display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:var(--faint);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  .uroles-edit{color:var(--uroles-accent2);font-weight:700;font-size:12px;cursor:pointer;margin-left:8px;white-space:nowrap}
+  .uroles-foot{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.55}
 </style>
 </head>
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 6:49pm</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 7:38pm</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -851,21 +876,22 @@ function renderTrash(el){
 function renderUserManagement(el){
   if(ROLE!=='admin'){el.innerHTML='<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view User Management.</div>';return;}
   const roleOpts=[['admin','Senior Admin'],['office','Office Staff'],['caregiver','Field Staff']];
-  el.innerHTML=`<div class="toolbar"><span class="muted" style="font-size:12.5px;max-width:560px">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</span>
-    <span style="margin-left:auto"></span><button class="btn sec sm" onclick="refreshUserRoles()">🔄 Refresh</button></div>
-  <div class="card"><div class="body">${USER_ROLES.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
-    <th style="text-align:left;padding:8px 6px">Name</th><th style="text-align:left;padding:8px 6px">Email</th><th style="text-align:left;padding:8px 6px">Role</th><th style="text-align:left;padding:8px 6px">Assigned properties</th><th style="text-align:left;padding:8px 6px">Since</th>
+  el.innerHTML=`<div class="uroles-head">
+    <div class="uroles-headtext">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</div>
+    <button class="uroles-refresh" onclick="refreshUserRoles()">🔄 Refresh</button></div>
+  <div class="card uroles-card"><div class="body" style="padding:0">${USER_ROLES.length?`<table class="uroles-table"><thead><tr>
+    <th>Name</th><th>Email</th><th>Role</th><th>Property access</th><th>Since</th>
   </tr></thead><tbody>${USER_ROLES.map(u=>{
     const mine=PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===u.user_id);
     const names=mine.map(a=>{const p=PROPS.find(x=>x.id===a.property_id);return p?p.name:null;}).filter(Boolean);
-    return `<tr style="border-top:1px solid var(--line)">
-    <td style="padding:8px 6px">${esc(u.name||'—')}</td>
-    <td class="muted" style="padding:8px 6px">${esc(u.email)}</td>
-    <td style="padding:8px 6px"><select onchange="setUserRole('${u.user_id}',this.value,'${esc(u.email)}')" style="font-size:13px">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
-    <td style="padding:8px 6px">${u.role==='caregiver'?`<span class="muted" style="font-size:12.5px">${names.length?esc(names.join(', ')):'None assigned yet'}</span> <a style="margin-left:6px" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="faint" style="font-size:12px">— (sees all)</span>'}</td>
-    <td class="muted mono" style="padding:8px 6px;white-space:nowrap">${fdate(new Date(u.created_at))}</td>
+    return `<tr>
+    <td><div class="uroles-person"><span class="uroles-avatar">${esc(initials(u.name||u.email))}</span><span class="uroles-name">${esc(u.name||'—')}</span></div></td>
+    <td class="uroles-email">${esc(u.email)}</td>
+    <td><select class="uroles-rolepill r-${u.role}" onchange="this.className='uroles-rolepill r-'+this.value;setUserRole('${u.user_id}',this.value,'${esc(u.email)}')">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
+    <td>${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
+    <td class="muted mono" style="white-space:nowrap;font-size:12px">${fdate(new Date(u.created_at))}</td>
   </tr>`;}).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
-  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>`;
+  <div class="uroles-foot">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>`;
 }
 function openPropertyAssignments(userId,email){
   const assigned=new Set(PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===userId).map(a=>a.property_id));
@@ -1274,6 +1300,7 @@ let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all'
 let SELECTED=new Set();
 let TRASH=[];
 let PFILTER={metro:'all'};
+
 const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'reports',ic:'📊',label:'Reports'},{id:'assumptions',ic:'🧮',label:'Assumptions'},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length},{id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length}];
 const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2']};
 function setRole(r){ROLE=r;document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
