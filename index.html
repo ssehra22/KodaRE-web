@@ -181,7 +181,7 @@
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
-    <button data-role="caregiver"><span class="rc" style="background:var(--cg)"></span>Caregiver · Mobile</button>
+    <button data-role="caregiver"><span class="rc" style="background:var(--cg)"></span>Field Staff · Mobile</button>
   </div>
   <div class="switch hidden" id="liveRoleBadge" style="cursor:default" title="Your role is assigned by a Senior Admin in User Management — Scope §3.2"><span class="rc" id="liveRoleDot" style="background:var(--os)"></span><span id="liveRoleText">Signed in</span></div>
   <button onclick="resetDemo()" title="Reset all sample data to the original demo" style="background:#1b2836;color:#b7c5d6;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-left:8px">↺ Reset demo</button>
@@ -597,7 +597,7 @@ async function dbResolveMyRole(){
   else toast('Welcome! Your account was set up as Office Staff — ask a Senior Admin to update your role in User Management if needed.');
   return {role:'office',name:user.email,email:user.email};
 }
-const LIVE_ROLE_LABEL={admin:'Senior Admin',office:'Office Staff',caregiver:'Caregiver'};
+const LIVE_ROLE_LABEL={admin:'Senior Admin',office:'Office Staff',caregiver:'Field Staff'};
 const LIVE_ROLE_COLOR={admin:'var(--sa)',office:'var(--os)',caregiver:'var(--cg)'};
 // Applies a real, DB-assigned role to the live app — replaces the free demo role-switcher
 // (which stays available only when SUPA_CONFIGURED is false / no real login is involved).
@@ -639,8 +639,8 @@ async function enterLiveApp(){
   buildNav();
   navigate(mobile_role_safe_view());
 }
-// After a real role is resolved, land on a view that role can actually see (a caregiver
-// signing in shouldn't land on the desktop 'dashboard' VIEW value behind the scenes).
+// After a real role is resolved, land on a view that role can actually see (a field staff
+// member signing in shouldn't land on the desktop 'dashboard' VIEW value behind the scenes).
 function mobile_role_safe_view(){return ROLE==='caregiver'?'dashboard':VIEW;}
 async function initLiveMode(){
   if(!SUPA_CONFIGURED)return;
@@ -737,7 +737,7 @@ function parseMDYY(s){s=String(s||'').trim();if(!s)return null;const m=s.match(/
 function toISODate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fdate(d){return d?mdyy(d):'—';}
 function initials(name){return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();}
-const STAFF={office:{name:'Sonia S.',role:'Office Staff',color:'var(--os)'},admin:{name:'Morgan Patel',role:'Senior Admin',color:'var(--sa)'},caregiver:{name:'Alex Rivera',role:'Caregiver',color:'var(--cg)'}};
+const STAFF={office:{name:'Sonia S.',role:'Office Staff',color:'var(--os)'},admin:{name:'Morgan Patel',role:'Senior Admin',color:'var(--sa)'},caregiver:{name:'Alex Rivera',role:'Field Staff',color:'var(--cg)'}};
 const propById=id=>PROPS.find(p=>p.id===id)||{name:'—',addr:''};
 function mkTicket(o){return Object.assign({id:'T-'+(++TID),photos:0,log:[]},o);}
 
@@ -772,7 +772,7 @@ function renderTrash(el){
 }
 function renderUserManagement(el){
   if(ROLE!=='admin'){el.innerHTML='<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view User Management.</div>';return;}
-  const roleOpts=[['admin','Senior Admin'],['office','Office Staff'],['caregiver','Caregiver']];
+  const roleOpts=[['admin','Senior Admin'],['office','Office Staff'],['caregiver','Field Staff']];
   el.innerHTML=`<div class="toolbar"><span class="muted" style="font-size:12.5px;max-width:560px">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" onclick="refreshUserRoles()">🔄 Refresh</button></div>
   <div class="card"><div class="body">${USER_ROLES.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
@@ -2888,7 +2888,7 @@ async function processBulkVendorRows(rows){
 /* ===== mobile ===== */
 let MB={tab:'home',step:0,draft:{}};
 function renderMobile(){const app=document.getElementById('mobileApp');let body='';if(MB.tab==='home')body=mHome();else if(MB.tab==='report')body=mReport();else if(MB.tab==='reports')body=mReports();
-  app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${STAFF.caregiver.name}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Fox-1 · caregiver</div></div><div class="mbody">${body}</div>
+  app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${STAFF.caregiver.name}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Fox-1 · Field Staff</div></div><div class="mbody">${body}</div>
   <div class="mnav"><button class="${MB.tab==='home'?'active':''}" onclick="mGo('home')"><span class="mi">🏠</span>Home</button><button class="${MB.tab==='report'?'active':''}" onclick="mStartReport()"><span class="mi">➕</span>Report</button><button class="${MB.tab==='reports'?'active':''}" onclick="mGo('reports')"><span class="mi">📋</span>My reports</button></div>`;}
 function mGo(t){MB.tab=t;renderMobile();}
 function mStartReport(){MB.tab='report';MB.step=0;MB.draft={};renderMobile();}
