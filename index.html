@@ -215,7 +215,7 @@
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 10:18pm</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 10:30pm</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -1336,7 +1336,7 @@ function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};retu
 function renderDashboard(el){
   const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');const atrisk=PROPS.filter(p=>p.health==='red');
   const exc=RECON.weekly.exceptions.length+RECON.monthly.exceptions.length;
-  const spend=TICKETS.filter(t=>t.cost&&new Date(t.created)>=fyStart()).reduce((s,t)=>s+t.cost,0);
+  const spend=TICKETS.filter(t=>t.cost&&t.payment==='Paid'&&new Date(t.created)>=fyStart()).reduce((s,t)=>s+t.cost,0);
   const recent=[...TICKETS].sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,7);
   el.innerHTML=`
   <div class="kpis">
@@ -2388,14 +2388,14 @@ let REPTAB='operational';
 function fyStart(){const d=new Date();return new Date(d.getFullYear(),0,1);}
 function t12Start(){const d=new Date();d.setMonth(d.getMonth()-12);return d;}
 function propertySpendStats(propId){
-  const ts=TICKETS.filter(t=>t.prop===propId&&t.cost);
+  const ts=TICKETS.filter(t=>t.prop===propId&&t.cost&&t.payment==='Paid');
   const fy=fyStart(),t12=t12Start();
   const ytd=ts.filter(t=>new Date(t.created)>=fy).reduce((s,t)=>s+t.cost,0);
   const trailing12=ts.filter(t=>new Date(t.created)>=t12).reduce((s,t)=>s+t.cost,0);
   return {ytd,t12:trailing12};
 }
 function vendorSpendStats(vendorName){
-  const ts=TICKETS.filter(t=>t.vendor===vendorName&&t.cost);
+  const ts=TICKETS.filter(t=>t.vendor===vendorName&&t.cost&&t.payment==='Paid');
   const fy=fyStart(),t12=t12Start();
   const ytd=ts.filter(t=>new Date(t.created)>=fy).reduce((s,t)=>s+t.cost,0);
   const trailing12=ts.filter(t=>new Date(t.created)>=t12).reduce((s,t)=>s+t.cost,0);
@@ -2460,7 +2460,7 @@ function reportExportSpec(tab){
     {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
     {label:'Title',key:'title'},{label:'Urgency',key:'urgency'},{label:'Status',key:'status'},
     {label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},{label:'Created',get:t=>t.created}]};
-  if(tab==='maintspend')return {filename:'report_maintenance_spend.csv',rows:TICKETS.filter(t=>t.cost),columns:[
+  if(tab==='maintspend')return {filename:'report_maintenance_spend.csv',rows:TICKETS.filter(t=>t.cost&&t.payment==='Paid'),columns:[
     {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
     {label:'Category',key:'svc'},{label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},{label:'Created',get:t=>t.created}]};
   if(tab==='compliance')return {filename:'report_compliance.csv',rows:CERTS,columns:[
@@ -2501,7 +2501,7 @@ function reportBody(tab){
     <div class="sectitle">Vendor activity <span class="faint">— ranked by T12 spend</span></div><div class="card"><table><thead><tr><th>Vendor</th><th>Service category</th><th>Tickets</th><th class="right">T12 Spend</th><th class="right">YTD Spend</th><th class="right">Avg / ticket (T12)</th><th class="right">% of T12 spend</th></tr></thead><tbody>${vendorRows.map(r=>`<tr><td class="b">${r.v}</td><td>${r.svc?(CAT[r.svc]||'')+' '+r.svc:'<span class="faint">—</span>'}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.t12)}</td><td class="right mono">${money(r.ytd)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${vendorTotal?Math.round(r.t12/vendorTotal*100):0}%</td></tr>`).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">No vendor activity yet.</td></tr>'}</tbody></table></div>`;
   }
   if(tab==='maintspend'){
-    const priced=TICKETS.filter(t=>t.cost);
+    const priced=TICKETS.filter(t=>t.cost&&t.payment==='Paid');
     const fy=fyStart(),t12=t12Start();
     const inYtd=t=>new Date(t.created)>=fy, inT12=t=>new Date(t.created)>=t12;
     const propRows=PROPS.map(p=>{const ts=priced.filter(t=>t.prop===p.id);const spend=ts.reduce((s,t)=>s+t.cost,0);
@@ -2531,7 +2531,7 @@ function reportBody(tab){
     </div>
     <div class="sectitle">Detail — spend by property</div><div class="card"><table><thead><tr><th>Property</th><th>Tickets</th><th class="right">T12 Spend</th><th class="right">YTD Spend</th><th class="right">Avg / ticket (T12)</th><th class="right">% of T12 spend</th></tr></thead><tbody>${propRows.map(r=>`<tr><td class="b">${r.p.name}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.t12)}</td><td class="right mono">${money(r.ytd)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${totalT12?Math.round(r.t12/totalT12*100):0}%</td></tr>`).join('')||'<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No priced tickets yet.</td></tr>'}</tbody></table></div>
     <div class="sectitle">Detail — spend by service category</div><div class="card"><table><thead><tr><th>Category</th><th>Tickets</th><th class="right">T12 Spend</th><th class="right">YTD Spend</th><th class="right">Avg / ticket (T12)</th><th class="right">% of T12 spend</th></tr></thead><tbody>${catRows.map(r=>`<tr><td class="b">${CAT[r.k]||'🛠️'} ${r.k}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.t12)}</td><td class="right mono">${money(r.ytd)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${totalT12?Math.round(r.t12/totalT12*100):0}%</td></tr>`).join('')||'<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No priced tickets yet.</td></tr>'}</tbody></table></div>
-    <div class="muted" style="font-size:12px;margin-top:8px">Spend figures reflect ticket cost fields entered on Maintenance tickets (Scope §4.7); Finance ledger remains system of record for reconciled dollar amounts (see TBD Reconciliation).</div>`;
+    <div class="muted" style="font-size:12px;margin-top:8px">Spend figures include only tickets marked Payment = Paid (Scope §4.7); tickets with cost entered but not yet paid are excluded. Finance ledger remains system of record for reconciled dollar amounts (see TBD Reconciliation).</div>`;
   }
   if(tab==='compliance'){
     const expiring=CERTS.filter(c=>c.exp&&daysTo(c.exp)>=0&&daysTo(c.exp)<=90);
@@ -2569,7 +2569,7 @@ function reportBody(tab){
   const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');
   const totalDebt=PROPS.filter(p=>p.own==='owned').reduce((s,p)=>s+(p.loanRemaining||0),0);
   return `<div class="kpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div><div class="kpi ${emerg.length?'red':'green'}"><div class="lab">Open emergencies</div><div class="val">${emerg.length}</div></div><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi ${CERTS.filter(c=>c.status==='expired').length?'red':'green'}"><div class="lab">Overdue compliance</div><div class="val">${CERTS.filter(c=>c.status==='expired').length}</div></div></div>
-  <div class="sectitle">Maintenance spend</div><div class="card"><div class="body row" style="display:flex;gap:24px;flex-wrap:wrap"><div>T12 Spend: <b>${money(TICKETS.filter(t=>t.cost&&new Date(t.created)>=t12Start()).reduce((s,t)=>s+t.cost,0))}</b></div><div>YTD Spend: <b>${money(TICKETS.filter(t=>t.cost&&new Date(t.created)>=fyStart()).reduce((s,t)=>s+t.cost,0))}</b></div></div></div>`;
+  <div class="sectitle">Maintenance spend</div><div class="card"><div class="body row" style="display:flex;gap:24px;flex-wrap:wrap"><div>T12 Spend: <b>${money(TICKETS.filter(t=>t.cost&&t.payment==='Paid'&&new Date(t.created)>=t12Start()).reduce((s,t)=>s+t.cost,0))}</b></div><div>YTD Spend: <b>${money(TICKETS.filter(t=>t.cost&&t.payment==='Paid'&&new Date(t.created)>=fyStart()).reduce((s,t)=>s+t.cost,0))}</b></div></div></div>`;
 }
 
 /* ===== maintenance spend charts (Chart.js — loaded via CDN, see <head>) ===== */
@@ -2579,7 +2579,7 @@ function destroyMSChart(key){if(MSCHARTS[key]){MSCHARTS[key].destroy();delete MS
 function renderMaintSpendCharts(){
   if(typeof Chart==='undefined')return; // CDN unreachable — the detail tables below still show every figure
   ['chartPropSpend','chartMatrix','chartCatSpend','chartMonthly'].forEach(destroyMSChart);
-  const priced=TICKETS.filter(t=>t.cost);
+  const priced=TICKETS.filter(t=>t.cost&&t.payment==='Paid');
   const propRows=PROPS.map(p=>{const ts=priced.filter(t=>t.prop===p.id);const spend=ts.reduce((s,t)=>s+t.cost,0);return {p,spend};}).sort((a,b)=>b.spend-a.spend);
   const catAgg={};priced.forEach(t=>{const k=t.svc||'Uncategorized';catAgg[k]=catAgg[k]||{n:0,spend:0};catAgg[k].n++;catAgg[k].spend+=t.cost;});
   const catRows=Object.entries(catAgg).map(([k,d])=>({k,spend:d.spend})).sort((a,b)=>b.spend-a.spend);
