@@ -215,7 +215,7 @@
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 7:50pm</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 9:54pm</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -2334,7 +2334,9 @@ function openVendor(id){const v=vendorById(id);if(!v)return;
       <div class="k">Referred by</div><div>${vendorTxt(v,'referredBy','—',190)}</div>
       <div class="k">Work Quality</div><div>${vendorListSelect(v,'quality','workQuality')}</div>
       <div class="k">Unique ID</div><div class="mono faint" style="font-size:12px">${v.id}</div>
-      <div class="k">YTD Spend</div><div>${vendorTxt(v,'ytd','0',130,'number')}</div>
+      <div class="k">YTD Spend <span class="faint" style="font-weight:400">(calculated)</span></div><div class="mono">${money(vendorSpendStats(v.name).ytd)}</div>
+      <div class="k">T12 Spend <span class="faint" style="font-weight:400">(calculated)</span></div><div class="mono">${money(vendorSpendStats(v.name).t12)}</div>
+      <div class="k">Manually Tracked Spend <span class="faint" style="font-weight:400">(legacy, optional)</span></div><div>${vendorTxt(v,'ytd','0',130,'number')}</div>
       <div class="k">Comments${visTag()}</div><div><textarea style="width:100%;min-height:50px" placeholder="add / update comments…" onchange="updateVendorField('${v.id}','comments',this.value)">${esc(v.comments)}</textarea></div>
       <div class="k">User Notes${visTag('private')}</div><div><textarea style="width:100%;min-height:50px" placeholder="add / update notes…" onchange="updateVendorField('${v.id}','userNotes',this.value)">${esc(v.userNotes)}</textarea></div>
     </div></div></div>
@@ -2409,37 +2411,143 @@ function renderClientExpenses(el){el.innerHTML=`
 
 /* ===== reports & analytics (Scope §4.11) ===== */
 let REPTAB='operational';
+/* ===== Vendor spend — YTD and trailing-12-month, calculated from real ticket costs =====
+   Fiscal year = calendar year (Jan 1). "Spend" is ambiguous on its own, so every place this
+   number appears now labels it as one of these two, computed live — never a manually-typed
+   figure that can go stale. */
+function fyStart(){const d=new Date();return new Date(d.getFullYear(),0,1);}
+function t12Start(){const d=new Date();d.setMonth(d.getMonth()-12);return d;}
+function propertySpendStats(propId){
+  const ts=TICKETS.filter(t=>t.prop===propId&&t.cost);
+  const fy=fyStart(),t12=t12Start();
+  const ytd=ts.filter(t=>new Date(t.created)>=fy).reduce((s,t)=>s+t.cost,0);
+  const trailing12=ts.filter(t=>new Date(t.created)>=t12).reduce((s,t)=>s+t.cost,0);
+  return {ytd,t12:trailing12};
+}
+function vendorSpendStats(vendorName){
+  const ts=TICKETS.filter(t=>t.vendor===vendorName&&t.cost);
+  const fy=fyStart(),t12=t12Start();
+  const ytd=ts.filter(t=>new Date(t.created)>=fy).reduce((s,t)=>s+t.cost,0);
+  const trailing12=ts.filter(t=>new Date(t.created)>=t12).reduce((s,t)=>s+t.cost,0);
+  return {ytd,t12:trailing12,n:ts.length};
+}
+/* ===== CSV export / data dumps ===== */
+function csvCell(v){
+  if(v==null)return '';
+  if(v instanceof Date)v=isNaN(v.getTime())?'':v.toISOString().slice(0,10);
+  const s=String(v);
+  return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+}
+function rowsToCSV(columns,rows){
+  const head=columns.map(c=>csvCell(c.label)).join(',');
+  const body=rows.map(r=>columns.map(c=>csvCell(typeof c.get==='function'?c.get(r):r[c.key])).join(',')).join('\n');
+  return head+'\n'+body;
+}
+function downloadCSV(filename,csv){
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},0);
+  toast('Downloaded '+filename);
+}
+function exportDataset(kind){
+  const sets={
+    properties:{filename:'properties.csv',rows:PROPS,columns:[
+      {label:'Name',key:'name'},{label:'Address',key:'addr'},{label:'Ownership',key:'own'},
+      {label:'Status',key:'status'},{label:'Metro',key:'metro'},{label:'Bedrooms',key:'bedrooms'},
+      {label:'Bathrooms',key:'bathrooms'},{label:'Sq Ft',key:'sqft'},{label:'Rent',key:'rent'},
+      {label:'Loan lender',key:'loanLender'},{label:'Loan balance',key:'loanRemaining'}]},
+    tickets:{filename:'maintenance_tickets.csv',rows:TICKETS,columns:[
+      {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
+      {label:'Title',key:'title'},{label:'Category',key:'svc'},{label:'Urgency',key:'urgency'},
+      {label:'Status',key:'status'},{label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},
+      {label:'Payment status',key:'payment'},{label:'Created',get:t=>t.created}]},
+    vendors:{filename:'vendors.csv',rows:VENDORS,columns:[
+      {label:'Name',key:'name'},{label:'Service category',key:'trade'},{label:'Contact',key:'contact'},
+      {label:'Phone',key:'phone'},{label:'Email',key:'email'},{label:'Metro',get:v=>(v.metro||[]).join('; ')},
+      {label:'Approved for Field Staff',get:v=>v.approved?'Yes':'No'},
+      {label:'YTD spend (calculated)',get:v=>vendorSpendStats(v.name).ytd},
+      {label:'T12 spend (calculated)',get:v=>vendorSpendStats(v.name).t12},
+      {label:'Manually tracked spend (legacy)',key:'ytd'}]},
+    leases:{filename:'leases.csv',rows:LEASES,columns:[
+      {label:'Property',get:l=>(propById(l.prop)||{}).name||''},{label:'Landlord',key:'landlord'},
+      {label:'Rent',key:'rent'},{label:'Term',key:'term'},{label:'Start',key:'start'},{label:'End',key:'end'},
+      {label:'Status',key:'status'}]},
+    compliance:{filename:'compliance_certificates.csv',rows:CERTS,columns:[
+      {label:'Property',get:c=>(propById(c.prop)||{}).name||''},{label:'Type',key:'type'},
+      {label:'Authority',key:'authority'},{label:'Cert #',key:'certNo'},{label:'Issued',get:c=>c.issue},
+      {label:'Expires',get:c=>c.exp},{label:'Status',key:'status'},{label:'Responsible',key:'resp'}]},
+    documents:{filename:'documents.csv',rows:DOCS,columns:[
+      {label:'Property',get:d=>(propById(d.prop)||{}).name||''},{label:'Type',key:'type'},
+      {label:'File name',key:'file'},{label:'Posted',get:d=>d.posted?'Yes':'No'},
+      {label:'Uploaded',get:d=>d.uploaded},{label:'Note',key:'note'}]},
+  };
+  const s=sets[kind];if(!s)return;
+  downloadCSV(s.filename,rowsToCSV(s.columns,s.rows));
+}
+function reportExportSpec(tab){
+  if(tab==='operational')return {filename:'report_operational_tickets.csv',rows:TICKETS.filter(isOpen),columns:[
+    {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
+    {label:'Title',key:'title'},{label:'Urgency',key:'urgency'},{label:'Status',key:'status'},
+    {label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},{label:'Created',get:t=>t.created}]};
+  if(tab==='maintspend')return {filename:'report_maintenance_spend.csv',rows:TICKETS.filter(t=>t.cost),columns:[
+    {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
+    {label:'Category',key:'svc'},{label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},{label:'Created',get:t=>t.created}]};
+  if(tab==='compliance')return {filename:'report_compliance.csv',rows:CERTS,columns:[
+    {label:'Property',get:c=>(propById(c.prop)||{}).name||''},{label:'Type',key:'type'},
+    {label:'Expires',get:c=>c.exp},{label:'Status',key:'status'}]};
+  if(tab==='financial')return {filename:'report_financial_loans.csv',rows:PROPS.filter(p=>p.own==='owned'&&(p.loanLender||p.loanRemaining!=null)),columns:[
+    {label:'Property',key:'name'},{label:'Lender',key:'loanLender'},{label:'Balance',key:'loanRemaining'},
+    {label:'Payment',key:'loanPayment'},{label:'Maturity',key:'loanMaturity'}]};
+  if(tab==='capital')return {filename:'report_capital_life_of_appliances.csv',rows:Object.keys(LIFE_TABLE).map(n=>({n,life:LIFE_TABLE[n][0],cost:LIFE_TABLE[n][1]})),columns:[
+    {label:'Component',key:'n'},{label:'Avg lifespan (yrs)',key:'life'},{label:'Replacement cost',key:'cost'}]};
+  return {filename:'report_executive_properties.csv',rows:PROPS,columns:[
+    {label:'Name',key:'name'},{label:'Status',key:'status'},{label:'Health',key:'health'},{label:'Metro',key:'metro'}]};
+}
+function exportCurrentReport(){
+  const s=reportExportSpec(REPTAB);
+  downloadCSV(s.filename,rowsToCSV(s.columns,s.rows));
+}
 function renderReports(el){
-  const tabs=['operational','maintspend','compliance','financial','capital','executive'];
-  const labels={operational:'Operational',maintspend:'Maintenance spend',compliance:'Compliance',financial:'Financial',capital:'Capital planning',executive:'Executive dashboard'};
-  el.innerHTML=`<div class="tabs">${tabs.map(t=>`<button class="tab ${REPTAB===t?'active':''}" onclick="REPTAB='${t}';renderReports(document.getElementById('view'))">${labels[t]}</button>`).join('')}</div>
+  const tabs=['operational','maintspend','compliance','financial','capital','executive','export'];
+  const labels={operational:'Operational',maintspend:'Maintenance spend',compliance:'Compliance',financial:'Financial',capital:'Capital planning',executive:'Executive dashboard',export:'Data export'};
+  el.innerHTML=`<div class="tabs" style="display:flex;align-items:center">${tabs.map(t=>`<button class="tab ${REPTAB===t?'active':''}" onclick="REPTAB='${t}';renderReports(document.getElementById('view'))">${labels[t]}</button>`).join('')}
+    ${REPTAB!=='export'?`<button class="btn sec sm" style="margin-left:auto" onclick="exportCurrentReport()">⬇ Export this report (CSV)</button>`:''}</div>
   <div id="repBody">${reportBody(REPTAB)}</div>`;
   if(REPTAB==='maintspend')renderMaintSpendCharts();
 }
 function reportBody(tab){
   if(tab==='operational'){
     const closed90=TICKETS.filter(t=>!isOpen(t)&&ageDays(t)<=90);
-    const byVendor={};TICKETS.forEach(t=>{if(t.vendor){byVendor[t.vendor]=byVendor[t.vendor]||{n:0,spend:0};byVendor[t.vendor].n++;byVendor[t.vendor].spend+=(t.cost||0);}});
-    const vendorRows=Object.entries(byVendor).map(([v,d])=>({v,n:d.n,spend:d.spend,avg:d.n?d.spend/d.n:0,svc:(VENDORS.find(vv=>vv.name===v)||{}).trade||''})).sort((a,b)=>b.spend-a.spend);
-    const vendorTotal=vendorRows.reduce((s,r)=>s+r.spend,0);
+    const byVendor={};TICKETS.forEach(t=>{if(t.vendor){byVendor[t.vendor]=byVendor[t.vendor]||{n:0};byVendor[t.vendor].n++;}});
+    const vendorRows=Object.entries(byVendor).map(([v,d])=>{const s=vendorSpendStats(v);return {v,n:d.n,ytd:s.ytd,t12:s.t12,avg:s.n?s.t12/s.n:0,svc:(VENDORS.find(vv=>vv.name===v)||{}).trade||''};}).sort((a,b)=>b.t12-a.t12);
+    const vendorTotal=vendorRows.reduce((s,r)=>s+r.t12,0);
     const openT=TICKETS.filter(isOpen);
     const buckets=[['0–7 days',0,7],['8–30 days',8,30],['31–90 days',31,90],['90+ days',91,Infinity]];
     const agingRows=buckets.map(([label,lo,hi])=>({label,lo,rows:openT.filter(t=>{const a=ageDays(t);return a>=lo&&a<=hi;})}));
-    return `<div class="sectitle">Open maintenance tickets — by property</div><div class="card"><table><thead><tr><th>Property</th><th>Open</th><th>Total</th><th class="right">Spend</th></tr></thead><tbody>${PROPS.map(p=>`<tr><td class="b">${p.name}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id).length}</td><td class="right mono">${money(spendFor(p.id))}</td></tr>`).join('')}</tbody></table></div>
+    return `<div class="sectitle">Open maintenance tickets — by property</div><div class="card"><table><thead><tr><th>Property</th><th>Open</th><th>Total</th><th class="right">Spend</th><th class="right">YTD Spend</th><th class="right">T12 Spend</th></tr></thead><tbody>${PROPS.map(p=>{const ps=propertySpendStats(p.id);return `<tr><td class="b">${p.name}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id).length}</td><td class="right mono">${money(spendFor(p.id))}</td><td class="right mono">${money(ps.ytd)}</td><td class="right mono">${money(ps.t12)}</td></tr>`;}).join('')}</tbody></table></div>
     <div class="sectitle">Open ticket aging <span class="faint">— best practice: flag anything sitting 30+ days</span></div><div class="card"><table><thead><tr><th>Age</th><th>Open tickets</th><th>Of which emergency</th></tr></thead><tbody>${agingRows.map(r=>`<tr><td class="b">${r.label}</td><td class="mono" style="${r.lo>=31&&r.rows.length?'color:var(--'+(r.lo>=91?'red':'amber')+')':''}">${r.rows.length}</td><td class="mono">${r.rows.filter(t=>t.urgency==='Emergency').length}</td></tr>`).join('')}</tbody></table></div>
     <div class="sectitle">Closed tickets — trailing 90 days</div><div class="card"><div class="body">${closed90.length} tickets closed in the last 90 days · avg cost ${money(closed90.length?Math.round(closed90.reduce((s,t)=>s+(t.cost||0),0)/closed90.length):0)}</div></div>
-    <div class="sectitle">Vendor activity <span class="faint">— ranked by spend</span></div><div class="card"><table><thead><tr><th>Vendor</th><th>Service category</th><th>Tickets</th><th class="right">Spend</th><th class="right">Avg / ticket</th><th class="right">% of spend</th></tr></thead><tbody>${vendorRows.map(r=>`<tr><td class="b">${r.v}</td><td>${r.svc?(CAT[r.svc]||'')+' '+r.svc:'<span class="faint">—</span>'}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.spend)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${vendorTotal?Math.round(r.spend/vendorTotal*100):0}%</td></tr>`).join('')||'<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No vendor activity yet.</td></tr>'}</tbody></table></div>`;
+    <div class="sectitle">Vendor activity <span class="faint">— ranked by T12 spend</span></div><div class="card"><table><thead><tr><th>Vendor</th><th>Service category</th><th>Tickets</th><th class="right">T12 Spend</th><th class="right">YTD Spend</th><th class="right">Avg / ticket (T12)</th><th class="right">% of T12 spend</th></tr></thead><tbody>${vendorRows.map(r=>`<tr><td class="b">${r.v}</td><td>${r.svc?(CAT[r.svc]||'')+' '+r.svc:'<span class="faint">—</span>'}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.t12)}</td><td class="right mono">${money(r.ytd)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${vendorTotal?Math.round(r.t12/vendorTotal*100):0}%</td></tr>`).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">No vendor activity yet.</td></tr>'}</tbody></table></div>`;
   }
   if(tab==='maintspend'){
     const priced=TICKETS.filter(t=>t.cost);
-    const propRows=PROPS.map(p=>{const ts=priced.filter(t=>t.prop===p.id);const spend=ts.reduce((s,t)=>s+t.cost,0);return {p,n:ts.length,spend,avg:ts.length?spend/ts.length:0};}).sort((a,b)=>b.spend-a.spend);
+    const fy=fyStart(),t12=t12Start();
+    const inYtd=t=>new Date(t.created)>=fy, inT12=t=>new Date(t.created)>=t12;
+    const propRows=PROPS.map(p=>{const ts=priced.filter(t=>t.prop===p.id);const spend=ts.reduce((s,t)=>s+t.cost,0);
+      const ytd=ts.filter(inYtd).reduce((s,t)=>s+t.cost,0);const trailing12=ts.filter(inT12).reduce((s,t)=>s+t.cost,0);
+      return {p,n:ts.length,spend,ytd,t12:trailing12,avg:ts.length?spend/ts.length:0};}).sort((a,b)=>b.spend-a.spend);
     const totalSpend=propRows.reduce((s,r)=>s+r.spend,0);
+    const totalYtd=propRows.reduce((s,r)=>s+r.ytd,0);
+    const totalT12=propRows.reduce((s,r)=>s+r.t12,0);
     const totalN=propRows.reduce((s,r)=>s+r.n,0);
-    const catAgg={};priced.forEach(t=>{const k=t.svc||'Uncategorized';catAgg[k]=catAgg[k]||{n:0,spend:0};catAgg[k].n++;catAgg[k].spend+=t.cost;});
-    const catRows=Object.entries(catAgg).map(([k,d])=>({k,n:d.n,spend:d.spend,avg:d.n?d.spend/d.n:0})).sort((a,b)=>b.spend-a.spend);
+    const catAgg={};priced.forEach(t=>{const k=t.svc||'Uncategorized';catAgg[k]=catAgg[k]||{n:0,spend:0,ytd:0,t12:0};catAgg[k].n++;catAgg[k].spend+=t.cost;if(inYtd(t))catAgg[k].ytd+=t.cost;if(inT12(t))catAgg[k].t12+=t.cost;});
+    const catRows=Object.entries(catAgg).map(([k,d])=>({k,n:d.n,spend:d.spend,ytd:d.ytd,t12:d.t12,avg:d.n?d.spend/d.n:0})).sort((a,b)=>b.spend-a.spend);
     const topCatRow=catRows[0];
-    return `<div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+    return `<div class="kpis" style="grid-template-columns:repeat(3,1fr)">
       <div class="kpi"><div class="lab">Total maintenance spend</div><div class="val">${money(totalSpend)}</div></div>
+      <div class="kpi"><div class="lab">YTD Spend</div><div class="val">${money(totalYtd)}</div></div>
+      <div class="kpi"><div class="lab">T12 Spend</div><div class="val">${money(totalT12)}</div></div>
       <div class="kpi"><div class="lab">Tickets with cost</div><div class="val">${totalN}</div></div>
       <div class="kpi"><div class="lab">Avg cost / ticket</div><div class="val">${money(totalN?totalSpend/totalN:0)}</div></div>
       <div class="kpi"><div class="lab">Top category</div><div class="val" style="font-size:16px">${topCatRow?(CAT[topCatRow.k]||'')+' '+topCatRow.k:'—'}</div></div>
@@ -2452,8 +2560,8 @@ function reportBody(tab){
       <div class="card" style="flex:1;min-width:320px"><div class="sectitle" style="margin-top:0">Portfolio spend by service category</div><div class="body"><div style="height:280px"><canvas id="chartCatSpend"></canvas></div></div></div>
       <div class="card" style="flex:1;min-width:320px"><div class="sectitle" style="margin-top:0">Monthly spend trend</div><div class="body"><div style="height:280px"><canvas id="chartMonthly"></canvas></div></div></div>
     </div>
-    <div class="sectitle">Detail — spend by property</div><div class="card"><table><thead><tr><th>Property</th><th>Tickets</th><th class="right">Spend</th><th class="right">Avg / ticket</th><th class="right">% of spend</th></tr></thead><tbody>${propRows.map(r=>`<tr><td class="b">${r.p.name}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.spend)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${totalSpend?Math.round(r.spend/totalSpend*100):0}%</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">No priced tickets yet.</td></tr>'}</tbody></table></div>
-    <div class="sectitle">Detail — spend by service category</div><div class="card"><table><thead><tr><th>Category</th><th>Tickets</th><th class="right">Spend</th><th class="right">Avg / ticket</th><th class="right">% of spend</th></tr></thead><tbody>${catRows.map(r=>`<tr><td class="b">${CAT[r.k]||'🛠️'} ${r.k}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.spend)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${totalSpend?Math.round(r.spend/totalSpend*100):0}%</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">No priced tickets yet.</td></tr>'}</tbody></table></div>
+    <div class="sectitle">Detail — spend by property</div><div class="card"><table><thead><tr><th>Property</th><th>Tickets</th><th class="right">Spend</th><th class="right">YTD Spend</th><th class="right">T12 Spend</th><th class="right">Avg / ticket</th><th class="right">% of spend</th></tr></thead><tbody>${propRows.map(r=>`<tr><td class="b">${r.p.name}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.spend)}</td><td class="right mono">${money(r.ytd)}</td><td class="right mono">${money(r.t12)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${totalSpend?Math.round(r.spend/totalSpend*100):0}%</td></tr>`).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">No priced tickets yet.</td></tr>'}</tbody></table></div>
+    <div class="sectitle">Detail — spend by service category</div><div class="card"><table><thead><tr><th>Category</th><th>Tickets</th><th class="right">Spend</th><th class="right">YTD Spend</th><th class="right">T12 Spend</th><th class="right">Avg / ticket</th><th class="right">% of spend</th></tr></thead><tbody>${catRows.map(r=>`<tr><td class="b">${CAT[r.k]||'🛠️'} ${r.k}</td><td class="mono">${r.n}</td><td class="right mono">${money(r.spend)}</td><td class="right mono">${money(r.ytd)}</td><td class="right mono">${money(r.t12)}</td><td class="right mono">${money(r.avg)}</td><td class="right mono">${totalSpend?Math.round(r.spend/totalSpend*100):0}%</td></tr>`).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">No priced tickets yet.</td></tr>'}</tbody></table></div>
     <div class="muted" style="font-size:12px;margin-top:8px">Spend figures reflect ticket cost fields entered on Maintenance tickets (Scope §4.7); Finance ledger remains system of record for reconciled dollar amounts (see TBD Reconciliation).</div>`;
   }
   if(tab==='compliance'){
@@ -2469,17 +2577,30 @@ function reportBody(tab){
     const svc=loaned.reduce((s,p)=>s+(p.loanPayment||0)+(p.loanEscrow||0),0);
     return `<div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi"><div class="lab">Monthly debt service</div><div class="val">${money(svc)}</div></div><div class="kpi"><div class="lab">Properties w/ loans</div><div class="val">${loaned.length}</div></div></div>
     <div class="sectitle">Loans — balance &amp; maturity</div><div class="card"><table><thead><tr><th>Property</th><th>Lender</th><th class="right">Balance</th><th>Maturity</th></tr></thead><tbody>${loaned.map(p=>`<tr class="clickable" onclick="openProperty('${p.id}')"><td class="b">${p.name}</td><td class="muted">${p.loanLender||'—'}</td><td class="right mono">${money(p.loanRemaining)}</td><td class="mono">${p.loanMaturity||'—'}</td></tr>`).join('')||'<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">No loans on file yet — add one from a property\'s Loan tab.</td></tr>'}</tbody></table></div>
-    <div class="muted" style="font-size:12px;margin-top:8px">Market valuations (AVM/RentCast) are out of this prototype's sample scope — table reflects loan data only.</div>`;
+    <div class="muted" style="font-size:12px;margin-top:8px">Loan figures above are real, persisted data. Market valuations (AVM/RentCast) aren't built yet — this table reflects loan data only.</div>`;
   }
   if(tab==='capital'){
     const names=Object.keys(LIFE_TABLE);
     return `<div class="sectitle">Life of Appliances — reference assumptions</div><div class="card"><table><thead><tr><th>Component</th><th>Avg. lifespan</th><th class="right">Replacement cost</th></tr></thead><tbody>${names.map(n=>{const [life,cost]=LIFE_TABLE[n];return `<tr><td class="b">${n}</td><td class="mono">${life} yr</td><td class="right mono">${money(cost)}</td></tr>`;}).join('')}</tbody></table></div>
     <div class="muted" style="font-size:12px;margin-top:8px">Per-property component tracking (actual install dates, real end-of-life flagging, and 5/10-year capital forecasts) isn't built yet — these are portfolio-wide assumptions only (Scope §4.6/§4.9.5), editable by Senior Admin in Assumptions.</div>`;
   }
+  if(tab==='export'){
+    const sets=[
+      {kind:'properties',label:'Properties',n:PROPS.length,desc:'Address, ownership, status, metro, loan lender & balance'},
+      {kind:'tickets',label:'Maintenance tickets',n:TICKETS.length,desc:'Every ticket — property, category, urgency, status, vendor, cost'},
+      {kind:'vendors',label:'Vendor directory',n:VENDORS.length,desc:'Contact info, service category, approved-for-Field-Staff flag, YTD & T12 spend'},
+      {kind:'leases',label:'Leases & rent',n:LEASES.length,desc:'Landlord, rent, term, start/end, status, by property'},
+      {kind:'compliance',label:'Compliance certificates',n:CERTS.length,desc:'Type, authority, issue/expiration dates, status, by property'},
+      {kind:'documents',label:'Documents',n:DOCS.length,desc:'File name, type, posted status, by property'},
+    ];
+    return `<div class="sectitle">Data export — full table dumps</div>
+    <div class="muted" style="font-size:12.5px;margin-bottom:10px">Download any table below as a CSV, exactly as it stands right now — every row, not just what's on screen. Opens in Excel/Google Sheets.</div>
+    <div class="card"><div class="body" style="padding:0">${sets.map(s=>`<div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-top:1px solid var(--line)"><div style="flex:1"><div class="b">${s.label} <span class="faint" style="font-weight:400">(${s.n} rows)</span></div><div class="muted" style="font-size:12px;margin-top:2px">${s.desc}</div></div><button class="btn sec sm" onclick="exportDataset('${s.kind}')">⬇ CSV</button></div>`).join('')}</div></div>`;
+  }
   const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');
   const totalDebt=PROPS.filter(p=>p.own==='owned').reduce((s,p)=>s+(p.loanRemaining||0),0);
   return `<div class="kpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div><div class="kpi ${emerg.length?'red':'green'}"><div class="lab">Open emergencies</div><div class="val">${emerg.length}</div></div><div class="kpi"><div class="lab">Total debt</div><div class="val">${money(totalDebt)}</div></div><div class="kpi ${CERTS.filter(c=>c.status==='expired').length?'red':'green'}"><div class="lab">Overdue compliance</div><div class="val">${CERTS.filter(c=>c.status==='expired').length}</div></div></div>
-  <div class="sectitle">Trailing spend</div><div class="card"><div class="body">Trailing maintenance spend: <b>${money(TICKETS.filter(t=>t.cost).reduce((s,t)=>s+t.cost,0))}</b></div></div>`;
+  <div class="sectitle">Maintenance spend</div><div class="card"><div class="body row" style="display:flex;gap:24px;flex-wrap:wrap"><div>YTD Spend: <b>${money(TICKETS.filter(t=>t.cost&&new Date(t.created)>=fyStart()).reduce((s,t)=>s+t.cost,0))}</b></div><div>T12 Spend: <b>${money(TICKETS.filter(t=>t.cost&&new Date(t.created)>=t12Start()).reduce((s,t)=>s+t.cost,0))}</b></div></div></div>`;
 }
 
 /* ===== maintenance spend charts (Chart.js — loaded via CDN, see <head>) ===== */
