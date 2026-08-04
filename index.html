@@ -215,7 +215,7 @@
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 4, 2026 · 11:20am</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 4, 2026 · 2:10pm</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -1250,7 +1250,7 @@ const DISPOSITION_CHECKLIST=["Offer Acceptance","Deposit Received by Seller","HO
 const LICENSING_CHECKLIST=["Non-contiguous approval","Certificate of Occupancy/Use application/receipt","Licensure (Certification Licensing System – CLS) application","Self-inspection / DHS site inspection","Document submission to RA-odplicensing@pa.gov","ODP Licensing approval","Residential Approval Letter request to APC","Promise enrollment completion","Referral and matching","ISP update and authorization","Home/operational setup","Billing/authorization confirmed in Promise","Move-in of individual(s)","Comments","User Notes"];
 
 /* ===== document upload & auto-populate (Scope §4.1 Property Documents / §4.10 invoice routing) ===== */
-const DOC_TYPES=['Deed','Lease','Insurance','Certificate of Occupancy','Inspection Report','Loan Documents','Photos / Videos'];
+const DOC_TYPES=['Deed','Lease','Insurance','Certificate of Occupancy','Inspection Report','Loan Documents','Photos / Videos','Other'];
 // Note: vendor invoices are no longer uploaded here — they're attached directly to maintenance
 // ticket(s) via drag-and-drop (or the file picker) in the Maintenance list, single or multi-select.
 function docTypesFor(p){
@@ -1265,7 +1265,7 @@ function docTypesFor(p){
     return true;
   });
 }
-function docBadge(type){const m={'Deed':'📄','Lease':'📄','Insurance':'🛡️','Certificate of Occupancy':'📜','Inspection Report':'🔍','Loan Documents':'🏦','Invoice':'🧾','Photos / Videos':'🖼️'};return m[type]||'📄';}
+function docBadge(type){const m={'Deed':'📄','Lease':'📄','Insurance':'🛡️','Certificate of Occupancy':'📜','Inspection Report':'🔍','Loan Documents':'🏦','Invoice':'🧾','Photos / Videos':'🖼️','Other':'📎'};return m[type]||'📄';}
 let DOC_ID=100;
 // Real documents load from Supabase via loadRealDocuments() once connected (Phase 17).
 // Empty here — this is only the pre-connection/demo-mode starting state.
@@ -1703,7 +1703,13 @@ function propOverview(p,tks){const open=tks.filter(isOpen).length;
   <div class="k">YTD Spend</div><div><b>${money(propertySpendStats(p.id).ytd)}</b></div>
 </div></div></div>${p.health==='red'?`<div class="card" style="margin-top:14px;border-color:var(--red)"><div class="body" style="color:var(--red)"><b>⚠ At-risk:</b> has an open emergency item.</div></div>`:''}`;
   if(p.own==='owned'){
-    return summary+`<div class="sectitle">Purchase record</div><div class="card"><div class="body"><div class="kv">
+    const deedDocs=ROLE==='admin'?DOCS.filter(d=>d.prop===p.id&&d.type==='Deed'):[];
+    const deedTrigger=deedDocs.length?`<div class="card" style="margin-bottom:12px"><div class="body">
+      <div class="b" style="margin-bottom:6px">🤖 Read a deed with AI</div>
+      <div class="muted" style="font-size:12px;margin-bottom:10px;line-height:1.5">KodaRE can read an uploaded deed and draft the purchase record below for your review — nothing saves until you approve it.</div>
+      ${deedDocs.map(d=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">📄 ${esc(d.file)}</span><button class="btn sm" id="propExtractBtn_${d.id}" onclick="startPropertyDocExtraction('${p.id}','${d.id}')">🤖 Read with AI</button></div>`).join('')}
+    </div></div>`:'';
+    return summary+deedTrigger+`<div class="sectitle">Purchase record</div><div class="card"><div class="body"><div class="kv">
       <div class="k">Buyer entity (LLC)</div><div><input type="text" value="${esc(p.buyerLLC||p.llc||'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','buyerLLC',this.value)"></div>
       <div class="k">Metro / County</div><div>${propMetroSelect(p)} / ${propTxt(p,'county','—',140)}</div>
       <div class="k">Purchase date</div><div><input type="text" value="${p.purchaseDate&&p.purchaseDate!=='—'?mdyy(p.purchaseDate):''}" placeholder="MM/DD/YY" style="width:110px;font-size:13px" onchange="updatePropField('${p.id}','purchaseDate',this.value,'date')"></div>
@@ -1718,7 +1724,13 @@ function propOverview(p,tks){const open=tks.filter(isOpen).length;
     <div class="muted" style="font-size:11.5px;margin-top:6px">Fields above are commonly auto-filled from an uploaded Deed (see Documents tab) — highlighted here as editable so staff can override anything extracted incorrectly.</div>
     <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.12 Purchased Property Records — Landing Page · sample data for prototype review.</div>`;
   }
-  return summary+`<div class="sectitle">Lease record</div><div class="card"><div class="body"><div class="kv">
+  const leaseDocs=ROLE==='admin'?DOCS.filter(d=>d.prop===p.id&&d.type==='Lease'):[];
+  const leaseTrigger=leaseDocs.length?`<div class="card" style="margin-bottom:12px"><div class="body">
+    <div class="b" style="margin-bottom:6px">🤖 Read a lease with AI</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px;line-height:1.5">KodaRE can read an uploaded lease and draft the lease record below for your review — nothing saves until you approve it.</div>
+    ${leaseDocs.map(d=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">📄 ${esc(d.file)}</span><button class="btn sm" id="propExtractBtn_${d.id}" onclick="startPropertyDocExtraction('${p.id}','${d.id}')">🤖 Read with AI</button></div>`).join('')}
+  </div></div>`:'';
+  return summary+leaseTrigger+`<div class="sectitle">Lease record</div><div class="card"><div class="body"><div class="kv">
     <div class="k">Landlord</div><div><input type="text" value="${esc(p.landlord&&p.landlord!=='—'?p.landlord:'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','landlord',this.value)"></div>
     <div class="k">Monthly rent</div><div><input type="text" inputmode="decimal" value="${p.rent!=null?p.rent:''}" placeholder="—" style="width:130px;font-size:13px;text-align:right" onchange="updatePropField('${p.id}','rent',this.value,'number')"></div>
     <div class="k">Lease type</div><div><input type="text" value="${esc(p.leaseType||'')}" placeholder="—" style="width:150px;font-size:13px" onchange="updatePropField('${p.id}','leaseType',this.value)"></div>
@@ -1745,8 +1757,14 @@ function propMetroSelect(p){
   return `<select style="width:150px;font-size:13px" onchange="updatePropField('${p.id}','metro',this.value)"><option value="">— none —</option>${opts.map(m=>`<option value="${esc(m)}" ${p.metro===m?'selected':''}>${esc(m)}</option>`).join('')}</select>`;
 }
 function propDetails(p){
+  const charDocs=ROLE==='admin'?DOCS.filter(d=>d.prop===p.id&&(d.type==='Inspection Report'||d.type==='Other')):[];
+  const charTrigger=charDocs.length?`<div class="card" style="margin-bottom:12px"><div class="body">
+    <div class="b" style="margin-bottom:6px">🤖 Read a property document with AI</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px;line-height:1.5">KodaRE can read an uploaded inspection report, appraisal, or MLS one-pager (filed as "Inspection Report" or "Other" on the Documents tab) and draft the characteristics below for your review — nothing saves until you approve it.</div>
+    ${charDocs.map(d=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">📄 ${esc(d.file)} <span class="faint">(${esc(d.type)})</span></span><button class="btn sm" id="propExtractBtn_${d.id}" onclick="startPropertyDocExtraction('${p.id}','${d.id}')">🤖 Read with AI</button></div>`).join('')}
+  </div></div>`:'';
   if(p.own==='owned'){
-    return `<div class="card"><div class="body"><div class="kv">
+    return charTrigger+`<div class="card"><div class="body"><div class="kv">
       <div class="k">Bedrooms / Baths</div><div>${propTxt(p,'bedrooms','—',60,'number')} / ${propTxt(p,'bathrooms','—',60,'number')}</div>
       <div class="k">Sq ft</div><div>${propTxt(p,'sqft','—',100,'number')}</div>
       <div class="k">Cost / sq ft</div><div>${(p.purchasePrice&&p.sqft)?money(Math.round(p.purchasePrice/p.sqft)):'<span class="faint">—</span>'}</div>
@@ -1783,7 +1801,7 @@ function propDetails(p){
     <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.12 Purchased Property Records — Additional · sample data for prototype review.${ROLE!=='admin'?' Editable by Senior Admin only.':''}</div>`;
   }
   const rentSf=(p.rent&&p.sqft)?('$'+(Math.round(p.rent/p.sqft*100)/100).toFixed(2)):'<span class="faint">—</span>';
-  return `<div class="card"><div class="body"><div class="kv">
+  return charTrigger+`<div class="card"><div class="body"><div class="kv">
     <div class="k">Bedrooms / Baths</div><div>${propTxt(p,'bedrooms','—',60,'number')} / ${propTxt(p,'bathrooms','—',60,'number')}</div>
     <div class="k">Sq ft</div><div>${propTxt(p,'sqft','—',100,'number')}</div>
     <div class="k">Cost / sq ft (rent)</div><div>${rentSf}</div>
@@ -2310,6 +2328,82 @@ async function approveLoanExtraction(propId){
   refreshPropertiesLanding();
   const tabBody=document.getElementById('propTabBody');
   if(tabBody)tabBody.innerHTML=propLoan(p);
+}
+
+/* ===== Property document AI extraction (Phase 23) — Deed / Lease / characteristics =====
+   Senior Admin only, end to end, same rule as the Loan document extraction (Phase 22). Office
+   Staff can upload these documents (Documents tab, unchanged); only Senior Admin can trigger
+   AI reading and approve the draft. Shares the review-drawer pattern with the Loan flow but is
+   a separate code path so the already-working Loan extraction is never touched by this. */
+const PROPDOC_EXTRACT_SCHEMAS={
+  deed:{title:'Read AI-drafted purchase record',tab:'Overview',
+    fields:[['buyerLLC','Buyer entity (LLC)'],['county','County'],['purchaseDate','Purchase date (YYYY-MM-DD)'],['settlementDate','Settlement date (YYYY-MM-DD)'],['purchasePrice','Purchase price ($)'],['totalBuyerCosts','Total buyer costs ($)'],['taxId','Tax ID #']],
+    numeric:new Set(['purchasePrice','totalBuyerCosts'])},
+  lease:{title:'Review AI-drafted lease record',tab:'Overview',
+    fields:[['landlord','Landlord'],['rent','Monthly rent ($)'],['leaseType','Lease type']],
+    numeric:new Set(['rent'])},
+  characteristics:{title:'Review AI-drafted property characteristics',tab:'Details',
+    fields:[['bedrooms','Bedrooms'],['bathrooms','Bathrooms'],['sqft','Sq ft'],['yearBuilt','Year built'],['levels','Levels / stories'],['parkingType','Parking'],['typeStyle','Type / style'],['constructionMaterial','Construction'],['zoning','Zoning'],['propertyType','Property type'],['hoaCondo','HOA / Condo (Yes/No)'],['hoaFee','HOA/Condo monthly fee ($)'],['hoaAssocName','HOA/Condo association name'],['municipality','Municipality'],['schoolDistrict','School district'],['taxId','Tax ID #'],['mls','MLS #'],['county','County']],
+    numeric:new Set(['bedrooms','bathrooms','sqft','yearBuilt','levels','hoaFee'])}
+};
+async function startPropertyDocExtraction(propId,docId){
+  const btn=document.getElementById('propExtractBtn_'+docId);
+  if(btn){btn.disabled=true;btn.textContent='🤖 Reading…';}
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session){toast('Your session has expired — please sign in again.');return;}
+    const resp=await fetch('/api/extract-property-doc',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({documentId:docId})});
+    const result=await resp.json().catch(()=>({}));
+    if(!resp.ok||!result.ok){toast('Could not read document: '+(result.error||resp.statusText||'unknown error'));return;}
+    openPropertyDocExtractionReview(propId,result.kind,result.fields||{},result.documentName||'');
+  }catch(e){
+    toast('Could not reach the extraction service: '+e.message);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='🤖 Read with AI';}
+  }
+}
+function openPropertyDocExtractionReview(propId,kind,fields,docName){
+  const p=propById(propId);if(!p)return;
+  const schema=PROPDOC_EXTRACT_SCHEMAS[kind];if(!schema)return;
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${p.name}${docName?' · from '+esc(docName):''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${schema.title}</div></div>`,
+    `<div class="card"><div class="body">
+      <div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">KodaRE read this from the uploaded document — check every field against the original before approving. A blank field means it wasn't found; fill in or correct anything as needed. <b>Nothing is saved to this property until you click Approve &amp; save.</b></div>
+      <div class="kv">${schema.fields.map(([k,label])=>`<div class="k">${label}</div><div><input type="text" id="propdocReview_${k}" value="${esc(fields[k]!=null?String(fields[k]):'')}" style="width:100%;font-size:13px"></div>`).join('')}</div>
+    </div></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn sec sm" onclick="closeDrawer()">Discard</button>
+      <button class="btn sm" onclick="approvePropertyDocExtraction('${propId}','${kind}')">✓ Approve &amp; save to ${esc(schema.tab)}</button>
+    </div>`);
+}
+async function approvePropertyDocExtraction(propId,kind){
+  if(ROLE!=='admin'){toast('Only Senior Admin can approve this.');return;}
+  const p=propById(propId);if(!p)return;
+  const schema=PROPDOC_EXTRACT_SCHEMAS[kind];if(!schema)return;
+  const patch={};const mem={};
+  schema.fields.forEach(([k])=>{
+    const el=document.getElementById('propdocReview_'+k);if(!el)return;
+    const raw=el.value.trim();
+    let val;
+    if(raw===''){val=null;}
+    else if(schema.numeric.has(k)){val=isNaN(Number(raw))?null:Number(raw);}
+    else{val=raw;}
+    mem[k]=val;
+    const col=PROP_FIELD_TO_COLUMN[k];if(col)patch[col]=val;
+  });
+  if(p._backend==='supabase'){
+    const ok=await dbUpdateProperty(p.id,patch);
+    if(!ok)return;
+  }
+  Object.assign(p,mem);
+  if(!SUPA_CONFIGURED)saveState();
+  toast('Saved to '+schema.tab);
+  closeDrawer();
+  refreshPropertiesLanding();
+  const tabBody=document.getElementById('propTabBody');
+  if(tabBody){
+    const tks=TICKETS.filter(t=>t.prop===p.id);
+    tabBody.innerHTML=schema.tab==='Overview'?propOverview(p,tks):propDetails(p);
+  }
 }
 
 /* ===== leases ===== */
