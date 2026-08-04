@@ -215,7 +215,7 @@
 <body>
 
 <div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 3, 2026 · 10:30pm</span></div>
+  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 4, 2026 · 11:20am</span></div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
@@ -506,6 +506,49 @@ async function toggleDocPosted(id,checked){
   toast(checked?'Document posted — Field Staff assigned to this property can now see it':'Document set back to draft — hidden from Field Staff');
   const p=propById(d.prop);if(p)document.getElementById('propTabBody').innerHTML=propDocs(p);
 }
+/* ===== Ticket attachments — real Supabase Storage + ticket_attachments table (Phase 19) =====
+   Replaces the old fake mobile "Add a photo" toggle (which only ever set a boolean/counter,
+   no file was ever captured). Used by both the desktop ticket drawer (openTicket) and the
+   mobile Field Staff report flow (mReport/mSubmit/mDetail). */
+function rowToTicketAttachment(row){
+  return {id:row.id, _backend:'supabase', ticket:row.ticket_id, kind:row.kind, file:row.file_name,
+    path:row.file_path, size:fmtBytes(row.file_size), uploaded:new Date(row.created_at), uploadedBy:row.uploaded_by||''};
+}
+async function loadRealTicketAttachments(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('ticket_attachments').select('*').order('created_at',{ascending:false});
+  if(error){toast('Could not load ticket attachments: '+error.message);return;}
+  TICKET_ATTACHMENTS.length=0;(data||[]).forEach(row=>TICKET_ATTACHMENTS.push(rowToTicketAttachment(row)));
+}
+async function dbInsertTicketAttachment(ticketId,kind,fileName,filePath,fileSize){
+  const {data,error}=await sb.from('ticket_attachments').insert({ticket_id:ticketId,kind,file_name:fileName,file_path:filePath,file_size:fileSize,uploaded_by:MY_NAME||''}).select().single();
+  if(error){toast('Could not save attachment record: '+error.message);return null;}
+  return data;
+}
+async function dbDeleteTicketAttachment(id,path){
+  const {error}=await sb.from('ticket_attachments').delete().eq('id',id);
+  if(error){toast('Delete failed: '+error.message);return false;}
+  if(path){const {error:rmErr}=await sb.storage.from('ticket_attachments').remove([path]);if(rmErr)console.error('storage cleanup failed',rmErr);}
+  return true;
+}
+// Shared upload path for both the desktop ticket drawer and the mobile report flow.
+// `file` is a real File object (file picker or camera capture, e.g. capture="environment").
+async function uploadTicketAttachment(ticketId,file,kind){
+  kind=kind==='photo'?'photo':'file';
+  if(SUPA_CONFIGURED){
+    const path=`${ticketId}/${Date.now()}_${file.name}`;
+    const {error:upErr}=await sb.storage.from('ticket_attachments').upload(path,file,{upsert:true});
+    if(upErr){toast('Upload failed: '+upErr.message);return false;}
+    const row=await dbInsertTicketAttachment(ticketId,kind,file.name,path,file.size);
+    if(!row){await sb.storage.from('ticket_attachments').remove([path]);return false;}
+    TICKET_ATTACHMENTS.unshift(rowToTicketAttachment(row));
+    return true;
+  }
+  let url=null;try{url=URL.createObjectURL(file);}catch(e){}
+  TICKET_ATTACHMENTS.unshift({id:'ta'+Date.now()+Math.random().toString(36).slice(2,6),_backend:'demo',ticket:ticketId,kind,file:file.name,path:null,size:fmtBytes(file.size),uploaded:new Date(),uploadedBy:'',url});
+  return true;
+}
+function ticketAttachmentsList(ticketId){return TICKET_ATTACHMENTS.filter(a=>String(a.ticket)===String(ticketId)).sort((a,b)=>new Date(b.uploaded)-new Date(a.uploaded));}
 /* ===== Team Notes — real Supabase table (Phase 17) ===== */
 function rowToNote(row){
   return {id:row.id, _backend:'supabase', tag:row.tag, pinned:row.pinned, text:row.text};
@@ -717,6 +760,7 @@ const LIVE_ROLE_COLOR={admin:'var(--sa)',office:'var(--os)',caregiver:'var(--cg)
 // (which stays available only when SUPA_CONFIGURED is false / no real login is involved).
 function applyLiveRole(role,displayName){
   ROLE=role;
+  MY_NAME=displayName||'';
   document.getElementById('switch').classList.add('hidden');
   const badge=document.getElementById('liveRoleBadge');
   badge.classList.remove('hidden');
@@ -748,6 +792,7 @@ async function enterLiveApp(){
   await loadRealLicensingChecklists();
   await loadRealReferenceLists();
   await loadRealDocuments();
+  await loadRealTicketAttachments();
   await loadRealNotes();
   await loadRealTrash();
   if(ROLE==='admin'){await loadRealUserRoles();await loadRealPropertyAssignments();}
@@ -844,7 +889,7 @@ function fdate(d){return d?mdyy(d):'—';}
 function initials(name){return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();}
 const STAFF={office:{name:'Sonia S.',role:'Office Staff',color:'var(--os)'},admin:{name:'Morgan Patel',role:'Senior Admin',color:'var(--sa)'},caregiver:{name:'Alex Rivera',role:'Field Staff',color:'var(--cg)'}};
 const propById=id=>PROPS.find(p=>p.id===id)||{name:'—',addr:''};
-function mkTicket(o){return Object.assign({id:'T-'+(++TID),photos:0,log:[]},o);}
+function mkTicket(o){return Object.assign({id:'T-'+(++TID),log:[]},o);}
 
 const SB={'Open':'b-new','Triage':'b-triage','Assigned':'b-assigned','In progress':'b-progress','Awaiting parts':'b-parts','Escalated':'b-red','Completed':'b-resolved','Resolved':'b-resolved','Closed':'b-closed'};
 const UB={'Emergency':'u-emergency','Urgent':'u-high','High':'u-high','Normal':'u-normal','Low':'u-low'};
@@ -905,7 +950,8 @@ function permissionsMatrixHtml(){
   const rows=[
     ['Property records — basic info (address, contacts)','R*','R','R/W'],
     ['Property cost basis & purchase history','—','R','R/W'],
-    ['Property documents (deeds, photos, etc.)','R*','R/W (loading docs only)','R/W'],
+    ['Property documents (deeds, leases, insurance, inspection reports, loan paperwork)','—','R/W','R/W'],
+    ['Maintenance ticket photos/files (proof of damage, repair progress)','W/R*','R/W','R/W'],
     ['Compliance: CO, licenses, inspections','R*','R/W','R/W'],
     ['Inspection scheduling & reminders','—','R/W','R/W'],
     ['Loans & debt','—','R','R/W'],
@@ -925,7 +971,7 @@ function permissionsMatrixHtml(){
   <div class="card uroles-card"><div class="body" style="padding:0"><table class="uroles-permtable"><thead><tr>
     <th>Capability</th><th class="c">Field Staff</th><th class="c">Office Staff</th><th class="c">Senior Admin</th>
   </tr></thead><tbody>${rows.map(([cap,fs,os,sa])=>`<tr><td>${esc(cap)}</td><td class="c">${permBadge(fs)}</td><td class="c">${permBadge(os)}</td><td class="c">${permBadge(sa)}</td></tr>`).join('')}</tbody></table></div></div>
-  <div class="uroles-foot">R = Read, W = Write/Edit, — = No access. * Field Staff "R" access is scoped only to properties they're assigned to, and to records flagged for Field Staff visibility (approved vendors, posted compliance documents) — never other properties or unposted documents. "Property records — basic info" shows Office Staff as read-only (R), reflecting the redlined refinement in §3.2 that only Senior Admin can edit property address/characteristics — this matches what's actually enforced in the app, superseding the matrix's original R/W value. Leases & Rent and the Purchase/Disposition/Licensing checklists aren't listed in the source matrix at all; per your direction, Field Staff have zero access to those today, enforced in the app's navigation.</div>`;
+  <div class="uroles-foot">R = Read, W = Write/Edit, — = No access. * Field Staff access is scoped only to properties they're assigned to — never other properties, and never other Field Staff's tickets. <b>Field Staff have zero access to Property documents</b> (deeds, leases, insurance certificates, inspection reports, loan/mortgage paperwork) — confirmed Aug 4, 2026, enforced at the database level, not just the app's navigation. They only ever touch photos/files attached directly to their own maintenance ticket, and can edit that ticket's description or remove its photos only while it's still Open (locks once a vendor is assigned or work starts); adding new photos stays open at any status. Every property field — including "basic info" and Loan &amp; debt — is Senior Admin edit-only; Office Staff sees these as read-only, enforced both in the app and (as of Aug 4, 2026) the database. Leases & Rent and the Purchase/Disposition/Licensing checklists aren't listed in the source matrix at all; per your direction, Field Staff have zero access to those today, enforced in the app's navigation.</div>`;
 }
 function openPropertyAssignments(userId,email){
   const assigned=new Set(PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===userId).map(a=>a.property_id));
@@ -1224,6 +1270,8 @@ let DOC_ID=100;
 // Real documents load from Supabase via loadRealDocuments() once connected (Phase 17).
 // Empty here — this is only the pre-connection/demo-mode starting state.
 let DOCS=[];
+// Real ticket photo/file attachments load from Supabase via loadRealTicketAttachments() (Phase 19).
+let TICKET_ATTACHMENTS=[];
 function fmtISO(d){const dt=new Date(d);const m=(dt.getMonth()+1+'').padStart(2,'0');const day=(dt.getDate()+'').padStart(2,'0');return dt.getFullYear()+'-'+m+'-'+day;}
 function addYears(d,n){const dt=new Date(d);dt.setFullYear(dt.getFullYear()+n);return dt;}
 // NOTE: the old extractIntoProperty() function that lived here has been removed (Phase 17).
@@ -1312,13 +1360,17 @@ function updatePropField(pid,field,value,kind){
 
 /* ===== router ===== */
 let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all',svc:'all',vendor:'all',payment:'all',invoice:'all',metro:'all',selectedOnly:false,createdFrom:'',createdTo:'',descQuery:'',notesQuery:'',costMin:'',costMax:''};
+// Real signed-in user's display name (Phase 20) — was previously hardcoded to the demo
+// placeholder "Alex Rivera" for every Field Staff account. Set in applyLiveRole() once
+// connected to Supabase, or setRole() in offline demo mode.
+let MY_NAME='';
 let SELECTED=new Set();
 let TRASH=[];
 let PFILTER={metro:'all'};
 
 const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'reports',ic:'📊',label:'Reports'},{id:'assumptions',ic:'🧮',label:'Assumptions'},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length},{id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length}];
 const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2']};
-function setRole(r){ROLE=r;document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
+function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
   const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
   else{const s=STAFF[r];document.getElementById('sideName').textContent=s.name;document.getElementById('sideRole').textContent=s.role;const av=document.getElementById('sideAvatar');av.textContent=initials(s.name);av.style.background=s.color;navigate('dashboard');}}
@@ -1538,6 +1590,7 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
     </div></div></div>
     <div class="sectitle">Description</div><div class="card"><div class="body">${t.desc||t.title}</div></div>
+    <div class="sectitle">Attachments</div>${ticketAttachmentsSectionHtml(t)}
     <div class="sectitle">Actions</div><div class="card"><div class="body" style="display:flex;gap:10px;flex-wrap:wrap">${ticketActions(t)}</div></div>
     <div class="sectitle">Activity</div><div class="card"><div class="body"><ul class="timeline">${t.log.map(l=>`<li><span class="tdot"></span><div class="tt">${l[0]}</div><div class="tm">${l[1]} · ${logAge(l)}</div></li>`).join('')}</ul></div></div>`);
 }
@@ -2081,6 +2134,58 @@ async function deleteDoc(id){
   const p=propById(doc.prop);document.getElementById('propTabBody').innerHTML=propDocs(p);
 }
 
+/* ===== Ticket attachments UI (desktop drawer + mobile) — Phase 19 ===== */
+function ticketAttachmentsSectionHtml(t){
+  const atts=ticketAttachmentsList(t.id);
+  const canDelete=(ROLE==='admin'||ROLE==='office');
+  return `<div class="card"><div class="body">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:${atts.length?'10px':'0'}">
+      <label class="btn sm" style="cursor:pointer">📎 Add photo / file<input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple style="display:none" onchange="pickTicketAttachment('${t.id}',this)"></label>
+    </div>
+    ${atts.length?atts.map(x=>`<div class="mrow" style="padding:9px 0;border-bottom:1px solid var(--line)">
+      <div>${x.kind==='photo'?'📷':'📄'} <span class="b">${esc(x.file)}</span><span class="muted" style="font-size:12px">${x.size?' · '+x.size:''}</span><div class="faint" style="font-size:11px;margin-top:2px">Added ${fdate(x.uploaded)}${x.uploadedBy?' · '+esc(x.uploadedBy):''}</div></div>
+      <div style="display:flex;gap:10px;align-items:center;white-space:nowrap"><a onclick="viewTicketAttachment('${x.id}')">View</a>${canDelete?`<a onclick="deleteTicketAttachment('${x.id}')" style="color:var(--red)">Delete</a>`:''}</div>
+    </div>`).join(''):'<div class="muted" style="padding:2px 0">No photos or files attached yet.</div>'}
+  </div></div>`;
+}
+function mTicketAttachmentsHtml(t,canDelete){
+  const atts=ticketAttachmentsList(t.id);
+  return `<label class="opt" style="width:100%;cursor:pointer;margin-bottom:${atts.length?'10px':'0'}">📷 Add a photo / file<input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple style="display:none" onchange="pickTicketAttachment('${t.id}',this)"></label>
+  ${atts.length?atts.map(x=>`<div class="mrow" style="padding:7px 0;border-top:1px solid var(--line)"><span style="font-size:12.5px">${x.kind==='photo'?'📷':'📄'} ${esc(x.file)}</span><span style="display:flex;gap:12px;align-items:center"><a onclick="viewTicketAttachment('${x.id}')" style="font-size:12px">View</a>${canDelete?`<a onclick="deleteTicketAttachment('${x.id}')" style="font-size:12px;color:var(--red)">Delete</a>`:''}</span></div>`).join(''):'<div class="muted" style="font-size:12.5px">No photos or files yet.</div>'}`;
+}
+async function pickTicketAttachment(ticketId,input){
+  const files=input.files;if(!files||!files.length)return;
+  for(const f of Array.from(files)){
+    const kind=f.type&&f.type.startsWith('image/')?'photo':'file';
+    await uploadTicketAttachment(ticketId,f,kind);
+  }
+  input.value='';
+  toast('Attachment'+(files.length>1?'s':'')+' added');
+  if(document.querySelector('.drawer'))openTicket(ticketId);
+  if(document.querySelector('#mobile'))mDetail(ticketId);
+}
+async function viewTicketAttachment(id){
+  const a=TICKET_ATTACHMENTS.find(x=>String(x.id)===String(id));if(!a)return;
+  if(a._backend==='supabase'&&a.path){
+    const {data,error}=await sb.storage.from('ticket_attachments').createSignedUrl(a.path,60*60);
+    if(error||!data){toast('Could not open file: '+(error?error.message:'unknown error'));return;}
+    window.open(data.signedUrl,'_blank');
+    return;
+  }
+  if(a.url){window.open(a.url,'_blank');}else{toast('No file attached to this record');}
+}
+async function deleteTicketAttachment(id){
+  if(!confirm('Delete this attachment? This cannot be undone.'))return;
+  const idx=TICKET_ATTACHMENTS.findIndex(x=>String(x.id)===String(id));if(idx===-1)return;
+  const a=TICKET_ATTACHMENTS[idx];
+  if(a._backend==='supabase'){const ok=await dbDeleteTicketAttachment(a.id,a.path);if(!ok)return;}
+  const ticketId=a.ticket;
+  TICKET_ATTACHMENTS.splice(idx,1);
+  toast('Attachment deleted');
+  if(document.querySelector('.drawer'))openTicket(ticketId);
+  if(document.querySelector('#mobile'))mDetail(ticketId);
+}
+
 const CHK_NO_TOGGLE=['Stage','Comments','User Notes'];
 function propChecklist(p){const items=chkListFor(p);p.checklist=p.checklist||{};const countable=items.filter(i=>!CHK_NO_TOGGLE.includes(i));const done=countable.filter(i=>(p.checklist[i]||{}).s==='done').length;const pct=Math.round(done/countable.length*100);
   const stageOpts=(p.own==='owned'?REF_LISTS.propStage:REF_LISTS.leaseChecklistStage).values;
@@ -2110,7 +2215,16 @@ function propLoan(p){
   if(p.own!=='owned') return '<div class="card"><div class="body muted">Loans apply to owned properties only.</div></div>';
   const hasLoan=p.loanLender||p.loanInitial!=null||p.loanRemaining!=null;
   const svc=(p.loanPayment||0)+(p.loanEscrow||0);
-  return `${hasLoan?`<div class="mrow" style="margin-bottom:12px"><div class="b">Loan on file</div><div class="pill">Balance ${money(p.loanRemaining)}${svc?' · debt service '+money(svc)+'/mo':''}</div></div>`:''}
+  // Phase 22: Senior Admin can have KodaRE read an uploaded "Loan Documents" file and draft
+  // the fields below for review. Office Staff can upload these documents (Documents tab) but
+  // this trigger — and the approve step — is Senior Admin only, per Sonia's direction.
+  const loanDocs=ROLE==='admin'?DOCS.filter(d=>d.prop===p.id&&d.type==='Loan Documents'):[];
+  return `${ROLE==='admin'&&loanDocs.length?`<div class="card" style="margin-bottom:12px"><div class="body">
+    <div class="b" style="margin-bottom:6px">🤖 Read a loan document with AI</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px;line-height:1.5">KodaRE can read an uploaded loan document and draft the fields below for your review — nothing saves until you approve it.</div>
+    ${loanDocs.map(d=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">📄 ${esc(d.file)}</span><button class="btn sm" id="loanExtractBtn_${d.id}" onclick="startLoanExtraction('${p.id}','${d.id}')">🤖 Read with AI</button></div>`).join('')}
+  </div></div>`:''}
+  ${hasLoan?`<div class="mrow" style="margin-bottom:12px"><div class="b">Loan on file</div><div class="pill">Balance ${money(p.loanRemaining)}${svc?' · debt service '+money(svc)+'/mo':''}</div></div>`:''}
   <div class="card"><div class="body"><div class="kv">
     <div class="k">Lender</div><div>${propTxt(p,'loanLender','—',220)}</div>
     <div class="k">Lender contact</div><div>${propTxt(p,'loanContact','—',220)}</div>
@@ -2126,6 +2240,76 @@ function propLoan(p){
     <div class="k">Prepayment penalty</div><div>${propTxt(p,'loanPrepay','e.g. None',300)}</div>
   </div></div></div>
   <div class="muted" style="font-size:12px;margin-top:8px">${ROLE!=='admin'?'Editable by Senior Admin only. ':''}Maps to Scope §4.4 Loan &amp; Debt Tracking. Tracks one loan per property — a refinance or second lien can be reflected by updating these fields directly.</div>`;
+}
+
+/* ===== Loan document AI extraction (Phase 22) — Senior Admin only, end to end =====
+   Office Staff can upload a "Loan Documents" file (Documents tab, unchanged); only Senior
+   Admin can trigger KodaRE to read it and only Senior Admin can approve the draft into the
+   property's Loan tab. The serverless function never writes to the database itself — it only
+   returns a draft; saving goes through the normal (already Senior-Admin-only) property update
+   path below, same as any other property edit. */
+const LOAN_EXTRACT_FIELDS=[
+  ['loanLender','Lender'],['loanContact','Lender contact'],['loanAcctNo','Loan / account #'],
+  ['loanOrigDate','Origination date (e.g. Mar 2021)'],['loanInitial','Original principal ($)'],
+  ['loanRate','Interest rate (%)'],['loanRateType','Rate type (e.g. Fixed)'],
+  ['loanTermMo','Term (months)'],['loanMaturity','Maturity (e.g. Mar 2051)'],
+  ['loanPayment','Monthly payment — P&I ($)'],['loanEscrow','Escrow — monthly ($)'],
+  ['loanRemaining','Current balance ($)'],['loanLien','Lien position (e.g. 1st)'],['loanPrepay','Prepayment penalty']
+];
+const LOAN_EXTRACT_NUMERIC=new Set(['loanInitial','loanRate','loanTermMo','loanPayment','loanEscrow','loanRemaining']);
+async function startLoanExtraction(propId,docId){
+  const btn=document.getElementById('loanExtractBtn_'+docId);
+  if(btn){btn.disabled=true;btn.textContent='🤖 Reading…';}
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session){toast('Your session has expired — please sign in again.');return;}
+    const resp=await fetch('/api/extract-loan-doc',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({documentId:docId})});
+    const result=await resp.json().catch(()=>({}));
+    if(!resp.ok||!result.ok){toast('Could not read document: '+(result.error||resp.statusText||'unknown error'));return;}
+    openLoanExtractionReview(propId,docId,result.fields||{},result.documentName||'');
+  }catch(e){
+    toast('Could not reach the extraction service: '+e.message);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='🤖 Read with AI';}
+  }
+}
+function openLoanExtractionReview(propId,docId,fields,docName){
+  const p=propById(propId);if(!p)return;
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${p.name}${docName?' · from '+esc(docName):''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">Review AI-read loan details</div></div>`,
+    `<div class="card"><div class="body">
+      <div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">KodaRE read this from the uploaded document — check every field against the original before approving. A blank field means it wasn't found in the document; fill in or correct anything as needed. <b>Nothing is saved to this property until you click Approve &amp; save.</b></div>
+      <div class="kv">${LOAN_EXTRACT_FIELDS.map(([k,label])=>`<div class="k">${label}</div><div><input type="text" id="loanReview_${k}" value="${esc(fields[k]!=null?String(fields[k]):'')}" style="width:100%;font-size:13px"></div>`).join('')}</div>
+    </div></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn sec sm" onclick="closeDrawer()">Discard</button>
+      <button class="btn sm" onclick="approveLoanExtraction('${propId}')">✓ Approve &amp; save to Loan tab</button>
+    </div>`);
+}
+async function approveLoanExtraction(propId){
+  if(ROLE!=='admin'){toast('Only Senior Admin can approve this.');return;}
+  const p=propById(propId);if(!p)return;
+  const patch={};const mem={};
+  LOAN_EXTRACT_FIELDS.forEach(([k])=>{
+    const el=document.getElementById('loanReview_'+k);if(!el)return;
+    const raw=el.value.trim();
+    let val;
+    if(raw===''){val=null;}
+    else if(LOAN_EXTRACT_NUMERIC.has(k)){val=isNaN(Number(raw))?null:Number(raw);}
+    else{val=raw;}
+    mem[k]=val;
+    const col=PROP_FIELD_TO_COLUMN[k];if(col)patch[col]=val;
+  });
+  if(p._backend==='supabase'){
+    const ok=await dbUpdateProperty(p.id,patch);
+    if(!ok)return;
+  }
+  Object.assign(p,mem);
+  if(!SUPA_CONFIGURED)saveState();
+  toast('Loan details saved');
+  closeDrawer();
+  refreshPropertiesLanding();
+  const tabBody=document.getElementById('propTabBody');
+  if(tabBody)tabBody.innerHTML=propLoan(p);
 }
 
 /* ===== leases ===== */
@@ -3184,29 +3368,58 @@ async function processBulkVendorRows(rows){
 /* ===== mobile ===== */
 let MB={tab:'home',step:0,draft:{}};
 function renderMobile(){const app=document.getElementById('mobileApp');let body='';if(MB.tab==='home')body=mHome();else if(MB.tab==='report')body=mReport();else if(MB.tab==='reports')body=mReports();
-  app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${STAFF.caregiver.name}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Fox-1 · Field Staff</div></div><div class="mbody">${body}</div>
+  app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${MY_NAME||STAFF.caregiver.name}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Field Staff</div></div><div class="mbody">${body}</div>
   <div class="mnav"><button class="${MB.tab==='home'?'active':''}" onclick="mGo('home')"><span class="mi">🏠</span>Home</button><button class="${MB.tab==='report'?'active':''}" onclick="mStartReport()"><span class="mi">➕</span>Report</button><button class="${MB.tab==='reports'?'active':''}" onclick="mGo('reports')"><span class="mi">📋</span>My reports</button></div>`;}
 function mGo(t){MB.tab=t;renderMobile();}
 function mStartReport(){MB.tab='report';MB.step=0;MB.draft={};renderMobile();}
-function myReports(){return TICKETS.filter(t=>t.reporter===STAFF.caregiver.name).sort((a,b)=>new Date(b.created)-new Date(a.created));}
+function myReports(){const me=MY_NAME||STAFF.caregiver.name;return TICKETS.filter(t=>t.reporter===me).sort((a,b)=>new Date(b.created)-new Date(a.created));}
 function mHome(){const mine=myReports();const open=mine.filter(isOpen);return `<button class="bigbtn" onclick="mStartReport()">🚨 Report an issue</button><div style="text-align:center;font-size:12px;color:var(--faint);margin:10px 0 18px">Takes under 60 seconds</div>
   <div class="mrow" style="margin-bottom:10px"><div class="b">Your open reports</div><a style="font-size:12.5px" onclick="mGo('reports')">See all</a></div>
   ${open.length?open.slice(0,3).map(mCard).join(''):'<div class="mcard muted">Nothing open right now 🎉</div>'}
   <div class="mcard" style="background:linear-gradient(135deg,#eef7f8,#fff);border-color:#c9ebee"><div class="b">💡 Tip</div><div class="muted" style="font-size:12.5px">For emergencies (flooding, sparks, no heat), pick <b>Emergency</b> — an admin is paged by text immediately.</div></div>`;}
-function mCard(t){return `<div class="mcard" onclick="mDetail('${t.id}')" style="cursor:pointer"><div class="mrow"><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div>${ubadge(t.urgency)}</div><div class="muted" style="font-size:12px;margin:4px 0 8px">${propById(t.prop).name} · ${fdate(t.created)}</div><div class="mrow">${badge(t)}<span class="faint" style="font-size:11.5px">${t.vendor||'awaiting assignment'}</span></div></div>`;}
+function mCard(t){const nAtt=ticketAttachmentsList(t.id).length;return `<div class="mcard" onclick="mDetail('${t.id}')" style="cursor:pointer"><div class="mrow"><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div>${ubadge(t.urgency)}</div><div class="muted" style="font-size:12px;margin:4px 0 8px">${propById(t.prop).name} · ${fdate(t.created)}${nAtt?' · 📎 '+nAtt:''}</div><div class="mrow">${badge(t)}<span class="faint" style="font-size:11.5px">${t.vendor||'awaiting assignment'}</span></div></div>`;}
 function mReports(){const mine=myReports();return `<div class="mtitle">My reports</div>${mine.length?mine.map(mCard).join(''):'<div class="mcard muted">No reports yet.</div>'}`;}
-function mDetail(id){const t=TICKETS.find(x=>x.id===id);document.querySelector('#mobile .mbody').innerHTML=`<a style="font-size:13px" onclick="renderMobile()">← Back</a><div class="mtitle" style="margin-top:8px">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="mcard"><div class="mrow">${badge(t)}${ubadge(t.urgency)}</div><div class="muted" style="font-size:12.5px;margin-top:8px">${propById(t.prop).name}<br>Reported ${fdate(t.created)} · ${t.vendor?'Assigned to '+t.vendor:'Awaiting assignment'}</div></div><div class="b" style="margin:6px 0 8px">Status updates</div>${t.log.map(l=>`<div class="mcard" style="padding:11px"><div class="b" style="font-size:13px">${l[0]}</div><div class="muted" style="font-size:12px">${l[1]} · ${logAge(l)}</div></div>`).join('')}`;}
+function mDetail(id){const t=TICKETS.find(x=>x.id===id);const mine=t.reporter===(MY_NAME||STAFF.caregiver.name);const canEdit=mine&&t.status==='Open';
+  document.querySelector('#mobile .mbody').innerHTML=`<a style="font-size:13px" onclick="renderMobile()">← Back</a><div class="mtitle" style="margin-top:8px">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="mcard"><div class="mrow">${badge(t)}${ubadge(t.urgency)}</div><div class="muted" style="font-size:12.5px;margin-top:8px">${propById(t.prop).name}<br>Reported ${fdate(t.created)} · ${t.vendor?'Assigned to '+t.vendor:'Awaiting assignment'}</div></div>
+  <div class="b" style="margin:14px 0 8px">Description</div>
+  <div class="mcard" style="padding:12px">${canEdit?`<textarea id="mEditDesc_${t.id}" rows="3" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:10px;font:inherit">${esc(t.desc)}</textarea><button class="opt" style="width:100%;margin-top:8px" onclick="saveOwnTicketDesc('${t.id}')">Save changes</button><div class="faint" style="font-size:11px;margin-top:6px">Editable until office/admin assigns a vendor or starts work.</div>`:`<div style="font-size:13px">${t.desc?esc(t.desc):'<span class="faint">—</span>'}</div>${mine&&t.status!=='Open'?'<div class="faint" style="font-size:11px;margin-top:6px">This has been picked up, so it can no longer be edited.</div>':''}`}</div>
+  <div class="b" style="margin:14px 0 8px">Photos &amp; files</div><div class="mcard" style="padding:12px">${mTicketAttachmentsHtml(t,canEdit)}</div>
+  <div class="b" style="margin:14px 0 8px">Status updates</div>${t.log.map(l=>`<div class="mcard" style="padding:11px"><div class="b" style="font-size:13px">${l[0]}</div><div class="muted" style="font-size:12px">${l[1]} · ${logAge(l)}</div></div>`).join('')}`;}
+async function saveOwnTicketDesc(id){
+  const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const ta=document.getElementById('mEditDesc_'+id);if(!ta)return;
+  const v=ta.value.trim();
+  const prevDesc=t.desc,prevTitle=t.title;
+  t.desc=v;t.title=v?v.slice(0,60):t.title;
+  if(t._backend==='supabase'){
+    const ok=await dbUpdateTicket(id,{description:v,title:t.title});
+    if(!ok){t.desc=prevDesc;t.title=prevTitle;mDetail(id);return;}
+    pushActivity(t,'Updated','Description edited by reporter');
+  } else {
+    saveState();
+  }
+  toast('Description updated');
+  mDetail(id);
+}
 function mReport(){const s=MB.step,d=MB.draft;const prog=`<div class="progress" style="margin-bottom:16px"><i style="width:${(s+1)/5*100}%"></i></div>`;
   if(s===0){const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
     if(SUPA_CONFIGURED&&!plist.length)return prog+`<div class="mstep">Step 1 of 5</div><div class="mtitle">Which property?</div><div class="muted" style="padding:20px 0">No properties set up yet — ask an admin to add one first (Supabase → Table Editor → properties).</div>`;
     return prog+`<div class="mstep">Step 1 of 5</div><div class="mtitle">Which property?</div><div class="optgrid">${plist.map(p=>`<div class="opt ${d.prop===p.id?'sel':''}" onclick="mSet('prop','${p.id}')"><span class="oi">🏠</span>${p.name}</div>`).join('')}</div>${navBtns(!!d.prop)}`;}
   if(s===1)return prog+`<div class="mstep">Step 2 of 5</div><div class="mtitle">What kind of issue?</div><div class="optgrid">${Object.keys(CAT).map(c=>`<div class="opt ${d.cat===c?'sel':''}" onclick="mSet('cat','${c}')"><span class="oi">${CAT[c]}</span>${c}</div>`).join('')}</div>${navBtns(!!d.cat)}`;
   if(s===2){const U=[['Emergency','🚨','Danger / flooding / no heat'],['Urgent','⚠️','Needs attention soon'],['Low','🌿','Whenever convenient']];return prog+`<div class="mstep">Step 3 of 5</div><div class="mtitle">How urgent?</div>${U.map(u=>`<div class="opt ${d.urgency===u[0]?'sel':''}" style="flex-direction:row;justify-content:flex-start;gap:12px;margin-bottom:10px" onclick="mSet('urgency','${u[0]}')"><span class="oi">${u[1]}</span><div style="text-align:left"><div>${u[0]}</div><div class="muted" style="font-size:11.5px;font-weight:500">${u[2]}</div></div></div>`).join('')}${navBtns(!!d.urgency)}`;}
-  if(s===3)return prog+`<div class="mstep">Step 4 of 5</div><div class="mtitle">Describe it</div><div class="mfield"><label>What's happening?</label><textarea id="mDesc" rows="4" placeholder="e.g. Water leaking under the kitchen sink…">${d.desc||''}</textarea></div><div class="mfield"><label>Add a photo (optional)</label><div class="photo" onclick="mSet('photo',1)">${d.photo?'📷 1 photo added ✓':'📷 Tap to add photo'}</div></div>${navBtns(true,'mCapture')}`;
-  const p=propById(d.prop);return prog+`<div class="mstep">Step 5 of 5</div><div class="mtitle">Review & submit</div><div class="mcard"><div class="kv" style="grid-template-columns:90px 1fr"><div class="k">Property</div><div class="b">${p.name}</div><div class="k">Issue</div><div class="b">${CAT[d.cat]} ${d.cat}</div><div class="k">Urgency</div><div>${ubadge(d.urgency)}</div><div class="k">Details</div><div>${d.desc||'<span class="faint">—</span>'}</div></div></div>${d.urgency==='Emergency'?'<div class="mcard" style="border-color:var(--red);color:var(--red);font-size:12.5px"><b>🚨 Emergency:</b> an on-call admin is paged by text on submit.</div>':''}<button class="bigbtn" onclick="mSubmit()">Submit report ✓</button><button class="opt" style="width:100%;margin-top:10px" onclick="MB.step=3;renderMobile()">← Edit</button>`;}
+  if(s===3)return prog+`<div class="mstep">Step 4 of 5</div><div class="mtitle">Describe it</div><div class="mfield"><label>What's happening?</label><textarea id="mDesc" rows="4" placeholder="e.g. Water leaking under the kitchen sink…">${d.desc||''}</textarea></div><div class="mfield"><label>Photos / files (optional)</label><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px"><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📷 Take a photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="mAddFile(this,'photo')"></label><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📎 Attach a file<input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple style="display:none" onchange="mAddFile(this,'file')"></label></div>${(d.files&&d.files.length)?d.files.map((f,i)=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">${f.kind==='photo'?'📷':'📄'} ${esc(f.file.name)}</span><a onclick="mRemoveFile(${i})" style="color:var(--red);font-size:12px">Remove</a></div>`).join(''):''}</div>${navBtns(true,'mCapture')}`;
+  const p=propById(d.prop);return prog+`<div class="mstep">Step 5 of 5</div><div class="mtitle">Review & submit</div><div class="mcard"><div class="kv" style="grid-template-columns:90px 1fr"><div class="k">Property</div><div class="b">${p.name}</div><div class="k">Issue</div><div class="b">${CAT[d.cat]} ${d.cat}</div><div class="k">Urgency</div><div>${ubadge(d.urgency)}</div><div class="k">Details</div><div>${d.desc||'<span class="faint">—</span>'}</div><div class="k">Photos/files</div><div>${(d.files&&d.files.length)?d.files.length+' attached':'<span class="faint">—</span>'}</div></div></div>${d.urgency==='Emergency'?'<div class="mcard" style="border-color:var(--red);color:var(--red);font-size:12.5px"><b>🚨 Emergency:</b> an on-call admin is paged by text on submit.</div>':''}<button class="bigbtn" onclick="mSubmit()">Submit report ✓</button><button class="opt" style="width:100%;margin-top:10px" onclick="MB.step=3;renderMobile()">← Edit</button>`;}
 function navBtns(ok,capture){return `<div style="display:flex;gap:10px;margin-top:20px">${MB.step>0?`<button class="opt" style="flex:1" onclick="MB.step--;renderMobile()">← Back</button>`:''}<button class="bigbtn" style="flex:2;opacity:${ok?1:.5};pointer-events:${ok?'auto':'none'}" onclick="${capture||'mNext'}()">Continue →</button></div>`;}
 function mCapture(){const d=document.getElementById('mDesc');if(d)MB.draft.desc=d.value;mNext();}
 function mSet(k,v){MB.draft[k]=v;renderMobile();}
+function mAddFile(input,kind){
+  const files=input.files;if(!files||!files.length)return;
+  MB.draft.files=MB.draft.files||[];
+  Array.from(files).forEach(f=>MB.draft.files.push({file:f,kind}));
+  input.value='';
+  renderMobile();
+}
+function mRemoveFile(i){if(!MB.draft.files)return;MB.draft.files.splice(i,1);renderMobile();}
 function mNext(){MB.step++;renderMobile();}
 async function mSubmit(){
   const d=MB.draft;
@@ -3216,7 +3429,7 @@ async function mSubmit(){
     toast('Ticket '+displayId+' created');
   }
   if(p&&p._backend==='supabase'){
-    const payload={property_id:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),description:d.desc||'',service_category:d.cat,service_type:'Reported',urgency:d.urgency,status:'Open',reporter:STAFF.caregiver.name};
+    const payload={property_id:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),description:d.desc||'',service_category:d.cat,service_type:'Reported',urgency:d.urgency,status:'Open',reporter:MY_NAME||STAFF.caregiver.name};
     const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
     if(error){toast('Could not submit report: '+error.message);return;}
     const detail='Submitted from mobile'+(d.desc?': '+d.desc:'');
@@ -3228,12 +3441,14 @@ async function mSubmit(){
     // tickets. Removed; real paging (Twilio/SendGrid) is still an open build item.
     const t=rowToTicket(Object.assign({},data,{maintenance_ticket_activity:activity}));
     TICKETS.unshift(t);
+    if(d.files&&d.files.length){for(const f of d.files){await uploadTicketAttachment(data.id,f.file,f.kind);}}
     computeHealth();
     showSuccess(t.id);
     return;
   }
-  const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),desc:d.desc||'',svc:d.cat,svctype:'Reported',urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:STAFF.caregiver.name,photos:d.photo?1:0,log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
+  const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),desc:d.desc||'',svc:d.cat,svctype:'Reported',urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:MY_NAME||STAFF.caregiver.name,log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
   TICKETS.push(t);saveState();
+  if(d.files&&d.files.length){for(const f of d.files){await uploadTicketAttachment(t.id,f.file,f.kind);}}
   computeHealth();
   showSuccess(t.id);
 }
