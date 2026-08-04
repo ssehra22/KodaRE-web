@@ -471,6 +471,82 @@ async function loadRealCertsAndInspections(){
   if(inspErr)toast('Could not load inspections: '+inspErr.message);
   else {INSPECTIONS.length=0;(inspRows||[]).forEach(row=>INSPECTIONS.push(rowToInspection(row)));}
 }
+// Compliance is Office Staff + Senior Admin read/write (Scope §3.2 matrix) — Field Staff/
+// caregiver has no compliance access, so these are only ever called from a gated UI path.
+async function dbInsertCertificate(propertyId,patch){
+  const {data,error}=await sb.from('certificates').insert({property_id:propertyId,...patch}).select().single();
+  if(error){toast('Could not add certificate: '+error.message);return null;}
+  return data;
+}
+async function dbInsertInspection(propertyId,patch){
+  const {data,error}=await sb.from('inspections').insert({property_id:propertyId,...patch}).select().single();
+  if(error){toast('Could not add inspection: '+error.message);return null;}
+  return data;
+}
+// Which property's inline add-certificate / add-inspection form is currently open, if any.
+// Only one at a time; opening one closes the other, same convention as elsewhere in the app.
+let CERT_FORM_OPEN=null,INSP_FORM_OPEN=null;
+function toggleCertForm(pid){CERT_FORM_OPEN=CERT_FORM_OPEN===pid?null:pid;INSP_FORM_OPEN=null;const p=propById(pid);document.getElementById('propTabBody').innerHTML=propComplianceTab(p);}
+function toggleInspForm(pid){INSP_FORM_OPEN=INSP_FORM_OPEN===pid?null:pid;CERT_FORM_OPEN=null;const p=propById(pid);document.getElementById('propTabBody').innerHTML=propComplianceTab(p);}
+function cfDate(id){const v=document.getElementById(id);if(!v||!v.value.trim())return null;const d=parseMDYY(v.value.trim());return d?toISODate(d):undefined;} // undefined = invalid entry
+async function submitNewCert(pid){
+  const g=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+  const type=g('cf_type');
+  if(!type){toast('Enter a certificate/license type (e.g. Certificate of Occupancy)');return;}
+  const issue=cfDate('cf_issue'),exp=cfDate('cf_exp');
+  if(issue===undefined||exp===undefined){toast('Enter dates as MM/DD/YY');return;}
+  const patch={type,authority:g('cf_authority')||null,cert_no:g('cf_certno')||null,issue_date:issue,exp_date:exp,
+    cadence:g('cf_cadence')||null,status:g('cf_status')||null,responsible:g('cf_resp')||null};
+  const row=await dbInsertCertificate(pid,patch);
+  if(!row)return;
+  CERTS.push(rowToCert(row));
+  CERT_FORM_OPEN=null;
+  toast('Certificate added');
+  const p=propById(pid);document.getElementById('propTabBody').innerHTML=propComplianceTab(p);
+  refreshPropertiesLanding();
+}
+async function submitNewInspection(pid){
+  const g=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
+  const type=g('if_type');
+  if(!type){toast('Enter an inspection type (e.g. Fire Safety)');return;}
+  const scheduled=cfDate('if_scheduled'),completed=cfDate('if_completed'),nextDue=cfDate('if_nextdue');
+  if(scheduled===undefined||completed===undefined||nextDue===undefined){toast('Enter dates as MM/DD/YY');return;}
+  const patch={type,inspector:g('if_inspector')||null,scheduled,completed,result:g('if_result')||null,
+    findings:g('if_findings')||null,corrective:g('if_corrective')||null,next_due:nextDue};
+  const row=await dbInsertInspection(pid,patch);
+  if(!row)return;
+  INSPECTIONS.push(rowToInspection(row));
+  INSP_FORM_OPEN=null;
+  toast('Inspection added');
+  const p=propById(pid);document.getElementById('propTabBody').innerHTML=propComplianceTab(p);
+  refreshPropertiesLanding();
+}
+function addCertFormHtml(pid){
+  return `<div class="card" style="margin-bottom:12px;border-color:var(--blue)"><div class="body">
+    <div class="b" style="margin-bottom:8px">New certificate / license</div>
+    <div class="field"><label class="f">Type</label><input type="text" id="cf_type" style="width:100%" placeholder="e.g. Certificate of Occupancy"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Authority</label><input type="text" id="cf_authority" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Cert #</label><input type="text" id="cf_certno" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:8px;display:flex;gap:10px"><div style="flex:1"><label class="f">Issued</label><input type="text" id="cf_issue" style="width:100%" placeholder="MM/DD/YY"></div><div style="flex:1"><label class="f">Expires</label><input type="text" id="cf_exp" style="width:100%" placeholder="MM/DD/YY (blank = perpetual)"></div></div>
+    <div class="field" style="margin-top:8px"><label class="f">Cadence</label><input type="text" id="cf_cadence" style="width:100%" placeholder="e.g. Annual"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Status</label><input type="text" id="cf_status" style="width:100%" placeholder="optional — e.g. in renewal"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Responsible</label><input type="text" id="cf_resp" style="width:100%" placeholder="optional"></div>
+    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn sm" onclick="submitNewCert('${pid}')">Add certificate</button><button class="btn sec sm" onclick="toggleCertForm('${pid}')">Cancel</button></div>
+  </div></div>`;
+}
+function addInspectionFormHtml(pid){
+  return `<div class="card" style="margin-bottom:12px;border-color:var(--blue)"><div class="body">
+    <div class="b" style="margin-bottom:8px">New inspection</div>
+    <div class="field"><label class="f">Type</label><input type="text" id="if_type" style="width:100%" placeholder="e.g. Fire Safety"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Inspector</label><input type="text" id="if_inspector" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:8px;display:flex;gap:10px"><div style="flex:1"><label class="f">Scheduled</label><input type="text" id="if_scheduled" style="width:100%" placeholder="MM/DD/YY"></div><div style="flex:1"><label class="f">Completed</label><input type="text" id="if_completed" style="width:100%" placeholder="MM/DD/YY"></div></div>
+    <div class="field" style="margin-top:8px"><label class="f">Result</label><input type="text" id="if_result" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Findings</label><input type="text" id="if_findings" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Corrective action</label><input type="text" id="if_corrective" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Next due</label><input type="text" id="if_nextdue" style="width:100%" placeholder="MM/DD/YY"></div>
+    <div style="margin-top:12px;display:flex;gap:8px"><button class="btn sm" onclick="submitNewInspection('${pid}')">Add inspection</button><button class="btn sec sm" onclick="toggleInspForm('${pid}')">Cancel</button></div>
+  </div></div>`;
+}
 /* ===== Documents — real Supabase Storage + documents table (Phase 17) ===== */
 function rowToDocument(row){
   return {id:row.id, _backend:'supabase', prop:row.property_id, type:row.doc_type, file:row.file_name,
@@ -1243,6 +1319,77 @@ let CERTS=[];
 let INSPECTIONS=[];
 function daysTo(d){if(!d)return null;const dd=new Date(/^\d{4}-\d{2}-\d{2}$/.test(d)?d+'T00:00:00':d);return Math.round((dd-today)/864e5);}
 function certBadge(c){if(c.status==='expired')return '<span class="badge b-red">⚠ Expired</span>';if(c.status==='in renewal')return '<span class="badge b-progress">↻ In renewal</span>';if(!c.exp)return '<span class="badge b-resolved">✓ Active (perpetual)</span>';const d=daysTo(c.exp);if(d<=ASSUMPTIONS.complianceExpiringDays&&d>=0)return `<span class="badge b-assigned">⏳ Expires in ${d}d</span>`;return '<span class="badge b-resolved">✓ Active</span>';}
+
+/* ===== Compliance readiness / "survey readiness" scoring (Scope §4.2.4) =====
+ * Answers "if a surveyor/DHS walked in tomorrow, would this property pass?" — narrower
+ * than the general Compliance dashboard, which counts every cert/inspection equally.
+ * Readiness only looks at items matching the critical-item keyword list below (Assumptions
+ * -> Reference Lists -> Critical Compliance Items), and only critical items can produce the
+ * fail ("Not Compliance Ready") verdict; anything else can only produce the warn state.
+ *
+ * Labels are deliberately prefixed "Compliance" (Compliance Ready / Compliance At Risk /
+ * Not Compliance Ready) rather than plain "Ready/At risk/Not ready", because Maintenance
+ * Status already uses the bare word "At risk" for a ticket-driven signal — the two badges
+ * can appear side by side on the Properties list, and unprefixed labels would look like the
+ * same thing measured twice. See Assumptions -> Compliance Reminders for the full write-up
+ * of what triggers each state.
+ */
+function criticalComplianceKeywords(){return (REF_LISTS.criticalComplianceKeywords&&REF_LISTS.criticalComplianceKeywords.values)||[];}
+function matchesCriticalKeyword(typeStr){
+  if(!typeStr)return null;
+  const t=typeStr.toLowerCase();
+  return criticalComplianceKeywords().find(k=>t.includes(k.toLowerCase()))||null;
+}
+// verdict: 'ready' | 'warn' | 'fail'. gaps: worst-first list of {label,detail,severity}.
+function computeReadiness(p){
+  const certs=CERTS.filter(c=>c.prop===p.id);
+  const insp=INSPECTIONS.filter(i=>i.prop===p.id);
+  const gaps=[];
+  let verdict='ready';
+  const bump=sev=>{if(sev==='fail')verdict='fail';else if(sev==='warn'&&verdict==='ready')verdict='warn';};
+  criticalComplianceKeywords().forEach(keyword=>{
+    const kl=keyword.toLowerCase();
+    const certMatches=certs.filter(c=>c.type&&c.type.toLowerCase().includes(kl));
+    const inspMatches=insp.filter(i=>i.type&&i.type.toLowerCase().includes(kl));
+    if(!certMatches.length&&!inspMatches.length){
+      gaps.push({label:keyword,detail:'No certificate or inspection on file',severity:'fail'});bump('fail');return;
+    }
+    certMatches.forEach(c=>{
+      if(c.status==='expired'){gaps.push({label:c.type,detail:'Marked expired',severity:'fail'});bump('fail');return;}
+      if(!c.exp)return; // perpetual / no expiry — counts as satisfied
+      const d=daysTo(c.exp);
+      if(d<0){gaps.push({label:c.type,detail:'Expired '+dstr(c.exp),severity:'fail'});bump('fail');}
+      else if(d<=ASSUMPTIONS.complianceExpiringDays){gaps.push({label:c.type,detail:'Expires in '+d+'d ('+dstr(c.exp)+')',severity:'warn'});bump('warn');}
+    });
+    inspMatches.forEach(i=>{
+      if(!i.nextDue)return;
+      const d=daysTo(i.nextDue);
+      if(d<0){gaps.push({label:i.type,detail:'Next inspection overdue since '+dstr(i.nextDue),severity:'fail'});bump('fail');}
+      else if(d<=ASSUMPTIONS.complianceExpiringDays){gaps.push({label:i.type,detail:'Next inspection due in '+d+'d ('+dstr(i.nextDue)+')',severity:'warn'});bump('warn');}
+    });
+  });
+  // Non-critical items only ever downgrade to "at risk" — they can't fail a property outright.
+  if(verdict==='ready'&&certs.some(c=>!matchesCriticalKeyword(c.type)&&c.status==='expired'))verdict='warn';
+  gaps.sort((a,b)=>(a.severity==='fail'?0:1)-(b.severity==='fail'?0:1));
+  return {verdict,gaps};
+}
+const READINESS_LABEL={ready:'Compliance Ready',warn:'Compliance At Risk',fail:'Not Compliance Ready'};
+const READINESS_COLOR={ready:'green',warn:'amber',fail:'red'};
+function readinessPill(p){
+  const r=computeReadiness(p);
+  const c=READINESS_COLOR[r.verdict];
+  return `<span class="pill" title="${r.gaps.length?esc(r.gaps.map(g=>g.label+': '+g.detail).join(' · ')):'No open compliance gaps'}" style="border-color:var(--${c});color:var(--${c})">● ${READINESS_LABEL[r.verdict]}</span>`;
+}
+function readinessBanner(p){
+  const r=computeReadiness(p);
+  if(r.verdict==='ready')return `<div class="card" style="margin-bottom:12px;border-color:var(--green)"><div class="body" style="color:var(--green)"><b>✓ Compliance Ready</b> — no open gaps on critical items.</div></div>`;
+  const c=READINESS_COLOR[r.verdict];
+  return `<div class="card" style="margin-bottom:12px;border-color:var(--${c})"><div class="body">
+    <div style="color:var(--${c})"><b>${r.verdict==='fail'?'⚠':'⏳'} ${READINESS_LABEL[r.verdict]}</b></div>
+    <div style="margin-top:6px">${r.gaps.map(g=>`<div style="font-size:12.5px;margin-top:3px"><span class="badge ${g.severity==='fail'?'b-red':'b-assigned'}" style="margin-right:6px">${g.severity==='fail'?'Missing/expired':'Expiring'}</span>${esc(g.label)} — <span class="muted">${esc(g.detail)}</span></div>`).join('')}</div>
+  </div></div>`;
+}
+
 function dstr(v){return mdyy(v);}
 
 /* ===== property disposition (Scope §4.13/4.14) ===== */
@@ -1672,14 +1819,15 @@ function renderProperties(el){
   el.innerHTML=`<div class="toolbar"><span class="b">${list.length} of ${PROPS.length} properties</span>
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" id="propsRefreshBtn" onclick="refreshPropertiesFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
-    <button class="btn sec sm" onclick="startOnboard()">+ New property</button></div>
-  <div class="card"><table><thead><tr><th>Property</th><th>Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th>Stage</th><th>Open</th><th>Total items</th><th class="right">YTD Spend</th><th style="text-align:left;min-width:130px">Metro
+    ${ROLE==='admin'?'<button class="btn sec sm" onclick="startOnboard()">+ New property</button>':''}</div>
+  <div class="card"><table><thead><tr><th>Property</th><th>Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th>Stage</th><th>Open</th><th>Total items</th><th class="right">YTD Spend</th><th style="text-align:left;min-width:130px">Metro
     <select onchange="setPF('metro',this.value)" style="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer;margin-top:4px" title="Filter by Metro"><option value="all"${PFILTER.metro==='all'?' selected':''}>All</option>${metroOpts.map(m=>`<option value="${esc(m)}"${PFILTER.metro===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
   </th></tr></thead><tbody>
   ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');return `<tr class="clickable" onclick="openProperty('${p.id}')">
     <td><span class="dotc" style="background:var(--${col})"></span> <span class="b">${p.name}</span><div class="faint" style="font-size:11.5px">${p.addr||'—'}</div></td>
     <td><span class="pill ${p.own}">${p.own==='owned'?'Owned':'Leased'}</span></td>
     <td><span class="pill" style="border-color:var(--${col});color:var(--${col})">${p.status}</span></td>
+    <td>${readinessPill(p)}</td>
     <td class="muted" style="font-size:12.5px">${propStage(p)}</td>
     <td class="mono" style="color:${openN?'var(--ext)':'var(--muted)'}">${openN}</td>
     <td class="mono">${total}</td>
@@ -1710,11 +1858,11 @@ function propOverview(p,tks){const open=tks.filter(isOpen).length;
       ${deedDocs.map(d=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">📄 ${esc(d.file)}</span><button class="btn sm" id="propExtractBtn_${d.id}" onclick="startPropertyDocExtraction('${p.id}','${d.id}')">🤖 Read with AI</button></div>`).join('')}
     </div></div>`:'';
     return summary+deedTrigger+`<div class="sectitle">Purchase record</div><div class="card"><div class="body"><div class="kv">
-      <div class="k">Buyer entity (LLC)</div><div><input type="text" value="${esc(p.buyerLLC||p.llc||'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','buyerLLC',this.value)"></div>
+      <div class="k">Buyer entity (LLC)</div><div>${ROLE==='admin'?`<input type="text" value="${esc(p.buyerLLC||p.llc||'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','buyerLLC',this.value)">`:dval(p.buyerLLC||p.llc||null)}</div>
       <div class="k">Metro / County</div><div>${propMetroSelect(p)} / ${propTxt(p,'county','—',140)}</div>
-      <div class="k">Purchase date</div><div><input type="text" value="${p.purchaseDate&&p.purchaseDate!=='—'?mdyy(p.purchaseDate):''}" placeholder="MM/DD/YY" style="width:110px;font-size:13px" onchange="updatePropField('${p.id}','purchaseDate',this.value,'date')"></div>
-      <div class="k">Settlement date</div><div><input type="text" value="${p.settlementDate&&p.settlementDate!=='—'?mdyy(p.settlementDate):''}" placeholder="MM/DD/YY" style="width:110px;font-size:13px" onchange="updatePropField('${p.id}','settlementDate',this.value,'date')"></div>
-      <div class="k">Purchase price</div><div><input type="text" inputmode="decimal" value="${p.purchasePrice!=null?p.purchasePrice:''}" placeholder="—" style="width:150px;font-size:13px;text-align:right" onchange="updatePropField('${p.id}','purchasePrice',this.value,'number')"></div>
+      <div class="k">Purchase date</div><div>${propTxt(p,'purchaseDate','MM/DD/YY',110,'date',mdyy)}</div>
+      <div class="k">Settlement date</div><div>${propTxt(p,'settlementDate','MM/DD/YY',110,'date',mdyy)}</div>
+      <div class="k">Purchase price</div><div>${propTxt(p,'purchasePrice','—',150,'number',money)}</div>
       <div class="k">Total buyer costs</div><div>${propTxt(p,'totalBuyerCosts','—',150,'number',money)}</div>
       <div class="k">Loan — initial</div><div>${propTxt(p,'loanInitial','—',150,'number',money)}</div>
       <div class="k">Loan — remaining</div><div>${propTxt(p,'loanRemaining','—',150,'number',money)}</div>
@@ -1722,7 +1870,7 @@ function propOverview(p,tks){const open=tks.filter(isOpen).length;
       <div class="k">Unique ID</div><div class="mono faint" style="font-size:12px">${p.id}</div>
     </div></div></div>
     <div class="muted" style="font-size:11.5px;margin-top:6px">Fields above are commonly auto-filled from an uploaded Deed (see Documents tab) — highlighted here as editable so staff can override anything extracted incorrectly.</div>
-    <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.12 Purchased Property Records — Landing Page · sample data for prototype review.</div>`;
+    <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.12 Purchased Property Records — Landing Page · sample data for prototype review.${ROLE!=='admin'?' Editable by Senior Admin only.':''}</div>`;
   }
   const leaseDocs=ROLE==='admin'?DOCS.filter(d=>d.prop===p.id&&d.type==='Lease'):[];
   const leaseTrigger=leaseDocs.length?`<div class="card" style="margin-bottom:12px"><div class="body">
@@ -1731,17 +1879,21 @@ function propOverview(p,tks){const open=tks.filter(isOpen).length;
     ${leaseDocs.map(d=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">📄 ${esc(d.file)}</span><button class="btn sm" id="propExtractBtn_${d.id}" onclick="startPropertyDocExtraction('${p.id}','${d.id}')">🤖 Read with AI</button></div>`).join('')}
   </div></div>`:'';
   return summary+leaseTrigger+`<div class="sectitle">Lease record</div><div class="card"><div class="body"><div class="kv">
-    <div class="k">Landlord</div><div><input type="text" value="${esc(p.landlord&&p.landlord!=='—'?p.landlord:'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','landlord',this.value)"></div>
-    <div class="k">Monthly rent</div><div><input type="text" inputmode="decimal" value="${p.rent!=null?p.rent:''}" placeholder="—" style="width:130px;font-size:13px;text-align:right" onchange="updatePropField('${p.id}','rent',this.value,'number')"></div>
-    <div class="k">Lease type</div><div><input type="text" value="${esc(p.leaseType||'')}" placeholder="—" style="width:150px;font-size:13px" onchange="updatePropField('${p.id}','leaseType',this.value)"></div>
+    <div class="k">Landlord</div><div>${propTxt(p,'landlord','—',230)}</div>
+    <div class="k">Monthly rent</div><div>${propTxt(p,'rent','—',130,'number',money)}</div>
+    <div class="k">Lease type</div><div>${propTxt(p,'leaseType','—',150)}</div>
     <div class="k">Metro / County</div><div>${propMetroSelect(p)} / ${propTxt(p,'county','—',140)}</div>
     <div class="k">Stage</div><div>${propStage(p)}</div>
     <div class="k">Unique ID</div><div class="mono faint" style="font-size:12px">${p.id}</div>
   </div></div></div>
   <div class="muted" style="font-size:11.5px;margin-top:6px">Landlord, rent, and lease type are commonly auto-filled from an uploaded Lease (see Documents tab) — editable here so staff can override anything extracted incorrectly.</div>
-  <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.16 Leased Property Records — Landing Page · sample data for prototype review.</div>`;
+  <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.16 Leased Property Records — Landing Page · sample data for prototype review.${ROLE!=='admin'?' Editable by Senior Admin only.':''}</div>`;
 }
-function dval(v,suffix){return (v==null||v==='—')?'<span class="faint">—</span>':(suffix?v+suffix:v);}
+// Escapes string values before they hit the page — v can be free text a user typed
+// (Type/Style, Zoning, Landlord, MLS#, etc.), so this prevents stray '<'/'&'/'"' in a
+// field from being parsed as HTML instead of shown as plain text. Numbers pass through
+// untouched (esc() would coerce a falsy 0 to '' and drop it).
+function dval(v,suffix){if(v==null||v==='—')return '<span class="faint">—</span>';const shown=typeof v==='string'?esc(v):v;return suffix?shown+suffix:shown;}
 // Admin-editable field renderer for Property Overview/Details: Senior Admin gets an input
 // wired to updatePropField; everyone else sees the same read-only value as before (optionally
 // through a formatter, e.g. money(), so read-only display doesn't regress).
@@ -1775,25 +1927,25 @@ function propDetails(p){
       <div class="k">Construction</div><div>${propTxt(p,'constructionMaterial','—',190)}</div>
       <div class="k">Zoning</div><div>${propTxt(p,'zoning','—',190)}</div>
       <div class="k">Property type</div><div>${propTxt(p,'propertyType','—',190)}</div>
-      <div class="k">HOA / Condo</div><div><select style="width:110px;font-size:13px" onchange="updatePropHoaCondo('${p.id}',this.value)">
+      <div class="k">HOA / Condo</div><div>${ROLE==='admin'?`<select style="width:110px;font-size:13px" onchange="updatePropHoaCondo('${p.id}',this.value)">
         <option value="No" ${p.hoaCondo!=='Yes'?'selected':''}>No</option>
         <option value="Yes" ${p.hoaCondo==='Yes'?'selected':''}>Yes</option>
-      </select></div>
+      </select>`:(p.hoaCondo==='Yes'?'Yes':'No')}</div>
       ${p.hoaCondo==='Yes'?`
-      <div class="k">HOA/Condo Type</div><div><select style="width:140px;font-size:13px" onchange="updatePropField('${p.id}','hoaType',this.value)">
+      <div class="k">HOA/Condo Type</div><div>${ROLE==='admin'?`<select style="width:140px;font-size:13px" onchange="updatePropField('${p.id}','hoaType',this.value)">
         <option value="" ${!p.hoaType?'selected':''}>— select —</option>
         <option value="HOA" ${p.hoaType==='HOA'?'selected':''}>HOA</option>
         <option value="Condo" ${p.hoaType==='Condo'?'selected':''}>Condo</option>
-      </select> ${!p.hoaType?'<span class=\'faint\' style=\'font-size:11px;margin-left:6px\'>set which one this is</span>':''}</div>
-      <div class="k">HOA/Condo Monthly Fee</div><div><input type="text" inputmode="decimal" value="${p.hoaFee!=null?p.hoaFee:''}" placeholder="—" style="width:110px;font-size:13px;text-align:right" onchange="updatePropField('${p.id}','hoaFee',this.value,'number')"></div>
-      <div class="k">HOA/Condo Association Name</div><div><input type="text" value="${esc(p.hoaAssocName||'')}" placeholder="—" style="width:210px;font-size:13px" onchange="updatePropField('${p.id}','hoaAssocName',this.value)"></div>
-      <div class="k">HOA/Condo Association Contact</div><div><input type="text" value="${esc(p.hoaAssocContact||'')}" placeholder="—" style="width:210px;font-size:13px" onchange="updatePropField('${p.id}','hoaAssocContact',this.value)"></div>
-      <div class="k">Management Portal/Website</div><div><input type="text" value="${esc(p.mgmtPortal||'')}" placeholder="—" style="width:230px;font-size:13px" onchange="updatePropField('${p.id}','mgmtPortal',this.value)"></div>
-      <div class="k">Management Portal Login</div><div><input type="text" value="${esc(p.mgmtPortalLogin||'')}" placeholder="—" style="width:190px;font-size:13px" onchange="updatePropField('${p.id}','mgmtPortalLogin',this.value)"></div>
+      </select> ${!p.hoaType?'<span class=\'faint\' style=\'font-size:11px;margin-left:6px\'>set which one this is</span>':''}`:dval(p.hoaType||null)}</div>
+      <div class="k">HOA/Condo Monthly Fee</div><div>${propTxt(p,'hoaFee','—',110,'number',money)}</div>
+      <div class="k">HOA/Condo Association Name</div><div>${propTxt(p,'hoaAssocName','—',210)}</div>
+      <div class="k">HOA/Condo Association Contact</div><div>${propTxt(p,'hoaAssocContact','—',210)}</div>
+      <div class="k">Management Portal/Website</div><div>${propTxt(p,'mgmtPortal','—',230)}</div>
+      <div class="k">Management Portal Login</div><div>${propTxt(p,'mgmtPortalLogin','—',190)}</div>
       `:''}
       <div class="k">Municipality</div><div>${propTxt(p,'municipality','—',210)}</div>
       <div class="k">School district</div><div>${propTxt(p,'schoolDistrict','—',230)}</div>
-      <div class="k">Tax ID #</div><div><input type="text" value="${esc(p.taxId||'')}" placeholder="—" style="width:170px;font-size:13px" onchange="updatePropField('${p.id}','taxId',this.value)"></div>
+      <div class="k">Tax ID #</div><div>${propTxt(p,'taxId','—',170)}</div>
       <div class="k">MLS #</div><div>${propTxt(p,'mls','—',170)}</div>
       <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update comments…" onchange="updatePropField('${p.id}','comments',this.value)">${esc(p.comments||'')}</textarea></div>
       <div class="k">User Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update notes…" onchange="updatePropField('${p.id}','userNotes',this.value)">${esc(p.userNotes||'')}</textarea></div>
@@ -1817,12 +1969,15 @@ function propDetails(p){
   <div class="muted" style="font-size:12px;margin-top:10px">Fields map to Scope §4.16 Leased Property Records — Additional · sample data for prototype review.${ROLE!=='admin'?' Editable by Senior Admin only.':''}</div>`;
 }
 function propComplianceTab(p){const certs=CERTS.filter(c=>c.prop===p.id),insp=INSPECTIONS.filter(i=>i.prop===p.id);
-  return `<div class="sectitle">Certificates &amp; licenses</div>
+  const canEdit=ROLE!=='caregiver'; // Compliance is Office Staff + Senior Admin R/W, Scope §3.2 matrix
+  return readinessBanner(p)+`<div class="sectitle">Certificates &amp; licenses</div>
   <div class="card">${certs.length?`<table><thead><tr><th>Type</th><th>Authority</th><th>Cert #</th><th>Issued</th><th>Expires</th><th>Cadence</th><th>Status</th><th>Responsible</th></tr></thead><tbody>${certs.map(c=>`<tr><td class="b">${c.type}</td><td class="muted">${c.authority}</td><td class="muted">${c.certNo}</td><td class="mono">${dstr(c.issue)}</td><td class="mono">${c.exp?dstr(c.exp):'—'}</td><td class="muted">${c.cadence}</td><td>${certBadge(c)}</td><td class="muted">${c.resp}</td></tr>`).join('')}</tbody></table>`:'<div class="body muted">No certificates on file for this property yet.</div>'}</div>
+  ${canEdit?(CERT_FORM_OPEN===p.id?addCertFormHtml(p.id):`<div style="margin:8px 0 16px"><button class="btn sec sm" onclick="toggleCertForm('${p.id}')">+ Add certificate</button></div>`):''}
   <div class="sectitle">Inspections</div>
   <div class="card">${insp.length?`<table><thead><tr><th>Type</th><th>Inspector</th><th>Scheduled</th><th>Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>${insp.map(i=>`<tr><td class="b">${i.type}</td><td class="muted">${i.inspector}</td><td class="mono">${dstr(i.scheduled)}</td><td class="mono">${i.completed?dstr(i.completed):'—'}</td><td>${i.result}</td><td class="mono">${dstr(i.nextDue)}</td></tr>`).join('')}</tbody></table>`:'<div class="body muted">No inspections on file for this property yet.</div>'}</div>
+  ${canEdit?(INSP_FORM_OPEN===p.id?addInspectionFormHtml(p.id):`<div style="margin:8px 0 16px"><button class="btn sec sm" onclick="toggleInspForm('${p.id}')">+ Add inspection</button></div>`):''}
   <div style="margin-top:12px"><button class="btn sec sm" onclick="toast('Audit pack generated (PDF) — prototype stub')">📦 Generate audit pack</button></div>
-  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.2 Compliance, Certificate of Occupancy &amp; Inspections.</div>`;}
+  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.2 Compliance, Certificate of Occupancy &amp; Inspections. Compliance readiness verdict maps to §4.2.4 — see Assumptions → Compliance Reminders for definitions.</div>`;}
 function propDisposition(p){
   if(p.own!=='owned')return '<div class="card"><div class="body muted">Disposition applies to owned properties (sale process). Not applicable to leased properties.</div></div>';
   const items=DISPOSITION_CHECKLIST;p.dispositionChk=p.dispositionChk||{};
@@ -1902,7 +2057,8 @@ const REF_LISTS={
   workQuality:{label:'Vendor Work Quality',scope:'§4.9 Vendor Directory',live:true,note:'Doc lists the top value as "Excel" — transcribed here as "Excellent," matching the parallel condition-rating language elsewhere in the doc. Drives the Work Quality dropdown on the Vendor Directory drill-down.',values:['Excellent','Good','Fair','Poor']},
   vendorPrimarySecondary:{label:'Vendor Primary/Secondary',scope:'§4.9 Vendor Directory',live:true,note:'Drives the Primary/Secondary dropdown on the Vendor Directory drill-down. Doc also lists "Blank" as a valid state, meaning none selected.',values:['Primary','Secondary','Inactive']},
   vendorW9:{label:'Vendor W-9 on File',scope:'§4.9 Vendor Directory',live:true,note:'Drives the W9 on File dropdown on the Vendor Directory drill-down.',values:['Yes','No']},
-  conditionRating:{label:'Component Condition Rating',scope:'§4.8 Capital Reserves',values:['Excellent','Good','Fair','Poor','Failing']}
+  conditionRating:{label:'Component Condition Rating',scope:'§4.8 Capital Reserves',values:['Excellent','Good','Fair','Poor','Failing']},
+  criticalComplianceKeywords:{label:'Critical Compliance Items',scope:'§4.2.4 Compliance Readiness',live:true,note:'Certificate/inspection Type text is matched against these keywords (contains, not case-sensitive) to decide which items are "critical" for the Compliance Ready / At Risk / Not Ready verdict on the Compliance tab and Properties list. A property with no certificate or inspection matching one of these is treated as missing that item — the safe direction to fail, but it means a critical item entered with unusual wording (e.g. a CO logged as "Use & Occupancy" if that phrase isn\'t in this list) will read as missing rather than found. Full definitions of each verdict are above, under Compliance Reminders.',values:['Certificate of Occupancy','License','CLS','Fire Safety']}
 };
 // Note: Vendor Service Category is intentionally NOT a separate list here — per Scope v0.8, Vendor Directory's
 // "Service Category (Default)" (§4.9) points at the same Service Category List as Maintenance tickets (§4.7),
@@ -1967,7 +2123,17 @@ function complianceRemindersSection(){
     <div class="k">Senior Admin escalation</div><div>Automatic if item passes expiration unrenewed</div>
   </div>
   </div></div>
-  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.2.3 Cadence &amp; Reminders.</div>`;
+  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.2.3 Cadence &amp; Reminders.</div>
+  <div class="card" style="margin-top:16px"><div class="body">
+  <div class="b" style="margin-bottom:8px">Compliance readiness verdict — definitions (Scope §4.2.4)</div>
+  <div class="muted" style="font-size:12.5px;margin-bottom:10px;line-height:1.55">Shown as a badge on each property's Compliance tab and as a column on the Properties list. Answers "would this property pass a survey/inspection today" by checking only the certificate and inspection types marked as <b>critical</b> — see the Critical Compliance Items list under Reference Lists below (currently: ${REF_LISTS.criticalComplianceKeywords.values.map(v=>esc(v)).join(', ')}) — against the "Expiring soon" window above.</div>
+  <div class="kv">
+    <div class="k"><span class="pill" style="border-color:var(--green);color:var(--green)">● Compliance Ready</span></div><div>Every critical item has a matching certificate/inspection on file, and none are expired or within the "expiring soon" window.</div>
+    <div class="k"><span class="pill" style="border-color:var(--amber);color:var(--amber)">● Compliance At Risk</span></div><div>All critical items are on file and none have failed outright, but at least one is expiring within the window above — or a non-critical certificate has expired.</div>
+    <div class="k"><span class="pill" style="border-color:var(--red);color:var(--red)">● Not Compliance Ready</span></div><div>At least one critical item is missing entirely (no matching certificate/inspection on file) or has expired / is overdue. This is the only state that can be driven by a critical item — non-critical items can never push a property below "At Risk."</div>
+  </div>
+  <div class="muted" style="font-size:12px;margin-top:10px">Deliberately fail-safe: a critical item that's simply never been entered reads the same as one that's missing, so a newly added property will show "Not Compliance Ready" until its CO/license/etc. are logged on the Compliance tab.</div>
+  </div></div>`;
 }
 function referenceListsSection(){
   const catNames=Object.keys(CAT);
@@ -3609,7 +3775,11 @@ function resetDemo(){if(confirm('Reset all sample data back to the original main
 
 /* ===== onboarding wizard ===== */
 let OB={step:0,d:{}};
-function startOnboard(){OB={step:0,d:{}};openOnboard();}
+// New-property creation is Senior Admin only (Scope §3.2/§4.12/§4.16 — property records
+// are Senior-Admin-write once entered, and entry itself is treated the same way here).
+// Guarded here too, not just by hiding the button, so a stale render or direct call can't
+// slip a non-admin into the wizard.
+function startOnboard(){if(ROLE!=='admin'){toast('Only a Senior Admin can add a new property');return;}OB={step:0,d:{}};openOnboard();}
 function obSet(k,v){OB.d[k]=v;openOnboard();}
 function obNext(){OB.step++;openOnboard();}
 function obBack(){OB.step--;openOnboard();}
