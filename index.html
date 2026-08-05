@@ -719,6 +719,20 @@ async function loadRealPropertyAssignments(){
   if(error){toast('Could not load property assignments: '+error.message);return;}
   PROPERTY_ASSIGNMENTS=data||[];
 }
+// Phase 24 — read-only for Office Staff too (Scope §3.2: "Property assignment to
+// caregivers" = Office Staff R). Uses a security-definer RPC rather than the raw
+// user_roles table, since Office Staff can't read other users' role rows directly — the
+// RPC only ever returns Field Staff (caregiver) names tied to an assignment, nothing else.
+let PROPERTY_ROSTER=[];
+async function loadPropertyAssignmentRoster(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.rpc('property_assignment_roster');
+  if(error){toast('Could not load property assignments: '+error.message);return;}
+  PROPERTY_ROSTER=data||[];
+}
+function assignedFieldStaffNames(propId){
+  return PROPERTY_ROSTER.filter(r=>r.property_id===propId).map(r=>r.name||r.email).filter(Boolean);
+}
 async function dbAssignProperty(userId,propertyId){
   const {error}=await sb.from('user_property_assignments').insert({user_id:userId,property_id:propertyId});
   if(error){toast('Could not assign property: '+error.message);return false;}
@@ -872,6 +886,7 @@ async function enterLiveApp(){
   await loadRealNotes();
   await loadRealTrash();
   if(ROLE==='admin'){await loadRealUserRoles();await loadRealPropertyAssignments();}
+  if(ROLE==='admin'||ROLE==='office'){await loadPropertyAssignmentRoster();}
   computeHealth();
   buildNav();
   navigate(mobile_role_safe_view());
@@ -1024,18 +1039,18 @@ function permBadge(v){
 }
 function permissionsMatrixHtml(){
   const rows=[
-    ['Property records — basic info (address, contacts)','R*','R','R/W'],
+    ['Property records — basic info (address, contacts)','—','R','R/W'],
     ['Property cost basis & purchase history','—','R','R/W'],
     ['Property documents (deeds, leases, insurance, inspection reports, loan paperwork)','—','R/W','R/W'],
     ['Maintenance ticket photos/files (proof of damage, repair progress)','W/R*','R/W','R/W'],
-    ['Compliance: CO, licenses, inspections','R*','R/W','R/W'],
+    ['Compliance: CO, licenses, inspections','—','R/W','R/W'],
     ['Inspection scheduling & reminders','—','R/W','R/W'],
     ['Loans & debt','—','R','R/W'],
     ['Valuations & equity reports','—','R','R/W'],
     ['Capital components & reserves','—','R','R/W'],
     ['Maintenance tickets — submit','W/R*','R/W','R/W'],
     ['Maintenance tickets — triage & assign','—','R/W','R/W'],
-    ['Vendor directory','R*','R/W','R/W'],
+    ['Vendor directory','—','R/W','R/W'],
     ['Expenses & invoices','—','R/W','R/W'],
     ['Reports — operational','—','R','R'],
     ['Reports — financial / executive','—','—','R'],
@@ -1047,7 +1062,7 @@ function permissionsMatrixHtml(){
   <div class="card uroles-card"><div class="body" style="padding:0"><table class="uroles-permtable"><thead><tr>
     <th>Capability</th><th class="c">Field Staff</th><th class="c">Office Staff</th><th class="c">Senior Admin</th>
   </tr></thead><tbody>${rows.map(([cap,fs,os,sa])=>`<tr><td>${esc(cap)}</td><td class="c">${permBadge(fs)}</td><td class="c">${permBadge(os)}</td><td class="c">${permBadge(sa)}</td></tr>`).join('')}</tbody></table></div></div>
-  <div class="uroles-foot">R = Read, W = Write/Edit, — = No access. * Field Staff access is scoped only to properties they're assigned to — never other properties, and never other Field Staff's tickets. <b>Field Staff have zero access to Property documents</b> (deeds, leases, insurance certificates, inspection reports, loan/mortgage paperwork) — confirmed Aug 4, 2026, enforced at the database level, not just the app's navigation. They only ever touch photos/files attached directly to their own maintenance ticket, and can edit that ticket's description or remove its photos only while it's still Open (locks once a vendor is assigned or work starts); adding new photos stays open at any status. Every property field — including "basic info" and Loan &amp; debt — is Senior Admin edit-only; Office Staff sees these as read-only, enforced both in the app and (as of Aug 4, 2026) the database. Leases & Rent and the Purchase/Disposition/Licensing checklists aren't listed in the source matrix at all; per your direction, Field Staff have zero access to those today, enforced in the app's navigation.</div>`;
+  <div class="uroles-foot">R = Read, W = Write/Edit, — = No access. * Field Staff access is scoped only to properties they're assigned to — never other properties, and never other Field Staff's tickets. <b>Field Staff have zero access to Property documents</b> (deeds, leases, insurance certificates, inspection reports, loan/mortgage paperwork) — confirmed Aug 4, 2026, enforced at the database level, not just the app's navigation. They only ever touch photos/files attached directly to their own maintenance ticket, and can edit that ticket's description or remove its photos only while it's still Open (locks once a vendor is assigned or work starts); adding new photos stays open at any status. Every property field — including "basic info" and Loan &amp; debt — is Senior Admin edit-only; Office Staff sees these as read-only, enforced both in the app and (as of Aug 4, 2026) the database. Leases & Rent and the Purchase/Disposition/Licensing checklists aren't listed in the source matrix at all; per your direction, Field Staff have zero access to those today, enforced in the app's navigation. <b>Updated Aug 5, 2026:</b> Property records (basic info), Compliance (CO/licenses/inspections), and Vendor directory now show Field Staff as zero access, not scoped read — their mobile view has only Home, Report an issue, and My reports; there’s no Properties, Compliance, or Vendor Directory screen to read from. This corrects the matrix to match what’s actually built rather than the source doc’s original scoped-read intent for those three rows.</div>`;
 }
 function openPropertyAssignments(userId,email){
   const assigned=new Set(PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===userId).map(a=>a.property_id));
@@ -1843,12 +1858,14 @@ function openProperty(id){const p=propById(id);const tks=TICKETS.filter(t=>t.pro
 function propTab(btn,id,name){document.querySelectorAll('.drawer .tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
   document.getElementById('propTabBody').innerHTML={Overview:propOverview(p,tks),Details:propDetails(p),Acquisition:propChecklist(p),Disposition:propDisposition(p),Compliance:propComplianceTab(p),Licensing:propLicensing(p),Loan:propLoan(p),Components:propComponents(p),Documents:propDocs(p),Maintenance:propTickets(tks)}[name];}
 function propOverview(p,tks){const open=tks.filter(isOpen).length;
+  const staffNames=assignedFieldStaffNames(p.id);
   const summary=`<div class="card"><div class="body"><div class="kv">
   <div class="k">Ownership</div><div><b>${p.own==='owned'?(p.llc||p.buyerLLC||'—'):(p.landlord&&p.landlord!=='—'?p.landlord:'—')}</b></div>
   <div class="k">Address</div><div>${p.addr||'—'}</div>
   <div class="k">Open items</div><div>${open}</div>
   <div class="k">Total items</div><div>${tks.length}</div>
   <div class="k">YTD Spend</div><div><b>${money(propertySpendStats(p.id).ytd)}</b></div>
+  ${ROLE!=='caregiver'?`<div class="k">Assigned Field Staff</div><div>${staffNames.length?esc(staffNames.join(', ')):'<span class="faint">None assigned</span>'}${ROLE==='admin'?' <a class="faint" style="font-size:11px" onclick="navigate(\'users\')">Manage in User Management →</a>':''}</div>`:''}
 </div></div></div>${p.health==='red'?`<div class="card" style="margin-top:14px;border-color:var(--red)"><div class="body" style="color:var(--red)"><b>⚠ At-risk:</b> has an open emergency item.</div></div>`:''}`;
   if(p.own==='owned'){
     const deedDocs=ROLE==='admin'?DOCS.filter(d=>d.prop===p.id&&d.type==='Deed'):[];
