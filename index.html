@@ -272,6 +272,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.js"></script>
 <script src="config.js"></script>
 <script>
 /* ===== Supabase live-data layer (Phase 1: Maintenance module only) =====
@@ -845,6 +847,33 @@ async function dbResolveMyRole(){
   return {role:'office',name:user.email,email:user.email};
 }
 const LIVE_ROLE_LABEL={admin:'Senior Admin',office:'Office Staff',caregiver:'Field Staff'};
+/* Role-based session idle timeout — Scope §5.2: "Session timeouts: Field Staff/Caregiver
+   sessions extend longer for field convenience; Senior Admin sessions are short." Minutes of
+   no mouse/keyboard/touch/scroll activity before an automatic sign-out. Only runs in live
+   Supabase mode — a local/demo session with no real login has nothing to time out. Thresholds
+   themselves live in ASSUMPTIONS (Senior Admin editable, Assumptions → Session Timeouts) rather
+   than being hardcoded — see sessionTimeoutsSection() below. */
+const SESSION_TIMEOUT_ASSUMPTION_KEY={admin:'sessionTimeoutAdminMin',office:'sessionTimeoutOfficeMin',caregiver:'sessionTimeoutCaregiverMin'};
+let LAST_ACTIVITY_AT=Date.now();
+let IDLE_WATCH_TIMER=null;
+function markActivity(){LAST_ACTIVITY_AT=Date.now();}
+function startIdleWatch(){
+  if(IDLE_WATCH_TIMER)return;
+  markActivity();
+  ['mousedown','keydown','touchstart','scroll'].forEach(evt=>document.addEventListener(evt,markActivity,{passive:true}));
+  IDLE_WATCH_TIMER=setInterval(checkIdleTimeout,30000);
+}
+function checkIdleTimeout(){
+  if(!SUPA_CONFIGURED||!ROLE)return;
+  const key=SESSION_TIMEOUT_ASSUMPTION_KEY[ROLE];
+  const limitMin=key?ASSUMPTIONS[key]:null;
+  if(!limitMin)return;
+  if(Date.now()-LAST_ACTIVITY_AT>limitMin*60000){
+    clearInterval(IDLE_WATCH_TIMER);IDLE_WATCH_TIMER=null;
+    sessionStorage.setItem('koda_idle_signout','1');
+    authSignOut();
+  }
+}
 const LIVE_ROLE_COLOR={admin:'var(--sa)',office:'var(--os)',caregiver:'var(--cg)'};
 // Applies a real, DB-assigned role to the live app — replaces the free demo role-switcher
 // (which stays available only when SUPA_CONFIGURED is false / no real login is involved).
@@ -890,6 +919,7 @@ async function enterLiveApp(){
   computeHealth();
   buildNav();
   navigate(mobile_role_safe_view());
+  startIdleWatch();
 }
 // After a real role is resolved, land on a view that role can actually see (a field staff
 // member signing in shouldn't land on the desktop 'dashboard' VIEW value behind the scenes).
@@ -2327,17 +2357,17 @@ const REF_LISTS={
 // Note: Vendor Service Category is intentionally NOT a separate list here — per Scope v0.8, Vendor Directory's
 // "Service Category (Default)" (§4.9) points at the same Service Category List as Maintenance tickets (§4.7),
 // i.e. the CAT object above. Same for Service Type: Vendor Directory's Service Type (Default) shares SVC_TYPES.
-const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Reserves'},{id:'valuation',ic:'📈',label:'Valuation'},{id:'complianceReminders',ic:'📜',label:'Compliance Reminders'},{id:'reportsAccess',ic:'📊',label:'Reports Access'},{id:'referenceLists',ic:'📋',label:'Reference Lists'}];
+const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Reserves'},{id:'valuation',ic:'📈',label:'Valuation'},{id:'complianceReminders',ic:'📜',label:'Compliance Reminders'},{id:'reportsAccess',ic:'📊',label:'Reports Access'},{id:'sessionTimeouts',ic:'⏱️',label:'Session Timeouts'},{id:'referenceLists',ic:'📋',label:'Reference Lists'}];
 // Shared scalar assumptions (as opposed to LIFE_TABLE, which is per-component). Only
 // complianceExpiringDays actually drives live prototype behavior right now (certBadge()
 // and the Compliance dashboard both read it) — valuationVariancePct and
 // capitalReserveInflationPct are captured here so the numbers live in one place and are
 // ready to wire up once Valuation Tracking (§4.5) and inflation-adjusted forecasting
 // (§4.8) get built, but they don't drive any calculation yet. Each section says which is which.
-let ASSUMPTIONS={complianceExpiringDays:90,valuationVariancePct:10,capitalReserveInflationPct:3};
+let ASSUMPTIONS={complianceExpiringDays:90,valuationVariancePct:10,capitalReserveInflationPct:3,sessionTimeoutAdminMin:15,sessionTimeoutOfficeMin:45,sessionTimeoutCaregiverMin:240};
 function renderAssumptions(el){
   const tabsHtml=`<div class="tabs">${ASSUMPTIONS_SECTIONS.map(s=>`<button class="tab ${ASSUMPTIONS_TAB===s.id?'active':''}" onclick="ASSUMPTIONS_TAB='${s.id}';renderAssumptions(document.getElementById('view'))">${s.ic} ${s.label}</button>`).join('')}</div>`;
-  const body={capitalreserves:capitalReservesSection,valuation:valuationSection,complianceReminders:complianceRemindersSection,reportsAccess:reportsAccessSection,referenceLists:referenceListsSection}[ASSUMPTIONS_TAB]?.() || '<div class="card"><div class="body muted">Section coming soon.</div></div>';
+  const body={capitalreserves:capitalReservesSection,valuation:valuationSection,complianceReminders:complianceRemindersSection,reportsAccess:reportsAccessSection,sessionTimeouts:sessionTimeoutsSection,referenceLists:referenceListsSection}[ASSUMPTIONS_TAB]?.() || '<div class="card"><div class="body muted">Section coming soon.</div></div>';
   el.innerHTML=tabsHtml+body;
 }
 function updateAssumption(key,val){
@@ -2414,6 +2444,17 @@ function reportsAccessSection(){
     <th>Report tab</th><th class="c">Field Staff</th><th class="c">Office Staff</th><th class="c">Senior Admin</th>
   </tr></thead><tbody>${rows.map(([cap,fs,os,sa])=>`<tr><td>${esc(cap)}</td><td class="c">${permBadge(fs)}</td><td class="c">${permBadge(os)}</td><td class="c">${permBadge(sa)}</td></tr>`).join('')}</tbody></table></div></div>
   <div class="uroles-foot">R = Read/view + CSV export. — = No access, tab hidden entirely (not just visually — requesting it directly renders a locked message instead). Maps to Scope §3.2 Permissions Matrix "Reports — operational" and "Reports — financial / executive" rows; Capital planning isn't a named matrix row but is treated the same as Financial/Executive since it's the same kind of portfolio-level data — confirmed with Sonia, Aug 5, 2026.</div>`;
+}
+function sessionTimeoutsSection(){
+  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">Live as of Aug 5, 2026 — Scope §5.2: "Session timeouts: Field Staff/Caregiver sessions extend longer for field convenience; Senior Admin sessions are short." After this many minutes with no mouse, keyboard, touch, or scroll activity, KodaRE automatically signs the person out and shows "Signed out due to inactivity" the next time the app loads. Only applies to real signed-in sessions (not local/demo mode). Edit any value below — Senior Admin only, takes effect on that person's next sign-in.</div>
+  <div class="card"><div class="body" style="padding:0"><table class="uroles-permtable"><thead><tr>
+    <th>Role</th><th class="c">Idle timeout</th>
+  </tr></thead><tbody>
+    <tr><td>Senior Admin</td><td class="c"><input type="number" min="1" step="1" value="${ASSUMPTIONS.sessionTimeoutAdminMin}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('sessionTimeoutAdminMin',this.value)"> min</td></tr>
+    <tr><td>Office Staff</td><td class="c"><input type="number" min="1" step="1" value="${ASSUMPTIONS.sessionTimeoutOfficeMin}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('sessionTimeoutOfficeMin',this.value)"> min</td></tr>
+    <tr><td>Field Staff / Caregiver</td><td class="c"><input type="number" min="1" step="1" value="${ASSUMPTIONS.sessionTimeoutCaregiverMin}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('sessionTimeoutCaregiverMin',this.value)"> min</td></tr>
+  </tbody></table></div></div>
+  <div class="uroles-foot">Field Staff/Caregiver defaults longer (4 hours) so a shift out in the field doesn't get interrupted by a forced sign-out mid-task; Senior Admin defaults shortest (15 min) since that role can see and edit the most sensitive data. Maps to Scope §5.2 Security &amp; Access Control.</div>`;
 }
 function referenceListsSection(){
   const catNames=Object.keys(CAT);
@@ -3184,7 +3225,40 @@ function downloadCSV(filename,csv){
   setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},0);
   toast('Downloaded '+filename);
 }
-function exportDataset(kind){
+/* Excel (Phase 30) — reuses the SheetJS lib already loaded for bulk-upload parsing. Same
+   columns spec ({label,key} or {label,get}) that CSV export already uses, so every dataset and
+   report gets Excel for free with no per-export-site changes. */
+function downloadXLSX(filename,sheetName,columns,rows){
+  const aoa=[columns.map(c=>c.label),...rows.map(r=>columns.map(c=>{
+    const v=typeof c.get==='function'?c.get(r):r[c.key];return v==null?'':v;
+  }))];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,(sheetName||'Sheet1').replace(/[\[\]:\\/?*]/g,' ').slice(0,31)||'Sheet1');
+  XLSX.writeFile(wb,filename);
+  toast('Downloaded '+filename);
+}
+/* PDF (Phase 30) — jsPDF + autotable, loaded via CDN alongside the existing SheetJS/Chart.js
+   CDN scripts (same no-build-step approach as the rest of the app). Landscape for wider tables
+   so columns don't get crushed. */
+function downloadPDFTable(filename,title,columns,rows){
+  if(!window.jspdf){toast('PDF export failed: PDF library did not load — check your connection and try again');return;}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:columns.length>6?'landscape':'portrait',unit:'pt'});
+  doc.setFontSize(14);doc.text(title||'KodaRE export',40,40);
+  doc.setFontSize(9);doc.setTextColor(120);doc.text('Exported '+new Date().toLocaleString(),40,56);
+  doc.autoTable({
+    startY:68,
+    head:[columns.map(c=>c.label)],
+    body:rows.map(r=>columns.map(c=>{const v=typeof c.get==='function'?c.get(r):r[c.key];return v==null?'':String(v);})),
+    styles:{fontSize:8,cellPadding:4,overflow:'linebreak'},
+    headStyles:{fillColor:[30,41,59]},
+    margin:{left:40,right:40}
+  });
+  doc.save(filename);
+  toast('Downloaded '+filename);
+}
+function exportDataset(kind,format){
   const sets={
     properties:{filename:'properties.csv',rows:PROPS,columns:[
       {label:'Name',key:'name'},{label:'Address',key:'addr'},{label:'Ownership',key:'own'},
@@ -3217,7 +3291,10 @@ function exportDataset(kind){
       {label:'Uploaded',get:d=>d.uploaded},{label:'Note',key:'note'}]},
   };
   const s=sets[kind];if(!s)return;
-  downloadCSV(s.filename,rowsToCSV(s.columns,s.rows));
+  const base=s.filename.replace(/\.csv$/,'');
+  if(format==='xlsx')downloadXLSX(base+'.xlsx',kind,s.columns,s.rows);
+  else if(format==='pdf')downloadPDFTable(base+'.pdf',s.filename.replace('.csv',''),s.columns,s.rows);
+  else downloadCSV(s.filename,rowsToCSV(s.columns,s.rows));
 }
 function reportExportSpec(tab){
   if(tab==='operational')return {filename:'report_operational_tickets.csv',rows:TICKETS.filter(isOpen),columns:[
@@ -3247,10 +3324,14 @@ function reportExportSpec(tab){
    the tab), reportBody() (so directly setting REPTAB can't render restricted content either),
    and exportCurrentReport() (so the CSV export button can't be used on a restricted tab). */
 const REPORTS_ADMIN_ONLY=['financial','capital','executive'];
-function exportCurrentReport(){
+function exportCurrentReport(format){
   if(REPORTS_ADMIN_ONLY.includes(REPTAB)&&ROLE!=='admin'){toast('Only Senior Admin can export this report');return;}
   const s=reportExportSpec(REPTAB);
-  downloadCSV(s.filename,rowsToCSV(s.columns,s.rows));
+  const labels={operational:'Operational report',maintspend:'Maintenance spend report',compliance:'Compliance report',
+    financial:'Financial report',capital:'Capital planning report',executive:'Executive dashboard'};
+  if(format==='xlsx')downloadXLSX(s.filename.replace(/\.csv$/,'.xlsx'),REPTAB,s.columns,s.rows);
+  else if(format==='pdf')downloadPDFTable(s.filename.replace(/\.csv$/,'.pdf'),labels[REPTAB]||'KodaRE report',s.columns,s.rows);
+  else downloadCSV(s.filename,rowsToCSV(s.columns,s.rows));
 }
 function renderReports(el){
   const allTabs=['operational','maintspend','compliance','financial','capital','executive','export'];
@@ -3258,7 +3339,11 @@ function renderReports(el){
   if(REPORTS_ADMIN_ONLY.includes(REPTAB)&&ROLE!=='admin')REPTAB='operational';
   const labels={operational:'Operational',maintspend:'Maintenance spend',compliance:'Compliance',financial:'Financial',capital:'Capital planning',executive:'Executive dashboard',export:'Data export'};
   el.innerHTML=`<div class="tabs" style="display:flex;align-items:center">${tabs.map(t=>`<button class="tab ${REPTAB===t?'active':''}" onclick="REPTAB='${t}';renderReports(document.getElementById('view'))">${labels[t]}</button>`).join('')}
-    ${REPTAB!=='export'?`<button class="btn sec sm" style="margin-left:auto" onclick="exportCurrentReport()">⬇ Export this report (CSV)</button>`:''}</div>
+    ${REPTAB!=='export'?`<div style="margin-left:auto;display:flex;gap:6px">
+      <button class="btn sec sm" onclick="exportCurrentReport('csv')">⬇ CSV</button>
+      <button class="btn sec sm" onclick="exportCurrentReport('xlsx')">⬇ Excel</button>
+      <button class="btn sec sm" onclick="exportCurrentReport('pdf')">⬇ PDF</button>
+    </div>`:''}</div>
   <div id="repBody">${reportBody(REPTAB)}</div>`;
   if(REPTAB==='maintspend')renderMaintSpendCharts();
 }
@@ -3343,7 +3428,7 @@ function reportBody(tab){
     ];
     return `<div class="sectitle">Data export — full table dumps</div>
     <div class="muted" style="font-size:12.5px;margin-bottom:10px">Download any table below as a CSV, exactly as it stands right now — every row, not just what's on screen. Opens in Excel/Google Sheets.</div>
-    <div class="card"><div class="body" style="padding:0">${sets.map(s=>`<div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-top:1px solid var(--line)"><div style="flex:1"><div class="b">${s.label} <span class="faint" style="font-weight:400">(${s.n} rows)</span></div><div class="muted" style="font-size:12px;margin-top:2px">${s.desc}</div></div><button class="btn sec sm" onclick="exportDataset('${s.kind}')">⬇ CSV</button></div>`).join('')}</div></div>`;
+    <div class="card"><div class="body" style="padding:0">${sets.map(s=>`<div style="display:flex;align-items:center;gap:12px;padding:13px 16px;border-top:1px solid var(--line)"><div style="flex:1"><div class="b">${s.label} <span class="faint" style="font-weight:400">(${s.n} rows)</span></div><div class="muted" style="font-size:12px;margin-top:2px">${s.desc}</div></div><div style="display:flex;gap:6px"><button class="btn sec sm" onclick="exportDataset('${s.kind}','csv')">⬇ CSV</button><button class="btn sec sm" onclick="exportDataset('${s.kind}','xlsx')">⬇ Excel</button><button class="btn sec sm" onclick="exportDataset('${s.kind}','pdf')">⬇ PDF</button></div></div>`).join('')}</div></div>`;
   }
   const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');
   const totalDebt=PROPS.filter(p=>p.own==='owned').reduce((s,p)=>s+(p.loanRemaining||0),0);
@@ -4140,6 +4225,10 @@ async function obCreate(){
 /* ===== boot ===== */
 document.getElementById('switch').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setRole(b.dataset.role);});
 loadState();computeHealth();setRole('office');
+if(sessionStorage.getItem('koda_idle_signout')){
+  sessionStorage.removeItem('koda_idle_signout');
+  setTimeout(()=>toast('Signed out due to inactivity — sign back in to continue'),300);
+}
 initLiveMode();
 
 </script>
