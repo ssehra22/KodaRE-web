@@ -885,7 +885,7 @@ async function enterLiveApp(){
   await loadRealTicketAttachments();
   await loadRealNotes();
   await loadRealTrash();
-  if(ROLE==='admin'){await loadRealUserRoles();await loadRealPropertyAssignments();await loadErrorLog();}
+  if(ROLE==='admin'){await loadRealUserRoles();await loadRealPropertyAssignments();await loadErrorLog();await loadAuditLog();}
   if(ROLE==='admin'||ROLE==='office'){await loadPropertyAssignmentRoster();}
   computeHealth();
   buildNav();
@@ -1074,13 +1074,15 @@ function openPropertyAssignments(userId,email){
     </div></div>`);
 }
 async function togglePropertyAssignment(userId,propertyId,checked){
+  const propName=(propById(propertyId)||{}).name||propertyId;
+  const who=(USER_ROLES.find(u=>u.user_id===userId)||{}).email||userId;
   if(checked){
     const ok=await dbAssignProperty(userId,propertyId);
-    if(ok)PROPERTY_ASSIGNMENTS.push({user_id:userId,property_id:propertyId});
+    if(ok){PROPERTY_ASSIGNMENTS.push({user_id:userId,property_id:propertyId});logAudit('Assigned property','property_assignment',who,'property',null,propName);}
     else{if(VIEW==='users')renderUserManagement(document.getElementById('view'));return;}
   } else {
     const ok=await dbUnassignProperty(userId,propertyId);
-    if(ok)PROPERTY_ASSIGNMENTS=PROPERTY_ASSIGNMENTS.filter(a=>!(a.user_id===userId&&a.property_id===propertyId));
+    if(ok){PROPERTY_ASSIGNMENTS=PROPERTY_ASSIGNMENTS.filter(a=>!(a.user_id===userId&&a.property_id===propertyId));logAudit('Unassigned property','property_assignment',who,'property',propName,null);}
     else{if(VIEW==='users')renderUserManagement(document.getElementById('view'));return;}
   }
   toast('Property assignments updated');
@@ -1098,7 +1100,10 @@ async function setUserRole(userId,role,email){
   }
   const ok=await dbUpdateUserRole(userId,role);
   if(!ok){if(VIEW==='users')renderUserManagement(document.getElementById('view'));return;}
-  const row=USER_ROLES.find(u=>u.user_id===userId);if(row)row.role=role;
+  const row=USER_ROLES.find(u=>u.user_id===userId);
+  const prevRole=row?row.role:null;
+  if(row)row.role=role;
+  if(prevRole!==role)logAudit('Changed role','user_role',email,'role',prevRole,role);
   toast('Role updated: '+email+' → '+(LIVE_ROLE_LABEL[role]||role));
   if(isSelf){applyLiveRole(role,row?row.name:email);buildNav();navigate(ROLE==='admin'?'users':'dashboard');}
   else if(VIEW==='users')renderUserManagement(document.getElementById('view'));
@@ -1138,6 +1143,7 @@ async function permanentlyDeleteTrashItem(type,id){
   }
   TRASH.splice(ix,1);
   saveState();
+  logAudit('Permanently deleted',type,entry.label,null,null,null);
   toast((type==='vendor'?'Vendor':type==='property'?'Property':'Ticket')+' permanently deleted');
   if(VIEW==='trash')renderTrash(document.getElementById('view'));
 }
@@ -1638,6 +1644,7 @@ function updatePropHoaCondo(pid,value){
   const p=propById(pid);if(!p)return;
   const prev=p.hoaCondo;
   p.hoaCondo=value;
+  if(prev!==value)logAudit('Updated property field','property',p.name,'hoaCondo',prev,value);
   if(p._backend==='supabase'){
     dbUpdateProperty(pid,{hoa_condo:value}).then(ok=>{if(!ok){p.hoaCondo=prev;document.getElementById('propTabBody').innerHTML=propDetails(p);refreshPropertiesLanding();}});
   } else saveState();
@@ -1655,6 +1662,7 @@ function updatePropField(pid,field,value,kind){
     else{const d=parseMDYY(v);if(!d){toast('Enter a date as MM/DD/YY');return;}p[field]=toISODate(d);}
   }
   else{p[field]=value.trim()===''?null:value;}
+  if(AUDIT_SENSITIVE_PROP_FIELDS.has(field)&&prev!==p[field])logAudit('Updated property field','property',p.name,field,prev,p[field]);
   if(p._backend==='supabase'){
     const col=PROP_FIELD_TO_COLUMN[field];
     if(col){dbUpdateProperty(pid,{[col]:p[field]}).then(ok=>{if(!ok){p[field]=prev;refreshPropertiesLanding();}});}
@@ -1674,18 +1682,18 @@ let TRASH=[];
 let PFILTER={metro:'all'};
 
 const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'reports',ic:'📊',label:'Reports'},{id:'assumptions',ic:'🧮',label:'Assumptions'},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length},{id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length}];
-const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2'],errorlog:['Error Log','Background failures, auto-logged — Senior Admin only']};
+const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2'],errorlog:['Error Log','Background failures, auto-logged — Senior Admin only'],auditlog:['Audit Log','Sensitive data changes, immutable — Senior Admin only · Scope §5.2/§5.5']};
 function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
   const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
   else{const s=STAFF[r];document.getElementById('sideName').textContent=s.name;document.getElementById('sideRole').textContent=s.role;const av=document.getElementById('sideAvatar');av.textContent=initials(s.name);av.style.background=s.color;navigate('dashboard');}}
-function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});items.splice(aix+3,0,{id:'errorlog',ic:'🛠️',label:'Error Log',count:()=>ERROR_LOG.filter(e=>!e.resolvedAt).length});}
+function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});items.splice(aix+3,0,{id:'errorlog',ic:'🛠️',label:'Error Log',count:()=>ERROR_LOG.filter(e=>!e.resolvedAt).length});items.splice(aix+4,0,{id:'auditlog',ic:'📜',label:'Audit Log'});}
   nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
-function navigate(v){if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
+function navigate(v){if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
   if(v==='approvals'){document.getElementById('viewTitle').textContent='Approvals';document.getElementById('crumb').textContent='Sign-offs & escalations';}
   else{document.getElementById('viewTitle').textContent=t[0];document.getElementById('crumb').textContent=t[1];}
   const el=document.getElementById('view');el.scrollTop=0;
-  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement,errorlog:renderErrorLog}[v]||renderDashboard)(el);}
+  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement,errorlog:renderErrorLog,auditlog:renderAuditLog}[v]||renderDashboard)(el);}
 function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast">✓ ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);
   if(/ failed:/i.test(msg))logError(msg);}
 /* ===== lightweight error log (adapted from reshab-platform's error_log pattern) =====
@@ -1735,6 +1743,55 @@ async function resolveErrorLogEntry(id){
   const e=ERROR_LOG.find(x=>x.id===id);if(e)e.resolvedAt=new Date().toISOString();
   toast('Marked resolved');
   if(VIEW==='errorlog')renderErrorLog(document.getElementById('view'));
+}
+/* ===== scoped audit log (Scope §5.2/§5.5) =====
+   Deliberately narrower than reshab-platform's version, which logs nearly every write in the
+   app — this covers what the spec actually calls "sensitive data changes": edits to
+   Senior-Admin-locked property/loan fields, role changes, property-caregiver assignment
+   changes ("themselves auditable events" per §5.2), and permanent deletions. No IP capture —
+   even reshab's own server-side implementation never wires that up in practice, and KodaRE
+   writes straight from the browser with no server hop to read a trustworthy IP from at all.
+   Immutable by design: insert-only at the database level, nothing in the app can edit or
+   remove an entry once written. Senior Admin read only. */
+const AUDIT_SENSITIVE_PROP_FIELDS=new Set(['buyerLLC','purchaseDate','settlementDate','purchasePrice','totalBuyerCosts',
+  'landlord','rent','leaseType','hoaType','hoaFee','hoaAssocName','hoaAssocContact','mgmtPortal','mgmtPortalLogin','taxId',
+  'loanLender','loanContact','loanAcctNo','loanOrigDate','loanInitial','loanRate','loanRateType','loanTermMo','loanMaturity',
+  'loanPayment','loanEscrow','loanRemaining','loanLien','loanPrepay']);
+async function logAudit(action,objectType,objectRef,field,oldValue,newValue){
+  if(!SUPA_CONFIGURED)return;
+  try{
+    const {data:{user}}=await sb.auth.getUser();
+    await sb.from('audit_log').insert({actor_email:user?user.email:null,actor_role:ROLE||null,action,object_type:objectType,
+      object_ref:objectRef!=null?String(objectRef):null,field:field||null,
+      old_value:oldValue!=null?String(oldValue):null,new_value:newValue!=null?String(newValue):null});
+  }catch(e){console.error('audit log failed',e);}
+}
+let AUDIT_LOG=[];
+async function loadAuditLog(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('audit_log').select('*').order('at',{ascending:false}).limit(300);
+  if(error){console.error('Could not load audit log',error);return;}
+  AUDIT_LOG=data||[];
+}
+function auditRow(e){
+  const change=e.old_value!=null&&e.new_value!=null?esc(e.old_value)+' → '+esc(e.new_value)
+    :e.new_value!=null?esc(e.new_value)
+    :e.old_value!=null?'(cleared — was '+esc(e.old_value)+')'
+    :'';
+  return `<tr>
+    <td class="mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
+    <td class="muted">${esc(e.actor_email||'—')}${e.actor_role?' ('+esc(e.actor_role)+')':''}</td>
+    <td>${esc(e.action)}</td>
+    <td class="muted">${esc(e.object_type||'')}${e.object_ref?': '+esc(e.object_ref):''}</td>
+    <td class="muted">${e.field?esc(e.field):'—'}</td>
+    <td style="max-width:280px">${change}</td>
+  </tr>`;
+}
+function renderAuditLog(el){
+  el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">An immutable record of sensitive changes — Senior-Admin-locked property/loan fields, role changes, property assignments, and permanent deletions. Nothing here can be edited or removed, by anyone, through the app. Most recent 300 shown, newest first. Scope §5.2/§5.5.</div>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Field</th><th>Change</th></tr></thead><tbody>
+  ${AUDIT_LOG.length?AUDIT_LOG.map(auditRow).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No audited changes yet.</td></tr>'}
+  </tbody></table></div>`;
 }
 function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};return (U[a.urgency]-U[b.urgency])||(new Date(b.created)-new Date(a.created));}
 
