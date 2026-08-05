@@ -2224,7 +2224,7 @@ const REF_LISTS={
 // Note: Vendor Service Category is intentionally NOT a separate list here — per Scope v0.8, Vendor Directory's
 // "Service Category (Default)" (§4.9) points at the same Service Category List as Maintenance tickets (§4.7),
 // i.e. the CAT object above. Same for Service Type: Vendor Directory's Service Type (Default) shares SVC_TYPES.
-const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Reserves'},{id:'valuation',ic:'📈',label:'Valuation'},{id:'complianceReminders',ic:'📜',label:'Compliance Reminders'},{id:'referenceLists',ic:'📋',label:'Reference Lists'}];
+const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Reserves'},{id:'valuation',ic:'📈',label:'Valuation'},{id:'complianceReminders',ic:'📜',label:'Compliance Reminders'},{id:'reportsAccess',ic:'📊',label:'Reports Access'},{id:'referenceLists',ic:'📋',label:'Reference Lists'}];
 // Shared scalar assumptions (as opposed to LIFE_TABLE, which is per-component). Only
 // complianceExpiringDays actually drives live prototype behavior right now (certBadge()
 // and the Compliance dashboard both read it) — valuationVariancePct and
@@ -2234,7 +2234,7 @@ const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Re
 let ASSUMPTIONS={complianceExpiringDays:90,valuationVariancePct:10,capitalReserveInflationPct:3};
 function renderAssumptions(el){
   const tabsHtml=`<div class="tabs">${ASSUMPTIONS_SECTIONS.map(s=>`<button class="tab ${ASSUMPTIONS_TAB===s.id?'active':''}" onclick="ASSUMPTIONS_TAB='${s.id}';renderAssumptions(document.getElementById('view'))">${s.ic} ${s.label}</button>`).join('')}</div>`;
-  const body={capitalreserves:capitalReservesSection,valuation:valuationSection,complianceReminders:complianceRemindersSection,referenceLists:referenceListsSection}[ASSUMPTIONS_TAB]?.() || '<div class="card"><div class="body muted">Section coming soon.</div></div>';
+  const body={capitalreserves:capitalReservesSection,valuation:valuationSection,complianceReminders:complianceRemindersSection,reportsAccess:reportsAccessSection,referenceLists:referenceListsSection}[ASSUMPTIONS_TAB]?.() || '<div class="card"><div class="body muted">Section coming soon.</div></div>';
   el.innerHTML=tabsHtml+body;
 }
 function updateAssumption(key,val){
@@ -2295,6 +2295,22 @@ function complianceRemindersSection(){
   </div>
   <div class="muted" style="font-size:12px;margin-top:10px">Deliberately fail-safe: a critical item that's simply never been entered reads the same as one that's missing, so a newly added property will show "Not Compliance Ready" until its CO/license/etc. are logged on the Compliance tab.</div>
   </div></div>`;
+}
+function reportsAccessSection(){
+  const rows=[
+    ['Operational','—','R','R'],
+    ['Maintenance spend','—','R','R'],
+    ['Compliance','—','R','R'],
+    ['Financial','—','—','R'],
+    ['Capital planning','—','—','R'],
+    ['Executive dashboard','—','—','R'],
+    ['Data export (CSV) — Properties, Tickets, Vendors, Leases, Compliance, Documents','—','R','R'],
+  ];
+  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">Live as of Aug 5, 2026 — enforced in the app, not just documented here. Financial, Capital planning, and Executive dashboard are Senior Admin only because they surface portfolio-value and forecast data beyond day-to-day operations. Operational, Maintenance spend, Compliance, and the raw data-export tables stay open to Office Staff since they already have read access to the underlying records — tickets and compliance items directly, and properties (including Loans &amp; debt) read-only per the Permissions matrix. Field Staff never sees the Reports section at all; their mobile app has no Reports screen.</div>
+  <div class="card uroles-card"><div class="body" style="padding:0"><table class="uroles-permtable"><thead><tr>
+    <th>Report tab</th><th class="c">Field Staff</th><th class="c">Office Staff</th><th class="c">Senior Admin</th>
+  </tr></thead><tbody>${rows.map(([cap,fs,os,sa])=>`<tr><td>${esc(cap)}</td><td class="c">${permBadge(fs)}</td><td class="c">${permBadge(os)}</td><td class="c">${permBadge(sa)}</td></tr>`).join('')}</tbody></table></div></div>
+  <div class="uroles-foot">R = Read/view + CSV export. — = No access, tab hidden entirely (not just visually — requesting it directly renders a locked message instead). Maps to Scope §3.2 Permissions Matrix "Reports — operational" and "Reports — financial / executive" rows; Capital planning isn't a named matrix row but is treated the same as Financial/Executive since it's the same kind of portfolio-level data — confirmed with Sonia, Aug 5, 2026.</div>`;
 }
 function referenceListsSection(){
   const catNames=Object.keys(CAT);
@@ -3079,12 +3095,24 @@ function reportExportSpec(tab){
   return {filename:'report_executive_properties.csv',rows:PROPS,columns:[
     {label:'Name',key:'name'},{label:'Status',key:'status'},{label:'Health',key:'health'},{label:'Metro',key:'metro'}]};
 }
+/* ===== Reports access restriction — Scope §3.2 matrix row "Reports — financial / executive":
+   Office Staff = no access, Senior Admin = R. Capital planning isn't a named matrix row, but
+   it's the same kind of portfolio-value/forecast data, so it's locked down alongside the other
+   two rather than left open by default (confirmed with Sonia, Aug 5, 2026 — see the RBAC audit
+   for the original finding: these three tabs previously rendered identically for every role).
+   Gated in three places for defense in depth: the tab list itself (so Office Staff never sees
+   the tab), reportBody() (so directly setting REPTAB can't render restricted content either),
+   and exportCurrentReport() (so the CSV export button can't be used on a restricted tab). */
+const REPORTS_ADMIN_ONLY=['financial','capital','executive'];
 function exportCurrentReport(){
+  if(REPORTS_ADMIN_ONLY.includes(REPTAB)&&ROLE!=='admin'){toast('Only Senior Admin can export this report');return;}
   const s=reportExportSpec(REPTAB);
   downloadCSV(s.filename,rowsToCSV(s.columns,s.rows));
 }
 function renderReports(el){
-  const tabs=['operational','maintspend','compliance','financial','capital','executive','export'];
+  const allTabs=['operational','maintspend','compliance','financial','capital','executive','export'];
+  const tabs=ROLE==='admin'?allTabs:allTabs.filter(t=>!REPORTS_ADMIN_ONLY.includes(t));
+  if(REPORTS_ADMIN_ONLY.includes(REPTAB)&&ROLE!=='admin')REPTAB='operational';
   const labels={operational:'Operational',maintspend:'Maintenance spend',compliance:'Compliance',financial:'Financial',capital:'Capital planning',executive:'Executive dashboard',export:'Data export'};
   el.innerHTML=`<div class="tabs" style="display:flex;align-items:center">${tabs.map(t=>`<button class="tab ${REPTAB===t?'active':''}" onclick="REPTAB='${t}';renderReports(document.getElementById('view'))">${labels[t]}</button>`).join('')}
     ${REPTAB!=='export'?`<button class="btn sec sm" style="margin-left:auto" onclick="exportCurrentReport()">⬇ Export this report (CSV)</button>`:''}</div>
@@ -3092,6 +3120,9 @@ function renderReports(el){
   if(REPTAB==='maintspend')renderMaintSpendCharts();
 }
 function reportBody(tab){
+  if(REPORTS_ADMIN_ONLY.includes(tab)&&ROLE!=='admin'){
+    return `<div class="card"><div class="body muted" style="text-align:center;padding:30px">🔒 Financial, Capital planning, and Executive dashboard reports are Senior Admin only — Scope §3.2.</div></div>`;
+  }
   if(tab==='operational'){
     const closed90=TICKETS.filter(t=>!isOpen(t)&&ageDays(t)<=90);
     const byVendor={};TICKETS.forEach(t=>{if(t.vendor){byVendor[t.vendor]=byVendor[t.vendor]||{n:0};byVendor[t.vendor].n++;}});
