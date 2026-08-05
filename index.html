@@ -48,6 +48,12 @@
   .nav.active{background:linear-gradient(90deg,rgba(37,99,201,.28),rgba(124,63,214,.18));color:#fff;box-shadow:inset 3px 0 0 var(--os)}
   .side .foot{margin-top:auto;font-size:11px;color:#6f8296;padding:10px 8px 0;border-top:1px solid #22303f}
 
+  /* mobile nav drawer — hamburger + off-canvas .side, hidden on desktop by default */
+  .menubtn{display:none;background:transparent;border:0;color:var(--ink);font-size:20px;width:40px;height:40px;border-radius:9px;align-items:center;justify-content:center;flex:0 0 auto}
+  .menubtn:hover{background:var(--panel2)}
+  .navscrim{display:none;position:fixed;inset:0;background:rgba(15,23,34,.42);z-index:65}
+  .navscrim.open{display:block}
+
   .main{display:flex;flex-direction:column;min-width:0}
   .topbar{position:sticky;top:41px;z-index:20;background:rgba(255,255,255,.86);backdrop-filter:blur(8px);
     border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:12px 24px}
@@ -166,13 +172,86 @@
   .photo{border:2px dashed #cbd6e2;border-radius:14px;padding:22px;text-align:center;color:var(--faint);font-weight:700}
   .mrow{display:flex;justify-content:space-between;align-items:center;gap:10px}
 
+  /* ===== Responsive: tablet (<=900px) and phone (<=560px) ===== */
   @media(max-width:900px){
     #desktop{grid-template-columns:1fr}
-    .side{flex-direction:row;flex-wrap:wrap;align-items:center;min-height:unset}
-    .side .who,.side .foot{display:none}
-    .kpis{grid-template-columns:repeat(2,1fr)}
+    .menubtn{display:inline-flex}
+    /* .side becomes an off-canvas drawer instead of a squished sidebar */
+    .side{position:fixed;top:0;left:0;bottom:0;width:280px;max-width:82vw;z-index:70;
+      transform:translateX(-100%);transition:transform .22s ease;flex-direction:column;
+      flex-wrap:nowrap;align-items:stretch;min-height:100vh;overflow-y:auto;box-shadow:0 0 0 transparent}
+    .side.open{transform:translateX(0);box-shadow:8px 0 30px rgba(0,0,0,.25)}
+    .side .who{display:flex}
+    .side .foot{display:block}
+    .kpis{grid-template-columns:repeat(2,1fr) !important}
     .grid2,.grid-props{grid-template-columns:1fr}
+    .content{padding:16px 14px 50px}
+    .topbar{padding:10px 14px;gap:10px}
+    .search input{width:100%;min-width:0}
+    .search{margin-left:0;flex:1}
+    .topbar h1{font-size:16px}
   }
+  @media(max-width:560px){
+    .kpis{grid-template-columns:1fr !important}
+    .content{padding:12px 10px 46px}
+    .card h3{padding:12px 14px;font-size:13.5px;flex-wrap:wrap}
+    .drawer{width:100vw;max-width:100vw}
+    .grid-props{gap:10px}
+    table{font-size:12.5px}
+    th,td{padding:9px 8px}
+    /* stack the Issued/Expires and Scheduled/Completed field pairs */
+    .field-pair{flex-direction:column !important;gap:0 !important}
+    .field-pair > div{margin-bottom:10px}
+  }
+  /* On an actual phone (not just a resized desktop demo window), the skeuomorphic phone-in-
+     browser frame around the Field Staff mobile app just wastes screen space — drop the frame,
+     notch, and fake status bar and let the app fill the real screen. The frame stays for
+     wider viewports (desktop/tablet), where it's a useful visual demo of "this is the mobile
+     app." */
+  @media(max-width:480px){
+    #mobile{padding:0;background:none;min-height:100vh}
+    .phone{width:100%;max-width:100%;height:100vh;max-height:100vh;border-radius:0;padding:0;box-shadow:none}
+    .notch{display:none}
+    .statusbar{display:none}
+    .screen{border-radius:0}
+  }
+
+  /* ===== Touch targets — keyed to touch input, not screen width, per guidance:
+     a narrow desktop window is not a touch device ===== */
+  @media(pointer:coarse){
+    .btn,.btn.sm{min-height:44px}
+    .nav{min-height:44px}
+    .tab{min-height:44px;display:inline-flex;align-items:center}
+    .chip{min-height:38px;display:inline-flex;align-items:center}
+    .mnav button{min-height:52px}
+    .opt{min-height:44px}
+    .menubtn{width:44px;height:44px}
+    .drawer .dhead .x{width:44px;height:44px}
+    select,input[type=text],input[type=number],input[type=tel],input[type=email],
+    input[type=password],input[type=date],textarea{min-height:44px}
+    input[type=checkbox],input[type=radio]{width:20px;height:20px}
+    .uroles-edit{display:inline-flex;align-items:center;min-height:44px}
+    .switch button{min-height:38px}
+  }
+
+  /* ===== Responsive table columns — every priority-tagged <th>/<td> pair hides together.
+     pri2 = hide below tablet (900px), pri3 = hide below phone (560px) as well. Identity,
+     status, and actions columns are never tagged, so they always stay visible. ===== */
+  @media(max-width:900px){ .pri2{display:none} }
+  @media(max-width:560px){ .pri3{display:none} }
+  /* explicit max-width so long values (addresses, descriptions) truncate instead of
+     stretching the column — text-overflow:ellipsis alone does nothing in an auto-layout
+     table cell, the column just grows to fit the content */
+  /* No display:block here on purpose — this gets applied directly to some <td> elements,
+     and forcing block display on a table cell breaks the table layout. table-cell (and a
+     flex-item span/div) both respect text-overflow fine without it. */
+  .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+  @media(max-width:900px){ .trunc{max-width:140px} }
+  @media(max-width:560px){ .trunc{max-width:100px} }
+  .subline{display:block;font-size:11.5px;color:var(--faint);font-weight:400;margin-top:1px}
+  .addr-full{display:none}
+  .addr-city{display:block}
+  @media(min-width:900px){ .addr-full{display:block} .addr-city{display:none} }
 
   /* ===== Users & Roles page — scoped restyle, does not affect other pages ===== */
   .uroles-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap}
@@ -227,7 +306,8 @@
 
 <!-- ============ DESKTOP ============ -->
 <div id="desktop">
-  <aside class="side">
+  <div class="navscrim" id="navScrim" onclick="closeNavDrawer()"></div>
+  <aside class="side" id="sideNav">
     <div class="who">
       <div class="avatar" id="sideAvatar" style="background:var(--os)">DC</div>
       <div><div class="nm" id="sideName">Dana Cruz</div><div class="rl" id="sideRole">Office Staff</div></div>
@@ -237,6 +317,7 @@
   </aside>
   <div class="main">
     <div class="topbar">
+      <button class="menubtn" id="navMenuBtn" onclick="toggleNavDrawer()" aria-label="Open menu">☰</button>
       <div><h1 id="viewTitle">Dashboard</h1><div class="crumb" id="crumb">Overview</div></div>
       <div class="search"><span class="mag">⌕</span><input type="text" placeholder="Search properties, tickets, vendors…" oninput="globalSearch(this.value)"></div>
     </div>
@@ -490,13 +571,13 @@ async function dbInsertInspection(propertyId,patch){
 let CERT_FORM_OPEN=null,INSP_FORM_OPEN=null;
 function toggleCertForm(pid){CERT_FORM_OPEN=CERT_FORM_OPEN===pid?null:pid;INSP_FORM_OPEN=null;const p=propById(pid);document.getElementById('propTabBody').innerHTML=propComplianceTab(p);}
 function toggleInspForm(pid){INSP_FORM_OPEN=INSP_FORM_OPEN===pid?null:pid;CERT_FORM_OPEN=null;const p=propById(pid);document.getElementById('propTabBody').innerHTML=propComplianceTab(p);}
-function cfDate(id){const v=document.getElementById(id);if(!v||!v.value.trim())return null;const d=parseMDYY(v.value.trim());return d?toISODate(d):undefined;} // undefined = invalid entry
+function cfDate(id){const v=document.getElementById(id);if(!v||!v.value.trim())return null;const d=parseFlexDate(v.value.trim());return d?toISODate(d):undefined;} // undefined = invalid entry
 async function submitNewCert(pid){
   const g=id=>{const e=document.getElementById(id);return e?e.value.trim():'';};
   const type=g('cf_type');
   if(!type){toast('Enter a certificate/license type (e.g. Certificate of Occupancy)');return;}
   const issue=cfDate('cf_issue'),exp=cfDate('cf_exp');
-  if(issue===undefined||exp===undefined){toast('Enter dates as MM/DD/YY');return;}
+  if(issue===undefined||exp===undefined){toast('Enter valid dates');return;}
   const patch={type,authority:g('cf_authority')||null,cert_no:g('cf_certno')||null,issue_date:issue,exp_date:exp,
     cadence:g('cf_cadence')||null,status:g('cf_status')||null,responsible:g('cf_resp')||null};
   const row=await dbInsertCertificate(pid,patch);
@@ -512,7 +593,7 @@ async function submitNewInspection(pid){
   const type=g('if_type');
   if(!type){toast('Enter an inspection type (e.g. Fire Safety)');return;}
   const scheduled=cfDate('if_scheduled'),completed=cfDate('if_completed'),nextDue=cfDate('if_nextdue');
-  if(scheduled===undefined||completed===undefined||nextDue===undefined){toast('Enter dates as MM/DD/YY');return;}
+  if(scheduled===undefined||completed===undefined||nextDue===undefined){toast('Enter valid dates');return;}
   const patch={type,inspector:g('if_inspector')||null,scheduled,completed,result:g('if_result')||null,
     findings:g('if_findings')||null,corrective:g('if_corrective')||null,next_due:nextDue};
   const row=await dbInsertInspection(pid,patch);
@@ -529,7 +610,7 @@ function addCertFormHtml(pid){
     <div class="field"><label class="f">Type</label><input type="text" id="cf_type" style="width:100%" placeholder="e.g. Certificate of Occupancy"></div>
     <div class="field" style="margin-top:8px"><label class="f">Authority</label><input type="text" id="cf_authority" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:8px"><label class="f">Cert #</label><input type="text" id="cf_certno" style="width:100%" placeholder="optional"></div>
-    <div class="field" style="margin-top:8px;display:flex;gap:10px"><div style="flex:1"><label class="f">Issued</label><input type="text" id="cf_issue" style="width:100%" placeholder="MM/DD/YY"></div><div style="flex:1"><label class="f">Expires</label><input type="text" id="cf_exp" style="width:100%" placeholder="MM/DD/YY (blank = perpetual)"></div></div>
+    <div class="field field-pair" style="margin-top:8px;display:flex;gap:10px"><div style="flex:1"><label class="f">Issued</label><input type="date" id="cf_issue" style="width:100%"></div><div style="flex:1"><label class="f">Expires</label><input type="date" id="cf_exp" style="width:100%"><div class="faint" style="font-size:11px;margin-top:3px">Leave blank if perpetual</div></div></div>
     <div class="field" style="margin-top:8px"><label class="f">Cadence</label><input type="text" id="cf_cadence" style="width:100%" placeholder="e.g. Annual"></div>
     <div class="field" style="margin-top:8px"><label class="f">Status</label><input type="text" id="cf_status" style="width:100%" placeholder="optional — e.g. in renewal"></div>
     <div class="field" style="margin-top:8px"><label class="f">Responsible</label><input type="text" id="cf_resp" style="width:100%" placeholder="optional"></div>
@@ -541,11 +622,11 @@ function addInspectionFormHtml(pid){
     <div class="b" style="margin-bottom:8px">New inspection</div>
     <div class="field"><label class="f">Type</label><input type="text" id="if_type" style="width:100%" placeholder="e.g. Fire Safety"></div>
     <div class="field" style="margin-top:8px"><label class="f">Inspector</label><input type="text" id="if_inspector" style="width:100%" placeholder="optional"></div>
-    <div class="field" style="margin-top:8px;display:flex;gap:10px"><div style="flex:1"><label class="f">Scheduled</label><input type="text" id="if_scheduled" style="width:100%" placeholder="MM/DD/YY"></div><div style="flex:1"><label class="f">Completed</label><input type="text" id="if_completed" style="width:100%" placeholder="MM/DD/YY"></div></div>
+    <div class="field field-pair" style="margin-top:8px;display:flex;gap:10px"><div style="flex:1"><label class="f">Scheduled</label><input type="date" id="if_scheduled" style="width:100%"></div><div style="flex:1"><label class="f">Completed</label><input type="date" id="if_completed" style="width:100%"></div></div>
     <div class="field" style="margin-top:8px"><label class="f">Result</label><input type="text" id="if_result" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:8px"><label class="f">Findings</label><input type="text" id="if_findings" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:8px"><label class="f">Corrective action</label><input type="text" id="if_corrective" style="width:100%" placeholder="optional"></div>
-    <div class="field" style="margin-top:8px"><label class="f">Next due</label><input type="text" id="if_nextdue" style="width:100%" placeholder="MM/DD/YY"></div>
+    <div class="field" style="margin-top:8px"><label class="f">Next due</label><input type="date" id="if_nextdue" style="width:100%"></div>
     <div style="margin-top:12px;display:flex;gap:8px"><button class="btn sm" onclick="submitNewInspection('${pid}')">Add inspection</button><button class="btn sec sm" onclick="toggleInspForm('${pid}')">Cancel</button></div>
   </div></div>`;
 }
@@ -1005,6 +1086,10 @@ function mdyy(d){if(d==null||d==='—'||d==='')return '—';const dt=(d instance
 // a Date. 2-digit years use the standard windowing rule (00-68 -> 2000s, 69-99 -> 1900s) — matches how
 // browsers already parse "MM/DD/YY" strings, so this stays consistent with the bulk-upload date parser.
 function parseMDYY(s){s=String(s||'').trim();if(!s)return null;const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);if(!m)return null;const mo=+m[1],da=+m[2];let yr=+m[3];if(m[3].length===2)yr=yr<=68?2000+yr:1900+yr;if(mo<1||mo>12||da<1||da>31)return null;const d=new Date(yr,mo-1,da,0,0,0,0);return isNaN(d.getTime())?null:d;}
+// Accepts either the ISO value a native <input type="date"> gives (yyyy-mm-dd) or a
+// legacy-typed MM/DD/YY string — used everywhere a date field might now be either, since the
+// mobile-responsiveness pass (Aug 2026) switched most free-text date fields to type="date".
+function parseFlexDate(s){s=String(s||'').trim();if(!s)return null;if(/^\d{4}-\d{2}-\d{2}$/.test(s)){const d=new Date(s+'T00:00:00');return isNaN(d.getTime())?null:d;}return parseMDYY(s);}
 function toISODate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fdate(d){return d?mdyy(d):'—';}
 function initials(name){return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();}
@@ -1047,17 +1132,17 @@ function renderUserManagement(el){
   el.innerHTML=`<div class="uroles-head">
     <div class="uroles-headtext">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</div>
     <button class="uroles-refresh" onclick="refreshUserRoles()">🔄 Refresh</button></div>
-  <div class="card uroles-card"><div class="body" style="padding:0">${USER_ROLES.length?`<table class="uroles-table"><thead><tr>
-    <th>Name</th><th>Email</th><th>Role</th><th>Property access</th><th>Since</th>
+  <div class="card uroles-card" style="overflow-x:auto"><div class="body" style="padding:0">${USER_ROLES.length?`<table class="uroles-table"><thead><tr>
+    <th>Name</th><th class="pri2">Email</th><th>Role</th><th class="pri3">Property access</th><th class="pri2">Since</th>
   </tr></thead><tbody>${USER_ROLES.map(u=>{
     const mine=PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===u.user_id);
     const names=mine.map(a=>{const p=PROPS.find(x=>x.id===a.property_id);return p?p.name:null;}).filter(Boolean);
     return `<tr>
-    <td><div class="uroles-person"><span class="uroles-avatar">${esc(initials(u.name||u.email))}</span><span class="uroles-name">${esc(u.name||'—')}</span></div></td>
-    <td class="uroles-email">${esc(u.email)}</td>
+    <td><div class="uroles-person"><span class="uroles-avatar">${esc(initials(u.name||u.email))}</span><span class="uroles-name trunc" style="max-width:150px">${esc(u.name||'—')}</span></div></td>
+    <td class="pri2 uroles-email trunc" style="max-width:180px">${esc(u.email)}</td>
     <td><select class="uroles-rolepill r-${u.role}" onchange="this.className='uroles-rolepill r-'+this.value;setUserRole('${u.user_id}',this.value,'${esc(u.email)}')">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
-    <td>${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
-    <td class="muted mono" style="white-space:nowrap;font-size:12px">${fdate(new Date(u.created_at))}</td>
+    <td class="pri3">${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
+    <td class="pri2 muted mono" style="white-space:nowrap;font-size:12px">${fdate(new Date(u.created_at))}</td>
   </tr>`;}).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
   <div class="uroles-foot">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>
   ${permissionsMatrixHtml()}`;
@@ -1689,7 +1774,7 @@ function updatePropField(pid,field,value,kind){
   else if(kind==='date'){
     const v=value.trim();
     if(v===''){p[field]=null;}
-    else{const d=parseMDYY(v);if(!d){toast('Enter a date as MM/DD/YY');return;}p[field]=toISODate(d);}
+    else{const d=parseFlexDate(v);if(!d){toast('Enter a valid date');return;}p[field]=toISODate(d);}
   }
   else{p[field]=value.trim()===''?null:value;}
   if(AUDIT_SENSITIVE_PROP_FIELDS.has(field)&&prev!==p[field])logAudit('Updated property field','property',p.name,field,prev,p[field]);
@@ -1717,9 +1802,13 @@ function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';document.querySelec
   const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
   else{const s=STAFF[r];document.getElementById('sideName').textContent=s.name;document.getElementById('sideRole').textContent=s.role;const av=document.getElementById('sideAvatar');av.textContent=initials(s.name);av.style.background=s.color;navigate('dashboard');}}
+/* Mobile nav drawer (<=900px) — hamburger opens, tapping the scrim or a nav link closes it.
+   Separate from drawer()/closeDrawer() above, which is the unrelated detail-panel slide-out. */
+function toggleNavDrawer(){document.getElementById('sideNav').classList.toggle('open');document.getElementById('navScrim').classList.toggle('open');}
+function closeNavDrawer(){document.getElementById('sideNav').classList.remove('open');document.getElementById('navScrim').classList.remove('open');}
 function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});items.splice(aix+3,0,{id:'errorlog',ic:'🛠️',label:'Error Log',count:()=>ERROR_LOG.filter(e=>!e.resolvedAt).length});items.splice(aix+4,0,{id:'auditlog',ic:'📜',label:'Audit Log'});}
   nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
-function navigate(v){if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
+function navigate(v){closeNavDrawer();if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
   if(v==='approvals'){document.getElementById('viewTitle').textContent='Approvals';document.getElementById('crumb').textContent='Sign-offs & escalations';}
   else{document.getElementById('viewTitle').textContent=t[0];document.getElementById('crumb').textContent=t[1];}
   const el=document.getElementById('view');el.scrollTop=0;
@@ -1749,9 +1838,9 @@ async function loadErrorLog(){
 }
 function errLogTime(iso){const d=new Date(iso);return fdate(d)+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
 function errRow(e){
-  return `<tr><td class="mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
-    <td class="muted">${esc(e.path||'—')}</td>
-    <td class="muted">${esc(e.userEmail||'—')}${e.userRole?' ('+esc(e.userRole)+')':''}</td>
+  return `<tr><td class="pri2 mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
+    <td class="pri2 muted">${esc(e.path||'—')}</td>
+    <td class="pri3 muted">${esc(e.userEmail||'—')}${e.userRole?' ('+esc(e.userRole)+')':''}</td>
     <td style="max-width:420px">${esc(e.message)}</td>
     <td>${e.resolvedAt?'<span class="faint" style="font-size:11.5px">✓ resolved</span>':`<button class="btn sec sm" onclick="resolveErrorLogEntry('${e.id}')">Mark resolved</button>`}</td>
   </tr>`;
@@ -1761,10 +1850,10 @@ function renderErrorLog(el){
   const resolved=ERROR_LOG.filter(e=>e.resolvedAt);
   el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">Every " failed" message anyone sees in the app — a save, delete, restore, or upload that didn't go through — is written here automatically the moment it happens, so a background failure nobody mentioned doesn't just disappear. Most recent 200 shown, newest first.</div>
   <div class="sectitle">Open (${open.length})</div>
-  <div class="card"><table><thead><tr><th>When</th><th>Screen</th><th>Who</th><th>Message</th><th></th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th class="pri2">When</th><th class="pri2">Screen</th><th class="pri3">Who</th><th>Message</th><th></th></tr></thead><tbody>
   ${open.length?open.map(errRow).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open errors — nothing has failed since this started logging.</td></tr>'}
   </tbody></table></div>
-  ${resolved.length?`<div class="sectitle" style="margin-top:18px">Resolved (${resolved.length})</div><div class="card"><table><thead><tr><th>When</th><th>Screen</th><th>Who</th><th>Message</th><th></th></tr></thead><tbody>${resolved.map(errRow).join('')}</tbody></table></div>`:''}`;
+  ${resolved.length?`<div class="sectitle" style="margin-top:18px">Resolved (${resolved.length})</div><div class="card" style="overflow-x:auto"><table><thead><tr><th class="pri2">When</th><th class="pri2">Screen</th><th class="pri3">Who</th><th>Message</th><th></th></tr></thead><tbody>${resolved.map(errRow).join('')}</tbody></table></div>`:''}`;
 }
 async function resolveErrorLogEntry(id){
   const {data:{user}}=await sb.auth.getUser();
@@ -1809,17 +1898,17 @@ function auditRow(e){
     :e.old_value!=null?'(cleared — was '+esc(e.old_value)+')'
     :'';
   return `<tr>
-    <td class="mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
-    <td class="muted">${esc(e.actor_email||'—')}${e.actor_role?' ('+esc(e.actor_role)+')':''}</td>
+    <td class="pri2 mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
+    <td class="pri3 muted">${esc(e.actor_email||'—')}${e.actor_role?' ('+esc(e.actor_role)+')':''}</td>
     <td>${esc(e.action)}</td>
     <td class="muted">${esc(e.object_type||'')}${e.object_ref?': '+esc(e.object_ref):''}</td>
-    <td class="muted">${e.field?esc(e.field):'—'}</td>
+    <td class="pri2 muted">${e.field?esc(e.field):'—'}</td>
     <td style="max-width:280px">${change}</td>
   </tr>`;
 }
 function renderAuditLog(el){
   el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">An immutable record of sensitive changes — Senior-Admin-locked property/loan fields, role changes, property assignments, and permanent deletions. Nothing here can be edited or removed, by anyone, through the app. Most recent 300 shown, newest first. Scope §5.2/§5.5.</div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Record</th><th>Field</th><th>Change</th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th class="pri2">When</th><th class="pri3">Who</th><th>Action</th><th>Record</th><th class="pri2">Field</th><th>Change</th></tr></thead><tbody>
   ${AUDIT_LOG.length?AUDIT_LOG.map(auditRow).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No audited changes yet.</td></tr>'}
   </tbody></table></div>`;
 }
@@ -1868,7 +1957,7 @@ function renderTickets(el){
   const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
   const clearX=(key,label)=>`<a onclick="event.stopPropagation();clearFilter('${key}')" title="Clear ${label} filter" style="font-size:13px;color:var(--faint);cursor:pointer;flex-shrink:0;text-transform:none;letter-spacing:0;font-weight:700;padding:4px 6px;margin:-4px -6px;display:inline-block;line-height:1">✕</a>`;
   const thTitle=(inner)=>`<div style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px;white-space:normal;text-align:left;min-height:28px">${inner}</div>`;
-  const thSel=(key,label,opts)=>`<th style="text-align:left;min-width:118px;vertical-align:top">
+  const thSel=(key,label,opts,cls)=>`<th class="${cls||''}" style="text-align:left;min-width:118px;vertical-align:top">
     ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
     <select onchange="setF('${key}',this.value)" style="${fSel};width:100%" title="Filter by ${label}"><option value="all"${FILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>
   </th>`;
@@ -1902,10 +1991,10 @@ function renderTickets(el){
     </div></div>
   ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
   <div class="card" style="overflow-x:auto"><table style="min-width:1500px"><thead><tr>
-    <th style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
+    <th class="pri2" style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
     ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})))}
     ${thSel('status','Status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))}
-    <th style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
+    <th class="pri2" style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
       ${thTitle(`<span>Created</span>${clearX('created','Created')}`)}
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="From MM/DD/YY" title="From date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="To MM/DD/YY" title="To date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
@@ -1915,9 +2004,9 @@ function renderTickets(el){
       <input type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.descQuery)}" oninput="setFLive('descQuery',this.value)" placeholder="Search..." title="Filter by description text" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
     </th>
     ${thSel('urgency','Priority',['Emergency','Urgent','Low'].map(u=>({v:u,l:u})))}
-    ${thSel('svc','Service Category',svcOpts.map(s=>({v:s,l:s})))}
-    ${thSel('vendor','Vendor',vendorOpts.map(v=>({v:v,l:v})))}
-    <th style="text-align:left;min-width:110px;vertical-align:top">
+    ${thSel('svc','Service Category',svcOpts.map(s=>({v:s,l:s})),'pri2')}
+    ${thSel('vendor','Vendor',vendorOpts.map(v=>({v:v,l:v})),'pri2')}
+    <th class="pri3" style="text-align:left;min-width:110px;vertical-align:top">
       ${thTitle(`<span>Cost</span>${clearX('cost','Cost')}`)}
       <div id="costTotalDisplay" style="font-weight:800;font-size:11px;color:var(--os);text-transform:none;letter-spacing:0" title="Total cost across ${rows.length} filtered ticket${rows.length===1?'':'s'} (${costedCount} costed)">${money(totalCost)}</div>
       <div style="display:flex;gap:2px;margin-top:2px">
@@ -1925,9 +2014,9 @@ function renderTickets(el){
         <input type="number" value="${FILTER.costMax}" oninput="setFLive('costMax',this.value)" placeholder="Max" title="Maximum cost" style="${fSel};width:50%;text-transform:none">
       </div>
     </th>
-    ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))])}
-    ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}])}
-    <th style="text-align:left;min-width:130px;vertical-align:top">
+    ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))],'pri2')}
+    ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}],'pri3')}
+    <th class="pri2" style="text-align:left;min-width:130px;vertical-align:top">
       ${thTitle(`<span>Notes</span>${clearX('notesQuery','Notes')}`)}
       <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by notes text" style="${fSel};width:100%;text-transform:none;font-weight:400">
     </th>
@@ -1968,18 +2057,18 @@ function filtered(){
   return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(FILTER.metro==='all'||(FILTER.metro==='__blank__'?!propById(t.prop).metro:propById(t.prop).metro===FILTER.metro))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
 }
 function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
-  <td onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
-  <td class="b">${propById(t.prop).name}</td>
+  <td class="pri2" onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
+  <td class="b trunc" style="max-width:130px">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
-  <td class="muted mono" style="white-space:nowrap">${fdate(t.created)}</td>
-  <td><div>${CAT[t.svc]||'🛠️'} ${t.title}</div></td>
+  <td class="pri2 muted mono" style="white-space:nowrap">${fdate(t.created)}</td>
+  <td><div class="trunc" style="max-width:260px">${CAT[t.svc]||'🛠️'} ${t.title}</div></td>
   <td>${ubadge(t.urgency)}</td>
-  <td class="muted">${t.svc||'—'}</td>
-  <td>${t.vendor||'<span class="faint">—</span>'}</td>
-  <td onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
-  <td onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
-  <td onclick="event.stopPropagation()">${paySelect(t)}</td>
-  <td onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add note…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
+  <td class="pri2 muted">${t.svc||'—'}</td>
+  <td class="pri2">${t.vendor||'<span class="faint">—</span>'}</td>
+  <td class="pri3" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
+  <td class="pri2" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
+  <td class="pri3" onclick="event.stopPropagation()">${paySelect(t)}</td>
+  <td class="pri2" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add note…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
 function drawTickets(){
   const rows=filtered();
   document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
@@ -2113,19 +2202,19 @@ function renderProperties(el){
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" id="propsRefreshBtn" onclick="refreshPropertiesFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
     ${ROLE==='admin'?'<button class="btn sec sm" onclick="startOnboard()">+ New property</button>':''}</div>
-  <div class="card"><table><thead><tr><th>Property</th><th>Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th>Stage</th><th>Open</th><th>Total items</th><th class="right">YTD Spend</th><th style="text-align:left;min-width:130px">Metro
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="pri2">Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="pri2">Stage</th><th class="pri3">Open</th><th class="pri2">Total items</th><th class="pri3 right">YTD Spend</th><th class="pri2" style="text-align:left;min-width:130px">Metro
     <select onchange="setPF('metro',this.value)" style="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer;margin-top:4px" title="Filter by Metro"><option value="all"${PFILTER.metro==='all'?' selected':''}>All</option>${metroOpts.map(m=>`<option value="${esc(m)}"${PFILTER.metro===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
   </th></tr></thead><tbody>
   ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');return `<tr class="clickable" onclick="openProperty('${p.id}')">
-    <td><span class="dotc" style="background:var(--${col})"></span> <span class="b">${p.name}</span><div class="faint" style="font-size:11.5px">${p.addr||'—'}</div></td>
-    <td><span class="pill ${p.own}">${p.own==='owned'?'Owned':'Leased'}</span></td>
+    <td><span class="dotc" style="background:var(--${col})"></span> <span class="b">${p.name}</span><div class="faint addr-city" style="font-size:11.5px">${p.metro||p.addr||'—'}</div><div class="faint addr-full trunc" style="font-size:11.5px;max-width:220px">${p.addr||'—'}</div></td>
+    <td class="pri2"><span class="pill ${p.own}">${p.own==='owned'?'Owned':'Leased'}</span></td>
     <td><span class="pill" style="border-color:var(--${col});color:var(--${col})">${p.status}</span></td>
     <td>${readinessPill(p)}</td>
-    <td class="muted" style="font-size:12.5px">${propStage(p)}</td>
-    <td class="mono" style="color:${openN?'var(--ext)':'var(--muted)'}">${openN}</td>
-    <td class="mono">${total}</td>
-    <td class="right mono">${money(propertySpendStats(p.id).ytd)}</td>
-    <td class="muted">${p.metro||'<span class="faint">—</span>'}</td></tr>`;}).join('')}
+    <td class="pri2 muted" style="font-size:12.5px">${propStage(p)}</td>
+    <td class="pri3 mono" style="color:${openN?'var(--ext)':'var(--muted)'}">${openN}</td>
+    <td class="pri2 mono">${total}</td>
+    <td class="pri3 right mono">${money(propertySpendStats(p.id).ytd)}</td>
+    <td class="pri2 muted">${p.metro||'<span class="faint">—</span>'}</td></tr>`;}).join('')}
   </tbody></table></div>`;
 }
 function openProperty(id){const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
@@ -2195,8 +2284,10 @@ function dval(v,suffix){if(v==null||v==='—')return '<span class="faint">—</s
 function propTxt(p,field,ph,w,kind,fmt){
   const val=p[field];
   if(ROLE!=='admin')return (val!=null&&val!=='—')?(fmt?fmt(val):dval(val)):'<span class="faint">—</span>';
-  const shown=kind==='date'?((val&&val!=='—')?mdyy(val):''):((val==null||val==='—')?'':String(val));
-  return `<input type="text" ${kind==='number'?'inputmode="decimal"':''} value="${esc(shown)}" placeholder="${ph||'—'}" style="width:${w||150}px;font-size:13px${kind==='number'?';text-align:right':''}" onchange="updatePropField('${p.id}','${field}',this.value${kind?`,'${kind}'`:''})">`;
+  const isDate=kind==='date';
+  const inType=isDate?'date':(kind==='tel'?'tel':'text');
+  const shown=isDate?((val&&val!=='—')?val:''):((val==null||val==='—')?'':String(val));
+  return `<input type="${inType}" ${kind==='number'?'inputmode="decimal"':''} value="${esc(shown)}" placeholder="${isDate?'':(ph||'—')}" style="width:${w||150}px;font-size:13px${kind==='number'?';text-align:right':''}" onchange="updatePropField('${p.id}','${field}',this.value${kind?`,'${kind}'`:''})">`;
 }
 function propMetroSelect(p){
   if(ROLE!=='admin')return dval(p.metro);
@@ -2255,7 +2346,7 @@ function propDetails(p){
     <div class="k">Levels / stories</div><div>${propTxt(p,'levels','—',70,'number')}</div>
     <div class="k">Parking</div><div>${propTxt(p,'parkingType','—',190)}</div>
     <div class="k">Management association</div><div>${propTxt(p,'mgmtAssocName','—',210)}</div>
-    <div class="k">Management contact</div><div>${propTxt(p,'mgmtContactPhone','—',170)}</div>
+    <div class="k">Management contact</div><div>${propTxt(p,'mgmtContactPhone','—',170,'tel')}</div>
     <div class="k">Management portal</div><div>${propTxt(p,'mgmtPortal','—',230)}</div>
     <div class="k">Portal login</div><div>${propTxt(p,'mgmtPortalLogin','—',190)}</div>
     <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update comments…" onchange="updatePropField('${p.id}','comments',this.value)">${esc(p.comments||'')}</textarea></div>
@@ -2895,8 +2986,8 @@ async function approvePropertyDocExtraction(propId,kind){
 
 /* ===== leases ===== */
 function renderLeases(el){el.innerHTML=`<div class="sectitle">Leased properties</div>
-  <div class="card"><table><thead><tr><th>Property</th><th>Landlord</th><th>Rent</th><th>Term</th><th>Next payment</th><th>Status</th><th></th></tr></thead><tbody>
-    ${LEASES.map(l=>{const p=propById(l.prop);return `<tr class="clickable" onclick="openProperty('${l.prop}')"><td class="b">${p.name}</td><td>${l.landlord||'—'}</td><td class="mono">${l.rent!=null?money(l.rent)+'/mo':'—'}</td><td class="muted">${l.term||'—'}</td><td class="mono">${l.next?fdate(l.next):'—'}</td><td><span class="badge ${l.escalated?'b-red':'b-assigned'}">${l.status}</span></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button> <button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No leased properties.</td></tr>'}
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="pri2">Landlord</th><th class="pri3">Rent</th><th class="pri2">Term</th><th class="pri3">Next payment</th><th>Status</th><th></th></tr></thead><tbody>
+    ${LEASES.map(l=>{const p=propById(l.prop);return `<tr class="clickable" onclick="openProperty('${l.prop}')"><td class="b trunc" style="max-width:130px">${p.name}</td><td class="pri2">${l.landlord||'—'}</td><td class="pri3 mono">${l.rent!=null?money(l.rent)+'/mo':'—'}</td><td class="pri2 muted">${l.term||'—'}</td><td class="pri3 mono">${l.next?fdate(l.next):'—'}</td><td><span class="badge ${l.escalated?'b-red':'b-assigned'}">${l.status}</span></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button> <button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No leased properties.</td></tr>'}
   </tbody></table></div>
   <div class="sectitle">Rent reminder ladder</div><div class="card"><div class="body row"><span class="pill">7 days — reminder</span><span class="pill">Due date — scheduled</span><span class="pill" style="border-color:var(--amber);color:var(--amber)">Renewal window</span><span class="pill" style="border-color:var(--red);color:var(--red)">Missed — auto-escalate → Senior Admin</span></div></div>`;}
 function payRent(id){
@@ -2990,12 +3081,12 @@ function vendorsFiltered(){
   ).sort((a,b)=>{const r=catRank(a)-catRank(b);return r!==0?r:a.name.localeCompare(b.name);});
 }
 function vrow(v){return `<tr class="clickable" onclick="openVendor('${v.id}')">
-    <td class="b">${v.name}</td>
-    <td class="muted">${v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>'}</td>
-    <td>${v.primary||'<span class="faint">—</span>'}</td>
-    <td>${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td>
-    <td class="muted">${v.email&&v.email!=='—'?v.email:'<span class="faint">—</span>'}</td>
-    <td class="muted">${v.phone&&v.phone!=='—'?v.phone:'<span class="faint">—</span>'}</td>
+    <td class="b trunc" style="max-width:160px">${v.name}</td>
+    <td class="pri2 muted">${v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>'}</td>
+    <td class="pri2">${v.primary||'<span class="faint">—</span>'}</td>
+    <td class="pri3">${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td>
+    <td class="pri2 muted">${v.email&&v.email!=='—'?v.email:'<span class="faint">—</span>'}</td>
+    <td class="muted">${v.phone&&v.phone!=='—'?`<a onclick="event.stopPropagation()" href="tel:${v.phone.replace(/[^\d+]/g,'')}">${v.phone}</a>`:'<span class="faint">—</span>'}</td>
     <td>${vendorExpiryPill(v)}</td>
   </tr>`;}
 function drawVendors(){
@@ -3023,11 +3114,11 @@ function renderVendors(el){
   const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
   const clearX=(key,label)=>`<a onclick="event.stopPropagation();clearVFilter('${key}')" title="Clear ${label} filter" style="font-size:13px;color:var(--faint);cursor:pointer;flex-shrink:0;text-transform:none;letter-spacing:0;font-weight:700;padding:4px 6px;margin:-4px -6px;display:inline-block;line-height:1">✕</a>`;
   const thTitle=(inner)=>`<div style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px;white-space:normal;text-align:left;min-height:28px">${inner}</div>`;
-  const thSel=(key,label,opts)=>`<th style="text-align:left;min-width:130px;vertical-align:top">
+  const thSel=(key,label,opts,cls)=>`<th class="${cls||''}" style="text-align:left;min-width:130px;vertical-align:top">
     ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
     <select onchange="setVF('${key}',this.value)" style="${fSel};width:100%" title="Filter by ${label}"><option value="all"${VFILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${VFILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>
   </th>`;
-  const thText=(key,label)=>`<th style="text-align:left;min-width:140px;vertical-align:top">
+  const thText=(key,label,cls)=>`<th class="${cls||''}" style="text-align:left;min-width:140px;vertical-align:top">
     ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
     <input type="text" value="${esc(VFILTER[key])}" oninput="setVFLive('${key}',this.value)" placeholder="Search..." title="Filter by ${label}" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
   </th>`;
@@ -3049,10 +3140,10 @@ function renderVendors(el){
   <div class="toolbar"><span class="b">${vendorsFiltered().length} of ${VENDORS.length} vendors</span>${vendorsExpiringCount()?`<span class="pill" style="border-color:var(--red);color:var(--red);margin-left:10px">⚠ ${vendorsExpiringCount()} vendor${vendorsExpiringCount()===1?'':'s'} with insurance/license expired or expiring within ${ASSUMPTIONS.complianceExpiringDays}d</span>`:''}</div>
   <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr>
     ${thText('nameQuery','Vendor')}
-    ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})))}
-    ${thSel('primary','Primary/Secondary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))])}
-    ${thText('contactQuery','Contact Name')}
-    ${thText('emailQuery','Email')}
+    ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})),'pri2')}
+    ${thSel('primary','Primary/Secondary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))],'pri2')}
+    ${thText('contactQuery','Contact Name','pri3')}
+    ${thText('emailQuery','Email','pri2')}
     ${thText('phoneQuery','Phone Number')}
     <th style="text-align:left;min-width:150px;vertical-align:top">${thTitle('<span>Insurance/License</span>')}</th>
   </tr></thead><tbody id="vtbody"></tbody></table></div>
@@ -3066,8 +3157,10 @@ function vendorTypeSelect(v){const opts=SVC_TYPES.slice();if(v.svctype&&!opts.in
 function vendorListSelect(v,field,listKey){const opts=REF_LISTS[listKey].values.slice();const cur=v[field];if(cur&&!opts.includes(cur))opts.push(cur);
   return `<select onchange="updateVendorField('${v.id}','${field}',this.value)" style="font-size:13px"><option value=""${!cur?' selected':''}>—</option>${opts.map(o=>`<option value="${esc(o)}"${cur===o?' selected':''}>${esc(o)}</option>`).join('')}</select>`;}
 function vendorTxt(v,field,ph,w,kind){const val=v[field];
-  const shown=kind==='date'?((val&&val!=='—')?mdyy(val):''):((val==null||val==='—')?'':String(val));
-  return `<input type="text" ${kind==='number'?'inputmode="decimal"':''} value="${esc(shown)}" placeholder="${ph||'—'}" style="width:${w||190}px;font-size:13px${kind==='number'?';text-align:right':''}" onchange="updateVendorField('${v.id}','${field}',this.value${kind?`,'${kind}'`:''})">`;}
+  const isDate=kind==='date';
+  const inType=isDate?'date':(kind==='tel'?'tel':'text');
+  const shown=isDate?((val&&val!=='—')?val:''):((val==null||val==='—')?'':String(val));
+  return `<input type="${inType}" ${kind==='number'?'inputmode="decimal"':''} value="${esc(shown)}" placeholder="${isDate?'':(ph||'—')}" style="width:${w||190}px;font-size:13px${kind==='number'?';text-align:right':''}" onchange="updateVendorField('${v.id}','${field}',this.value${kind?`,'${kind}'`:''})">`;}
 function vendorMetroField(v){
   const sel=v.metro||[];
   const opts=REF_LISTS.metro.values.filter(m=>!sel.includes(m));
@@ -3098,7 +3191,7 @@ function openVendor(id){const v=vendorById(id);if(!v)return;
       <div class="k">Pricing</div><div>${vendorTxt(v,'pricing','—',210)}</div>
       <div class="k">After-Hours Service</div><div>${vendorTxt(v,'afterHours','—',150)}</div>
       <div class="k">Contact Name</div><div>${vendorTxt(v,'contact','—',210)}</div>
-      <div class="k">Phone</div><div>${vendorTxt(v,'phone','—',170)}</div>
+      <div class="k">Phone</div><div>${vendorTxt(v,'phone','—',170,'tel')}</div>
       <div class="k">Email</div><div>${vendorTxt(v,'email','—',230)}</div>
       <div class="k">Portal/Website</div><div>${vendorTxt(v,'portal','—',230)}</div>
       <div class="k">Login Info</div><div>${vendorTxt(v,'login','—',190)}</div>
@@ -3137,7 +3230,7 @@ function updateVendorField(id,field,value,kind){
   else if(kind==='date'){
     const t=value.trim();
     if(t===''){v[field]=null;}
-    else{const d=parseMDYY(t);if(!d){toast('Enter a date as MM/DD/YY');return;}v[field]=toISODate(d);}
+    else{const d=parseFlexDate(t);if(!d){toast('Enter a valid date');return;}v[field]=toISODate(d);}
   }
   else{v[field]=value.trim()===''?null:value;}
   if(v._backend==='supabase'){
@@ -3161,12 +3254,12 @@ function renderCompliance(el){
     <div class="kpi"><div class="lab">Inspections scheduled</div><div class="val">${upcoming.length}</div></div>
   </div>
   <div class="sectitle">Certificates &amp; licenses — all properties</div>
-  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr><th>Property</th><th>Type</th><th>Authority</th><th>Cert #</th><th>Issued</th><th>Expires</th><th>Cadence</th><th>Status</th><th>Responsible</th><th></th></tr></thead><tbody>
-  ${CERTS.slice().sort((a,b)=>(daysTo(a.exp)??9999)-(daysTo(b.exp)??9999)).map(c=>`<tr><td class="b">${propById(c.prop).name}</td><td>${c.type}</td><td class="muted">${c.authority}</td><td class="muted">${c.certNo}</td><td class="mono">${dstr(c.issue)}</td><td class="mono">${c.exp?dstr(c.exp):'—'}</td><td class="muted">${c.cadence}</td><td>${certBadge(c)}</td><td class="muted">${c.resp}</td><td><button class="btn sec sm" onclick="navigate('properties');setTimeout(()=>openProperty('${c.prop}'),60)">View</button></td></tr>`).join('')}
+  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr><th>Property</th><th>Type</th><th class="pri2">Authority</th><th class="pri2">Cert #</th><th class="pri3">Issued</th><th>Expires</th><th class="pri2">Cadence</th><th>Status</th><th class="pri3">Responsible</th><th></th></tr></thead><tbody>
+  ${CERTS.slice().sort((a,b)=>(daysTo(a.exp)??9999)-(daysTo(b.exp)??9999)).map(c=>`<tr><td class="b trunc" style="max-width:130px">${propById(c.prop).name}</td><td>${c.type}</td><td class="pri2 muted">${c.authority}</td><td class="pri2 muted">${c.certNo}</td><td class="pri3 mono">${dstr(c.issue)}</td><td class="mono">${c.exp?dstr(c.exp):'—'}</td><td class="pri2 muted">${c.cadence}</td><td>${certBadge(c)}</td><td class="pri3 muted">${c.resp}</td><td><button class="btn sec sm" onclick="navigate('properties');setTimeout(()=>openProperty('${c.prop}'),60)">View</button></td></tr>`).join('')}
   </tbody></table></div>
   <div class="sectitle">Inspections — all properties</div>
-  <div class="card" style="overflow-x:auto"><table style="min-width:900px"><thead><tr><th>Property</th><th>Type</th><th>Inspector</th><th>Scheduled</th><th>Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>
-  ${INSPECTIONS.map(i=>`<tr><td class="b">${propById(i.prop).name}</td><td>${i.type}</td><td class="muted">${i.inspector}</td><td class="mono">${dstr(i.scheduled)}</td><td class="mono">${i.completed?dstr(i.completed):'—'}</td><td>${i.result}</td><td class="mono">${dstr(i.nextDue)}</td></tr>`).join('')}
+  <div class="card" style="overflow-x:auto"><table style="min-width:900px"><thead><tr><th>Property</th><th>Type</th><th class="pri2">Inspector</th><th class="pri2">Scheduled</th><th class="pri3">Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>
+  ${INSPECTIONS.map(i=>`<tr><td class="b trunc" style="max-width:130px">${propById(i.prop).name}</td><td>${i.type}</td><td class="pri2 muted">${i.inspector}</td><td class="pri2 mono">${dstr(i.scheduled)}</td><td class="pri3 mono">${i.completed?dstr(i.completed):'—'}</td><td>${i.result}</td><td class="mono">${dstr(i.nextDue)}</td></tr>`).join('')}
   </tbody></table></div>
   <div class="card" style="margin-top:14px"><div class="body row" style="justify-content:space-between;align-items:center"><div class="muted" style="font-size:12.5px">One-click PDF compilation of current CO, current licenses, last 12 months of inspections, and open corrective actions per property.</div><button class="btn sec sm" onclick="toast('Audit pack generated (PDF) — prototype stub')">📦 Generate portfolio audit pack</button></div></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Maps to Scope §4.2 Compliance, Certificate of Occupancy &amp; Inspections (cadence &amp; reminders, compliance dashboard, audit-pack generation).</div>`;
@@ -3518,7 +3611,7 @@ function openAddTicket(){
   const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
   const svcOpts=Object.keys(CAT);
   const svcTypeOpts=SVC_TYPES.slice(); // was a stale hardcoded duplicate of SVC_TYPES; now stays in sync with Reference Lists edits
-  const todayStr=mdyy(new Date());
+  const todayStr=toISODate(new Date());
   drawer(
     `<div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:19px;font-weight:800">New ticket</div></div>`,
     `${SUPA_CONFIGURED&&!plist.length?'<div class="muted" style="margin-bottom:10px">No properties set up yet — add one in Supabase (Table Editor → properties) first.</div>':''}
@@ -3537,7 +3630,7 @@ function openAddTicket(){
       </select>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Created</label>
-      <input type="text" id="nt_created" value="${todayStr}" placeholder="MM/DD/YY" style="width:100%">
+      <input type="date" id="nt_created" value="${todayStr}" style="width:100%">
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Description</label>
       <textarea id="nt_desc" style="width:100%;min-height:70px" placeholder="What's the issue?"></textarea>
@@ -3613,7 +3706,7 @@ async function submitNewTicket(){
   if(!desc){errEl.textContent='Add a short description.';return;}
   let cost=null;
   if(costRaw!==''){const n=Number(costRaw);if(isNaN(n)){errEl.textContent='Cost must be a number.';return;}cost=n;}
-  let created=createdRaw?parseMDYY(createdRaw):null;
+  let created=createdRaw?parseFlexDate(createdRaw):null;
   if(!created)created=new Date();
   const p=propById(propId);
   const title=desc.slice(0,60);
@@ -3824,13 +3917,13 @@ function openAddVendor(){
     <div class="field" style="margin-top:10px"><label class="f">Pricing</label><input type="text" id="nv_pricing" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:10px"><label class="f">After-Hours Service</label><input type="text" id="nv_afterhours" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:10px"><label class="f">Contact Name</label><input type="text" id="nv_contact" style="width:100%" placeholder="optional"></div>
-    <div class="field" style="margin-top:10px"><label class="f">Phone</label><input type="text" id="nv_phone" style="width:100%" placeholder="optional"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Phone</label><input type="tel" id="nv_phone" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:10px"><label class="f">Email</label><input type="text" id="nv_email" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:10px"><label class="f">Portal/Website</label><input type="text" id="nv_portal" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:10px"><label class="f">Login Info</label><input type="text" id="nv_login" style="width:100%" placeholder="optional"></div>
-    <div class="field" style="margin-top:10px"><label class="f">Insurance Expiry</label><input type="text" id="nv_insexp" style="width:100%" placeholder="MM/DD/YY"></div>
+    <div class="field" style="margin-top:10px"><label class="f">Insurance Expiry</label><input type="date" id="nv_insexp" style="width:100%"></div>
     <div class="field" style="margin-top:10px"><label class="f">Licenses</label><input type="text" id="nv_licenses" style="width:100%" placeholder="optional"></div>
-    <div class="field" style="margin-top:10px"><label class="f">License Expiry</label><input type="text" id="nv_licexp" style="width:100%" placeholder="MM/DD/YY"></div>
+    <div class="field" style="margin-top:10px"><label class="f">License Expiry</label><input type="date" id="nv_licexp" style="width:100%"></div>
     <div class="field" style="margin-top:10px"><label class="f">Referred by</label><input type="text" id="nv_referredby" style="width:100%" placeholder="optional"></div>
     <div class="field" style="margin-top:10px"><label class="f">Work Quality</label>
       <select id="nv_quality" style="width:100%"><option value="">— optional —</option>${qualityOpts.map(q=>`<option value="${esc(q)}">${esc(q)}</option>`).join('')}</select>
@@ -3860,11 +3953,11 @@ async function submitNewVendor(){
   const portal=g('nv_portal').trim()||null;
   const login=g('nv_login').trim()||null;
   const insExpRaw=g('nv_insexp').trim();
-  const insExpDate=insExpRaw?parseMDYY(insExpRaw):null;
-  if(insExpRaw&&!insExpDate){if(errEl)errEl.textContent='Insurance Expiry must be MM/DD/YY.';return;}
+  const insExpDate=insExpRaw?parseFlexDate(insExpRaw):null;
+  if(insExpRaw&&!insExpDate){if(errEl)errEl.textContent='Insurance Expiry must be a valid date.';return;}
   const licExpRaw=g('nv_licexp').trim();
-  const licExpDate=licExpRaw?parseMDYY(licExpRaw):null;
-  if(licExpRaw&&!licExpDate){if(errEl)errEl.textContent='License Expiry must be MM/DD/YY.';return;}
+  const licExpDate=licExpRaw?parseFlexDate(licExpRaw):null;
+  if(licExpRaw&&!licExpDate){if(errEl)errEl.textContent='License Expiry must be a valid date.';return;}
   const licenses=g('nv_licenses').trim()||null;
   const referredBy=g('nv_referredby').trim()||null;
   const quality=g('nv_quality')||null;
