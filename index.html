@@ -2271,7 +2271,7 @@ function valuationSection(){
   <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.5 Valuation Tracking — "variance alerts when AVM moves more than a configurable threshold (e.g., ±10%) month-over-month."</div>`;
 }
 function complianceRemindersSection(){
-  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">The "expiring soon" window below is live — it drives the amber warning badges on certificates/inspections and the Compliance dashboard's "expiring" count, portfolio-wide. The reminder cadence and escalation rules underneath are documented from Scope §4.2 for reference; they describe the intended notification behavior but aren't wired to actual email/SMS delivery in this prototype yet.</div>
+  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">The "expiring soon" window below is live — it drives the amber warning badges on certificates/inspections and the Compliance dashboard's "expiring" count, portfolio-wide, <b>and (added Aug 5, 2026) the same window now also drives Insurance Expiry / License Expiry alerting on Vendor Directory records</b> — a badge on each date in the vendor drawer, a status column on the Vendor Directory list, and a toolbar count of vendors needing renewal. One setting, both places. The reminder cadence and escalation rules underneath are documented from Scope §4.2 for reference; they describe the intended notification behavior but aren't wired to actual email/SMS delivery in this prototype yet.</div>
   <div class="card" style="margin-bottom:12px"><table><thead><tr><th>Assumption</th><th>Value</th></tr></thead><tbody>
   <tr><td class="b">"Expiring soon" window</td><td><input type="number" min="1" step="1" value="${ASSUMPTIONS.complianceExpiringDays}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('complianceExpiringDays',this.value)"> days</td></tr>
   </tbody></table></div>
@@ -2792,6 +2792,45 @@ let VFILTER={trade:'all',primary:'all',metro:'all',nameQuery:'',contactQuery:'',
 // Landing page sort: grouped by Service Category, following the category order set in
 // Assumptions → Reference Lists (not alphabetically) — vendors with no category go last,
 // and vendors within the same category are sorted alphabetically by name.
+/* ===== Vendor insurance/license expiry alerting — reuses the same "expiring soon" window
+   as Property Compliance (Assumptions -> Compliance Reminders -> "Expiring soon" window,
+   ASSUMPTIONS.complianceExpiringDays) so there's one setting for "how far ahead do we want
+   warned," not two. Insurance Expiry and License Expiry were previously just two plain date
+   fields with no alerting at all - this adds a badge on each field in the vendor drawer, a
+   summary column on the Vendor Directory list, and a toolbar count so an expiring vendor
+   doesn't require opening every record to notice. */
+function vendorExpiryStatus(dateStr){
+  if(!dateStr||dateStr==='—')return 'none';
+  const d=daysTo(dateStr);
+  if(d==null||isNaN(d))return 'none';
+  if(d<0)return 'expired';
+  if(d<=ASSUMPTIONS.complianceExpiringDays)return 'warn';
+  return 'ok';
+}
+function vendorFieldExpiryBadge(dateStr){
+  const s=vendorExpiryStatus(dateStr);
+  if(s==='expired')return '<span class="badge b-red">⚠ Expired</span>';
+  if(s==='warn')return `<span class="badge b-assigned">⏳ Expires in ${daysTo(dateStr)}d</span>`;
+  if(s==='ok')return '<span class="badge b-resolved">✓ Current</span>';
+  return '';
+}
+function vendorExpiryWorst(v){
+  const rank={none:0,ok:1,warn:2,expired:3};
+  const insS=vendorExpiryStatus(v.insExp),licS=vendorExpiryStatus(v.licExp);
+  return rank[insS]>=rank[licS]?insS:licS;
+}
+function vendorExpiryPill(v){
+  const worst=vendorExpiryWorst(v);
+  if(worst==='none')return '<span class="faint" style="font-size:12px">—</span>';
+  const label={expired:'⚠ Expired',warn:'⏳ Expiring soon',ok:'✓ Current'}[worst];
+  const color={expired:'red',warn:'amber',ok:'green'}[worst];
+  const parts=[];
+  const insS=vendorExpiryStatus(v.insExp),licS=vendorExpiryStatus(v.licExp);
+  if(insS==='expired')parts.push('Insurance: expired');else if(insS==='warn')parts.push('Insurance: expires in '+daysTo(v.insExp)+'d');
+  if(licS==='expired')parts.push('License: expired');else if(licS==='warn')parts.push('License: expires in '+daysTo(v.licExp)+'d');
+  return `<span class="pill" title="${esc(parts.join(' · ')||'Both current')}" style="border-color:var(--${color});color:var(--${color})">${label}</span>`;
+}
+function vendorsExpiringCount(){return VENDORS.filter(v=>{const w=vendorExpiryWorst(v);return w==='expired'||w==='warn';}).length;}
 function vendorsFiltered(){
   const catOrder=Object.keys(CAT);
   const catRank=(v)=>{const i=catOrder.indexOf(v.trade);return i===-1?catOrder.length:i;};
@@ -2812,11 +2851,12 @@ function vrow(v){return `<tr class="clickable" onclick="openVendor('${v.id}')">
     <td>${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td>
     <td class="muted">${v.email&&v.email!=='—'?v.email:'<span class="faint">—</span>'}</td>
     <td class="muted">${v.phone&&v.phone!=='—'?v.phone:'<span class="faint">—</span>'}</td>
+    <td>${vendorExpiryPill(v)}</td>
   </tr>`;}
 function drawVendors(){
   const rows=vendorsFiltered();
   const tb=document.getElementById('vtbody');
-  if(tb)tb.innerHTML=rows.length?rows.map(vrow).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:26px">No vendors match these filters.</td></tr>';
+  if(tb)tb.innerHTML=rows.length?rows.map(vrow).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:26px">No vendors match these filters.</td></tr>';
 }
 function setVF(k,v){VFILTER[k]=v;if(VIEW==='vendors')renderVendors(document.getElementById('view'));}
 function setVFLive(k,v){VFILTER[k]=v;drawVendors();}
@@ -2861,7 +2901,7 @@ function renderVendors(el){
       ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
       <button class="btn sec sm" onclick="clearAllVFilters()">Clear all filters</button>
     </span></div>
-  <div class="toolbar"><span class="b">${vendorsFiltered().length} of ${VENDORS.length} vendors</span></div>
+  <div class="toolbar"><span class="b">${vendorsFiltered().length} of ${VENDORS.length} vendors</span>${vendorsExpiringCount()?`<span class="pill" style="border-color:var(--red);color:var(--red);margin-left:10px">⚠ ${vendorsExpiringCount()} vendor${vendorsExpiringCount()===1?'':'s'} with insurance/license expired or expiring within ${ASSUMPTIONS.complianceExpiringDays}d</span>`:''}</div>
   <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr>
     ${thText('nameQuery','Vendor')}
     ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})))}
@@ -2869,6 +2909,7 @@ function renderVendors(el){
     ${thText('contactQuery','Contact Name')}
     ${thText('emailQuery','Email')}
     ${thText('phoneQuery','Phone Number')}
+    <th style="text-align:left;min-width:150px;vertical-align:top">${thTitle('<span>Insurance/License</span>')}</th>
   </tr></thead><tbody id="vtbody"></tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Fields map to Scope §4.9 Maintenance Vendor Directory · click a vendor for full details.</div>`;
   drawVendors();
@@ -2916,9 +2957,9 @@ function openVendor(id){const v=vendorById(id);if(!v)return;
       <div class="k">Email</div><div>${vendorTxt(v,'email','—',230)}</div>
       <div class="k">Portal/Website</div><div>${vendorTxt(v,'portal','—',230)}</div>
       <div class="k">Login Info</div><div>${vendorTxt(v,'login','—',190)}</div>
-      <div class="k">Insurance Expiry</div><div>${vendorTxt(v,'insExp','MM/DD/YY',110,'date')}</div>
+      <div class="k">Insurance Expiry</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${vendorTxt(v,'insExp','MM/DD/YY',110,'date')}${vendorFieldExpiryBadge(v.insExp)}</div>
       <div class="k">Licenses</div><div>${vendorTxt(v,'licenses','—',190)}</div>
-      <div class="k">License Expiry</div><div>${vendorTxt(v,'licExp','MM/DD/YY',110,'date')}</div>
+      <div class="k">License Expiry</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${vendorTxt(v,'licExp','MM/DD/YY',110,'date')}${vendorFieldExpiryBadge(v.licExp)}</div>
       <div class="k">Specific Properties</div><div>${vendorTxt(v,'properties','e.g. Fox-1, Highlands, or All',260)}</div>
       <div class="k">Referred by</div><div>${vendorTxt(v,'referredBy','—',190)}</div>
       <div class="k">Work Quality</div><div>${vendorListSelect(v,'quality','workQuality')}</div>
