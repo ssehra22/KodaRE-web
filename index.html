@@ -885,7 +885,7 @@ async function enterLiveApp(){
   await loadRealTicketAttachments();
   await loadRealNotes();
   await loadRealTrash();
-  if(ROLE==='admin'){await loadRealUserRoles();await loadRealPropertyAssignments();}
+  if(ROLE==='admin'){await loadRealUserRoles();await loadRealPropertyAssignments();await loadErrorLog();}
   if(ROLE==='admin'||ROLE==='office'){await loadPropertyAssignmentRoster();}
   computeHealth();
   buildNav();
@@ -1674,19 +1674,68 @@ let TRASH=[];
 let PFILTER={metro:'all'};
 
 const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'reports',ic:'📊',label:'Reports'},{id:'assumptions',ic:'🧮',label:'Assumptions'},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length},{id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length}];
-const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2']};
+const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2'],errorlog:['Error Log','Background failures, auto-logged — Senior Admin only']};
 function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
   const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
   else{const s=STAFF[r];document.getElementById('sideName').textContent=s.name;document.getElementById('sideRole').textContent=s.role;const av=document.getElementById('sideAvatar');av.textContent=initials(s.name);av.style.background=s.color;navigate('dashboard');}}
-function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});}
+function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});items.splice(aix+3,0,{id:'errorlog',ic:'🛠️',label:'Error Log',count:()=>ERROR_LOG.filter(e=>!e.resolvedAt).length});}
   nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
-function navigate(v){if((v==='assumptions'||v==='trash'||v==='users')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
+function navigate(v){if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
   if(v==='approvals'){document.getElementById('viewTitle').textContent='Approvals';document.getElementById('crumb').textContent='Sign-offs & escalations';}
   else{document.getElementById('viewTitle').textContent=t[0];document.getElementById('crumb').textContent=t[1];}
   const el=document.getElementById('view');el.scrollTop=0;
-  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement}[v]||renderDashboard)(el);}
-function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast">✓ ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);}
+  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement,errorlog:renderErrorLog}[v]||renderDashboard)(el);}
+function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast">✓ ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);
+  if(/ failed:/i.test(msg))logError(msg);}
+/* ===== lightweight error log (adapted from reshab-platform's error_log pattern) =====
+   Every " failed: " toast across the app (save/delete/restore/upload failures — the
+   convention already used almost everywhere error.message reaches the user) is also written
+   to Supabase automatically, so a background failure nobody happened to see doesn't just
+   disappear. Senior Admin only, both to read (message text can include property/vendor/ticket
+   details) and to see the nav item at all. Never lets a logging failure break the app itself -
+   errors from logError() are swallowed, not surfaced. */
+let ERROR_LOG=[];
+async function logError(message){
+  if(!SUPA_CONFIGURED)return;
+  try{
+    const {data:{user}}=await sb.auth.getUser();
+    await sb.from('error_log').insert({message:String(message).slice(0,2000),path:VIEW||null,user_id:user?user.id:null,user_email:user?user.email:null,user_role:ROLE||null});
+  }catch(e){/* swallow - logging must never itself break the app */}
+}
+async function loadErrorLog(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('error_log').select('*').order('at',{ascending:false}).limit(200);
+  if(error){console.error('Could not load error log',error);return;}
+  ERROR_LOG=(data||[]).map(r=>({id:r.id,at:r.at,message:r.message,path:r.path,userEmail:r.user_email,userRole:r.user_role,resolvedAt:r.resolved_at,resolvedBy:r.resolved_by}));
+}
+function errLogTime(iso){const d=new Date(iso);return fdate(d)+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+function errRow(e){
+  return `<tr><td class="mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
+    <td class="muted">${esc(e.path||'—')}</td>
+    <td class="muted">${esc(e.userEmail||'—')}${e.userRole?' ('+esc(e.userRole)+')':''}</td>
+    <td style="max-width:420px">${esc(e.message)}</td>
+    <td>${e.resolvedAt?'<span class="faint" style="font-size:11.5px">✓ resolved</span>':`<button class="btn sec sm" onclick="resolveErrorLogEntry('${e.id}')">Mark resolved</button>`}</td>
+  </tr>`;
+}
+function renderErrorLog(el){
+  const open=ERROR_LOG.filter(e=>!e.resolvedAt);
+  const resolved=ERROR_LOG.filter(e=>e.resolvedAt);
+  el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">Every " failed" message anyone sees in the app — a save, delete, restore, or upload that didn't go through — is written here automatically the moment it happens, so a background failure nobody mentioned doesn't just disappear. Most recent 200 shown, newest first.</div>
+  <div class="sectitle">Open (${open.length})</div>
+  <div class="card"><table><thead><tr><th>When</th><th>Screen</th><th>Who</th><th>Message</th><th></th></tr></thead><tbody>
+  ${open.length?open.map(errRow).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open errors — nothing has failed since this started logging.</td></tr>'}
+  </tbody></table></div>
+  ${resolved.length?`<div class="sectitle" style="margin-top:18px">Resolved (${resolved.length})</div><div class="card"><table><thead><tr><th>When</th><th>Screen</th><th>Who</th><th>Message</th><th></th></tr></thead><tbody>${resolved.map(errRow).join('')}</tbody></table></div>`:''}`;
+}
+async function resolveErrorLogEntry(id){
+  const {data:{user}}=await sb.auth.getUser();
+  const {error}=await sb.from('error_log').update({resolved_at:new Date().toISOString(),resolved_by:user?user.id:null}).eq('id',id);
+  if(error){toast('Could not mark resolved: '+error.message);return;}
+  const e=ERROR_LOG.find(x=>x.id===id);if(e)e.resolvedAt=new Date().toISOString();
+  toast('Marked resolved');
+  if(VIEW==='errorlog')renderErrorLog(document.getElementById('view'));
+}
 function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};return (U[a.urgency]-U[b.urgency])||(new Date(b.created)-new Date(a.created));}
 
 /* ===== dashboard ===== */
