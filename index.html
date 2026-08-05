@@ -1311,6 +1311,149 @@ async function removeInvoiceFile(id){
   toast('Invoice attachment removed');
   refreshTickets();
 }
+/* ===== AI-matched vendor invoice - Scope Section 4.10 "Invoice matching" (the "Read"/"Match"
+   steps) ===== Extends the manual attach flow above: instead of a human pre-selecting tickets
+   and typing one total, staff pick a vendor (and optionally a property) and upload the
+   invoice file; KodaRE reads it, proposes which of that vendor's Completed/Closed,
+   not-yet-invoiced tickets it covers, and drafts a cost + invoice number per matched ticket.
+   Nothing is written to any ticket until staff review and confirm - same "AI drafts, human
+   approves" pattern as the Loan/Deed/Lease/Inspection Report readers (Phase 22/23) - and it
+   plugs into the existing Match Proposed -> Ready for Payment lifecycle and reconciliation
+   check above unchanged (same invoice/invoiceTotal fields, so invoiceGroups() picks it up
+   automatically). Office Staff and Senior Admin only, matching the Section 3.2 "Expenses &
+   invoices" R/W row - Field Staff never sees the Maintenance list at all. */
+function openInvoiceUploadModal(){
+  if(ROLE==='caregiver')return;
+  if(!SUPA_CONFIGURED){toast('AI invoice matching needs the live Supabase backend.');return;}
+  const vendorOpts=VENDORS.slice().sort((a,b)=>a.name.localeCompare(b.name));
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:18px;font-weight:800;margin-top:2px">🤖 Upload vendor invoice</div></div>`,
+    `<div class="card"><div class="body">
+      <div class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.55">KodaRE will read the invoice and propose which of this vendor's Completed/Closed, not-yet-invoiced tickets it covers — with a proposed cost and invoice number per matched ticket. Invoice dates aren't used to filter or match (they often don't line up with when the ticket work was actually done or logged) — matching is based on the vendor and the description of the work. Nothing is written to any ticket until you review and confirm.</div>
+      <div class="field"><label class="f">Vendor (required)</label><select id="invModalVendor" style="width:100%"><option value="">— select —</option>${vendorOpts.map(v=>`<option value="${esc(v.name)}">${esc(v.name)} (${esc(v.trade||'')})</option>`).join('')}</select></div>
+      <div class="field" style="margin-top:10px"><label class="f">Property (optional — narrows the match; leave blank if the invoice spans more than one property)</label><select id="invModalProp" style="width:100%"><option value="">— any property —</option>${PROPS.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="field" style="margin-top:10px"><label class="f">Invoice file (PDF or photo)</label><input type="file" id="invModalFile" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif" style="width:100%"></div>
+    </div></div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn sec sm" onclick="closeDrawer()">Cancel</button>
+      <button class="btn sm" id="invModalGoBtn" onclick="startInvoiceMatchExtraction()">🤖 Read &amp; propose matches</button>
+    </div>`);
+}
+async function uploadInvoiceFileToStorage(file){
+  const path=`_pending/${Date.now()}_${file.name}`;
+  const {error:upErr}=await sb.storage.from('invoices').upload(path,file,{upsert:true});
+  if(upErr){toast('Upload failed: '+upErr.message);return null;}
+  const {data:signed}=await sb.storage.from('invoices').createSignedUrl(path,60*60*24*7);
+  return {path,url:signed?signed.signedUrl:null,name:file.name};
+}
+function invoiceCandidateTickets(vendorName,propId){
+  return TICKETS.filter(t=>t.vendor===vendorName
+    && (t.status==='Completed'||t.status==='Closed')
+    && !t.invoice
+    && (!propId||t.prop===propId)
+  ).map(t=>({id:t.id,ref:ticketRef(t),title:t.title,desc:t.desc||t.notes||t.title}));
+}
+async function startInvoiceMatchExtraction(){
+  const vendorName=(document.getElementById('invModalVendor')||{}).value;
+  const propId=(document.getElementById('invModalProp')||{}).value||null;
+  const fileInput=document.getElementById('invModalFile');
+  const file=fileInput&&fileInput.files&&fileInput.files[0];
+  if(!vendorName){toast('Pick a vendor first');return;}
+  if(!file){toast('Choose an invoice file');return;}
+  const candidates=invoiceCandidateTickets(vendorName,propId);
+  if(!candidates.length){const propName=propId?((propById(propId)||{}).name||''):'';toast('No Completed/Closed, not-yet-invoiced tickets found for '+vendorName+(propName?' at '+propName:'')+' — nothing to match against.');return;}
+  const btn=document.getElementById('invModalGoBtn');
+  if(btn){btn.disabled=true;btn.textContent='🤖 Reading…';}
+  try{
+    const uploaded=await uploadInvoiceFileToStorage(file);
+    if(!uploaded)return;
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session){toast('Your session has expired — please sign in again.');return;}
+    const resp=await fetch('/api/extract-invoice',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({path:uploaded.path,candidates})});
+    const result=await resp.json().catch(()=>({}));
+    if(!resp.ok||!result.ok){toast('Could not read invoice: '+(result.error||resp.statusText||'unknown error'));return;}
+    openInvoiceMatchReview(result,uploaded);
+  }catch(e){
+    toast('Could not reach the extraction service: '+e.message);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='🤖 Read & propose matches';}
+  }
+}
+function openInvoiceMatchReview(result,uploaded){
+  const items=(result.items||[]).map((it,ix)=>Object.assign({_ix:ix},it));
+  const matched=items.filter(it=>it.matchedTicketId&&TICKETS.some(t=>t.id===it.matchedTicketId));
+  const unmatched=items.filter(it=>!(it.matchedTicketId&&TICKETS.some(t=>t.id===it.matchedTicketId)));
+  const anyLineAmounts=matched.some(it=>it.amount!=null);
+  // Cost handling per Scope Section 4.10: a lump-sum invoice with no per-line breakdown
+  // defaults its full total onto the largest/primary matched ticket (here: the first match);
+  // staff can move cost between matched tickets manually before confirming.
+  if(!anyLineAmounts&&result.total!=null&&matched.length){
+    matched[0]._lumpDefault=true;
+    matched[0].amount=result.total;
+  }
+  const rowHtml=(it)=>{
+    const t=TICKETS.find(x=>x.id===it.matchedTicketId);
+    const p=t?propById(t.prop):null;
+    return `<div class="mrow" style="padding:10px 0;border-top:1px solid var(--line);align-items:flex-start">
+      <div style="flex:1">
+        <div class="b" style="font-size:13px">${esc(ticketRef(t))} — ${esc(t.title||'')}</div>
+        <div class="faint" style="font-size:11.5px">${p?esc(p.name):'—'} · matched from: "${esc(it.description||'')}"</div>
+        ${it._lumpDefault?'<div class="faint" style="font-size:11px;color:var(--amber,#b8860b);margin-top:2px">⚠ Lump-sum invoice — full total defaulted here; split across the other matched tickets below as needed</div>':''}
+      </div>
+      <div style="width:120px"><label class="f" style="font-size:10.5px">Proposed cost</label><input type="number" step="0.01" id="invRevCost_${it._ix}" value="${it.amount!=null?it.amount:''}" style="width:100%;font-size:13px"></div>
+      <div style="width:24px;padding-top:20px"><input type="checkbox" id="invRevInclude_${it._ix}" checked title="Include this match"></div>
+    </div>`;
+  };
+  window._invReview={matched,uploaded};
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">Maintenance · from ${esc(uploaded.name)}</div><div style="font-size:18px;font-weight:800;margin-top:2px">Review proposed invoice matches</div></div>`,
+    `<div class="card"><div class="body">
+      <div class="kv" style="margin-bottom:12px">
+        <div class="k">Invoice #</div><div><input type="text" id="invRevNumber" value="${esc(result.invoiceNumber||uploaded.name)}" style="width:100%;font-size:13px"></div>
+        <div class="k">Invoice date</div><div>${result.invoiceDate?esc(result.invoiceDate):'<span class="faint">not read</span>'}</div>
+        <div class="k">Invoice total</div><div><input type="number" step="0.01" id="invRevTotal" value="${result.total!=null?result.total:''}" style="width:140px;font-size:13px"></div>
+      </div>
+      <div class="muted" style="font-size:12.5px;line-height:1.55;margin-bottom:6px">KodaRE matched ${matched.length} line item${matched.length===1?'':'s'} to existing tickets by description — dates weren't used. Uncheck anything that's wrong, or adjust cost, before confirming. <b>Nothing is saved until you confirm below.</b></div>
+      ${matched.length?matched.map(rowHtml).join(''):'<div class="muted" style="padding:14px 0">No confident matches found — nothing to confirm. Try attaching this invoice manually via drag-and-drop on the Maintenance list instead.</div>'}
+    </div></div>
+    ${unmatched.length?`<div class="card" style="margin-top:12px"><div class="body">
+      <div class="b" style="font-size:13px;margin-bottom:6px">Not matched to any ticket</div>
+      <div class="muted" style="font-size:12px;margin-bottom:8px;line-height:1.5">KodaRE couldn't confidently match these lines to a Completed/Closed, not-yet-invoiced ticket for this vendor. Nothing happens to these automatically — check for a still-open or missing ticket, or match manually via drag-and-drop.</div>
+      ${unmatched.map(it=>`<div class="mrow" style="padding:4px 0;font-size:12.5px">• ${esc(it.description||'(no description)')}${it.amount!=null?' — '+money(it.amount):''}</div>`).join('')}
+    </div></div>`:''}
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn sec sm" onclick="closeDrawer()">Discard</button>
+      ${matched.length?`<button class="btn sm" onclick="confirmInvoiceMatches()">✓ Confirm &amp; set Match Proposed</button>`:''}
+    </div>`);
+}
+async function confirmInvoiceMatches(){
+  const rev=window._invReview;if(!rev)return;
+  const invoiceNumber=((document.getElementById('invRevNumber')||{}).value||'').trim()||rev.uploaded.name;
+  const totalRaw=(document.getElementById('invRevTotal')||{}).value;
+  const invoiceTotal=(totalRaw!==''&&totalRaw!=null&&!isNaN(Number(totalRaw)))?Number(totalRaw):null;
+  let n=0,anyLocal=false;
+  for(const it of rev.matched){
+    const inc=document.getElementById('invRevInclude_'+it._ix);
+    if(!inc||!inc.checked)continue;
+    const t=TICKETS.find(x=>x.id===it.matchedTicketId);if(!t)continue;
+    const costEl=document.getElementById('invRevCost_'+it._ix);
+    const costRaw=costEl?costEl.value.trim():'';
+    const cost=(costRaw!==''&&!isNaN(Number(costRaw)))?Number(costRaw):t.cost;
+    if(t._backend==='supabase'){
+      const ok=await dbUpdateTicket(t.id,{cost,invoice_number:invoiceNumber,invoice_file_url:rev.uploaded.url,invoice_file_name:rev.uploaded.name,invoice_total:invoiceTotal,payment_status:'Match Proposed'});
+      if(!ok)continue;
+      t.cost=cost;t.invoice=invoiceNumber;t.invoiceFileUrl=rev.uploaded.url;t.invoiceFileName=rev.uploaded.name;t.invoiceTotal=invoiceTotal;t.payment='Match Proposed';
+      dbLogActivity(t.id,'Invoice matched by AI',invoiceNumber+' · proposed cost '+money(cost)+' — from '+rev.uploaded.name);
+      n++;
+    } else {
+      t.cost=cost;t.invoice=invoiceNumber;t.invoiceFileUrl=rev.uploaded.url;t.invoiceFileName=rev.uploaded.name;t.invoiceTotal=invoiceTotal;t.payment='Match Proposed';
+      anyLocal=true;n++;
+    }
+  }
+  if(anyLocal)saveState();
+  window._invReview=null;
+  toast(n?(n+' ticket(s) matched — status set to Match Proposed, review and confirm each'):'No matches confirmed');
+  closeDrawer();
+  refreshTickets();
+}
 function ageDays(t){return Math.max(0,Math.round((today-new Date(t.created))/864e5));}
 function spendFor(id){return TICKETS.filter(t=>t.prop===id&&t.cost).reduce((s,t)=>s+t.cost,0);}
 function computeHealth(){PROPS.forEach(p=>{if(p.status==='New Transaction')return;const ts=TICKETS.filter(t=>t.prop===p.id&&isOpen(t));p.health=ts.some(t=>t.urgency==='Emergency')?'red':(ts.length?'amber':'green');p.status=p.health==='red'?'At risk':'Active';});}
@@ -1606,6 +1749,7 @@ function renderTickets(el){
     <button class="btn sec sm" onclick="openBulkGrid()">📋 Bulk add tickets</button>
     <button class="btn sec sm" onclick="document.getElementById('bulkTicketFile').click()">⬆ Upload spreadsheet</button>
     <input type="file" id="bulkTicketFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkUploadFile(this)">
+    ${ROLE!=='caregiver'&&SUPA_CONFIGURED?`<button class="btn sec sm" onclick="openInvoiceUploadModal()">🤖 Upload vendor invoice</button>`:''}
     <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
       ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
       <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
