@@ -22,20 +22,40 @@
   a{color:var(--os);text-decoration:none}
   .hidden{display:none !important}
 
-  /* ---- prototype top bar / switcher ---- */
-  .protobar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;
-    background:#0f1722;color:#fff;padding:8px 16px}
-  .protobar .brand{font-weight:800;letter-spacing:.02em;display:flex;align-items:center;gap:8px}
-  .protobar .brand .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--os),var(--sa));
-    display:flex;align-items:center;justify-content:center;font-size:13px}
-  .protobar .tag{font-size:11px;color:#9fb0c4;border:1px solid #2a3a4d;border-radius:999px;padding:2px 9px}
-  .switch{margin-left:auto;display:flex;gap:6px;background:#1b2836;border-radius:10px;padding:4px}
-  .switch button{background:transparent;border:0;color:#b7c5d6;border-radius:7px;padding:6px 12px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:7px}
+  /* ---- top bar: identity, current location, and the user menu — one row, 56px, nothing
+     else. No product description here — the brand name doesn't change and doesn't need a
+     subtitle explaining what it is; the page name is the one thing here that actually
+     changes and helps someone orient. ---- */
+  .topbar{position:sticky;top:0;z-index:50;height:56px;display:flex;align-items:center;gap:10px;
+    background:#0f1722;color:#fff;padding:0 14px}
+  .topbar .tb-brand{font-weight:800;letter-spacing:.02em;display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap}
+  .topbar .tb-brand .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--os),var(--sa));
+    display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto}
+  .topbar .tb-page{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:700;color:#dbe3ee}
+  .switch{display:flex;gap:6px;background:#1b2836;border-radius:10px;padding:4px;flex:0 1 auto;max-width:54vw;overflow-x:auto}
+  .switch button{background:transparent;border:0;color:#b7c5d6;border-radius:7px;padding:6px 12px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:7px;white-space:nowrap;flex:0 0 auto}
   .switch button.active{background:#fff;color:#0f1722}
   .switch button .rc{width:9px;height:9px;border-radius:50%}
+  /* Signed-in user — initials circle only below tablet width; name + role join it from
+     768px up. Sign-out lives inside the dropdown, not as its own always-visible control. */
+  .tb-user{position:relative;flex:0 0 auto}
+  .tb-user-btn{display:flex;align-items:center;gap:8px;background:transparent;border:0;color:#fff;padding:4px 6px;border-radius:9px;cursor:pointer}
+  .tb-user-btn:hover{background:rgba(255,255,255,.08)}
+  .tb-user-text{display:none;text-align:left;line-height:1.2}
+  .tb-user-name{font-size:12.5px;font-weight:700;color:#fff;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tb-user-role{font-size:11px;color:#9fb0c4}
+  .tb-caret{font-size:9px;color:#9fb0c4}
+  .tb-usermenu{position:absolute;top:calc(100% + 8px);right:0;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;box-shadow:var(--shadow);min-width:190px;z-index:80;overflow:hidden}
+  .tb-usermenu .tb-usermenu-who{padding:12px 14px;border-bottom:1px solid var(--line)}
+  .tb-usermenu .tb-usermenu-who .b{font-size:13px;color:var(--ink)}
+  .tb-usermenu .tb-usermenu-who .muted{font-size:11.5px}
+  .tb-usermenu button{width:100%;text-align:left;background:transparent;border:0;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer}
+  .tb-usermenu button:hover{background:var(--panel2)}
+  @media(min-width:768px){ .tb-user-text{display:block} }
 
   /* ---- desktop app shell ---- */
-  #desktop{display:grid;grid-template-columns:232px 1fr;min-height:calc(100vh - 41px)}
+  #desktop{display:grid;grid-template-columns:232px 1fr;min-height:calc(100vh - 56px)}
   .side{background:#101a27;color:#c7d2df;padding:16px 12px;display:flex;flex-direction:column;gap:4px}
   .side .who{display:flex;align-items:center;gap:10px;padding:8px 8px 14px;border-bottom:1px solid #22303f;margin-bottom:10px}
   .side .avatar{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
@@ -55,13 +75,6 @@
   .navscrim.open{display:block}
 
   .main{display:flex;flex-direction:column;min-width:0}
-  .topbar{position:sticky;top:41px;z-index:20;background:rgba(255,255,255,.86);backdrop-filter:blur(8px);
-    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:12px 24px}
-  .topbar h1{font-size:18px;margin:0}
-  .topbar .crumb{color:var(--faint);font-size:12.5px}
-  .search{margin-left:auto;position:relative}
-  .search input{border:1px solid var(--line);border-radius:9px;padding:8px 12px 8px 32px;width:250px;background:var(--panel2);font:inherit}
-  .search .mag{position:absolute;left:10px;top:8px;color:var(--faint)}
   .content{padding:22px 24px 60px;max-width:1600px;width:100%}
 
   /* ---- generic components ---- */
@@ -145,7 +158,7 @@
 
   /* ---- mobile ---- */
   #mobile{display:flex;justify-content:center;padding:26px 12px 60px;background:
-    radial-gradient(1200px 400px at 50% -160px, #dbe3ee, transparent);min-height:calc(100vh - 41px)}
+    radial-gradient(1200px 400px at 50% -160px, #dbe3ee, transparent);min-height:calc(100vh - 56px)}
   .phone{width:390px;max-width:96vw;height:820px;max-height:86vh;background:#0b1220;border-radius:44px;padding:12px;box-shadow:0 30px 70px rgba(15,23,34,.4);position:relative}
   .screen{background:#f2f5f9;border-radius:34px;height:100%;overflow:hidden;display:flex;flex-direction:column;position:relative}
   .statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;font-weight:700;color:#0b1220;flex:0 0 auto}
@@ -186,10 +199,6 @@
     .kpis{grid-template-columns:repeat(2,1fr) !important}
     .grid2,.grid-props{grid-template-columns:1fr}
     .content{padding:16px 14px 50px}
-    .topbar{padding:10px 14px;gap:10px}
-    .search input{width:100%;min-width:0}
-    .search{margin-left:0;flex:1}
-    .topbar h1{font-size:16px}
   }
   @media(max-width:560px){
     .kpis{grid-template-columns:1fr !important}
@@ -234,11 +243,17 @@
     .switch button{min-height:38px}
   }
 
-  /* ===== Responsive table columns — every priority-tagged <th>/<td> pair hides together.
-     pri2 = hide below tablet (900px), pri3 = hide below phone (560px) as well. Identity,
-     status, and actions columns are never tagged, so they always stay visible. ===== */
-  @media(max-width:900px){ .pri2{display:none} }
-  @media(max-width:560px){ .pri3{display:none} }
+  /* ===== Responsive table columns — every tagged <th>/<td> pair hides together.
+     hide-below-sm = hidden under 640px, hide-below-md = hidden under 768px,
+     hide-below-lg = hidden under 1024px (so -lg is the most aggressive: desktop-only).
+     Identity (name/number), status, and row actions are never tagged, so they always
+     stay visible. Financial detail + secondary counts drop first (-lg), then entity/
+     geography (-md), then supporting dates/detail (-sm). ===== */
+  @media(max-width:1023px){ .hide-below-lg{display:none} }
+  @media(max-width:767px){ .hide-below-md{display:none} }
+  @media(max-width:639px){ .hide-below-sm{display:none} }
+  .show-below-sm{display:none}
+  @media(max-width:639px){ .show-below-sm{display:inline} }
   /* explicit max-width so long values (addresses, descriptions) truncate instead of
      stretching the column — text-overflow:ellipsis alone does nothing in an auto-layout
      table cell, the column just grows to fit the content */
@@ -293,15 +308,26 @@
 </head>
 <body>
 
-<div class="protobar">
-  <div class="brand"><span class="dot">K</span> KodaRE <span class="tag">Property Management Platform · build aug 4, 2026 · 2:10pm</span></div>
+<div class="topbar" id="topbar">
+  <button class="menubtn" id="navMenuBtn" onclick="toggleNavDrawer()" aria-label="Open menu">☰</button>
+  <div class="tb-brand"><span class="dot">K</span>KodaRE</div>
+  <div class="tb-page" id="viewTitle">Dashboard</div>
   <div class="switch" id="switch">
     <button data-role="office" class="active"><span class="rc" style="background:var(--os)"></span>Office Staff · Desktop</button>
     <button data-role="admin"><span class="rc" style="background:var(--sa)"></span>Senior Admin · Desktop</button>
     <button data-role="caregiver"><span class="rc" style="background:var(--cg)"></span>Field Staff · Mobile</button>
   </div>
-  <div class="switch hidden" id="liveRoleBadge" style="cursor:default" title="Your role is assigned by a Senior Admin in User Management — Scope §3.2"><span class="rc" id="liveRoleDot" style="background:var(--os)"></span><span id="liveRoleText">Signed in</span></div>
-  <button onclick="resetDemo()" title="Reset all sample data to the original demo" style="background:#1b2836;color:#b7c5d6;border:0;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-left:8px">↺ Reset demo</button>
+  <div class="tb-user hidden" id="liveRoleBadge">
+    <button class="tb-user-btn" onclick="toggleUserMenu(event)" aria-label="Account menu">
+      <span class="avatarsm" id="topAvatar" style="background:var(--os)">DC</span>
+      <span class="tb-user-text"><span class="tb-user-name" id="topName">—</span><span class="tb-user-role" id="topRole">—</span></span>
+      <span class="tb-caret">▾</span>
+    </button>
+    <div class="tb-usermenu hidden" id="userMenu">
+      <div class="tb-usermenu-who"><div class="b" id="menuName">—</div><div class="muted" id="menuRole">—</div></div>
+      <button onclick="authSignOut()">↪ Sign out</button>
+    </div>
+  </div>
 </div>
 
 <!-- ============ DESKTOP ============ -->
@@ -316,11 +342,6 @@
     <div class="foot" id="footStatus">KodaRE — Property Management Platform<br>Live — connected to Supabase</div>
   </aside>
   <div class="main">
-    <div class="topbar">
-      <button class="menubtn" id="navMenuBtn" onclick="toggleNavDrawer()" aria-label="Open menu">☰</button>
-      <div><h1 id="viewTitle">Dashboard</h1><div class="crumb" id="crumb">Overview</div></div>
-      <div class="search"><span class="mag">⌕</span><input type="text" placeholder="Search properties, tickets, vendors…" oninput="globalSearch(this.value)"></div>
-    </div>
     <div class="content" id="view"></div>
   </div>
 </div>
@@ -962,17 +983,20 @@ function applyLiveRole(role,displayName){
   ROLE=role;
   MY_NAME=displayName||'';
   document.getElementById('switch').classList.add('hidden');
-  const badge=document.getElementById('liveRoleBadge');
-  badge.classList.remove('hidden');
-  document.getElementById('liveRoleDot').style.background=LIVE_ROLE_COLOR[role]||'var(--os)';
-  document.getElementById('liveRoleText').textContent=(displayName?displayName+' · ':'')+(LIVE_ROLE_LABEL[role]||role);
+  document.getElementById('liveRoleBadge').classList.remove('hidden');
+  const roleLabel=LIVE_ROLE_LABEL[role]||role;
+  const topAv=document.getElementById('topAvatar');topAv.textContent=initials(displayName||'?');topAv.style.background=LIVE_ROLE_COLOR[role]||'var(--os)';
+  document.getElementById('topName').textContent=displayName||'—';
+  document.getElementById('topRole').textContent=roleLabel;
+  document.getElementById('menuName').textContent=displayName||'—';
+  document.getElementById('menuRole').textContent=roleLabel;
   const mobile=role==='caregiver';
   document.getElementById('desktop').classList.toggle('hidden',mobile);
   document.getElementById('mobile').classList.toggle('hidden',!mobile);
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
   else{
     document.getElementById('sideName').textContent=displayName||'—';
-    document.getElementById('sideRole').textContent=LIVE_ROLE_LABEL[role]||role;
+    document.getElementById('sideRole').textContent=roleLabel;
     const av=document.getElementById('sideAvatar');av.textContent=initials(displayName||'?');av.style.background=LIVE_ROLE_COLOR[role]||'var(--os)';
   }
 }
@@ -1133,19 +1157,38 @@ function renderUserManagement(el){
     <div class="uroles-headtext">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</div>
     <button class="uroles-refresh" onclick="refreshUserRoles()">🔄 Refresh</button></div>
   <div class="card uroles-card" style="overflow-x:auto"><div class="body" style="padding:0">${USER_ROLES.length?`<table class="uroles-table"><thead><tr>
-    <th>Name</th><th class="pri2">Email</th><th>Role</th><th class="pri3">Property access</th><th class="pri2">Since</th>
+    <th>Name</th><th class="hide-below-md">Email</th><th>Role</th><th class="hide-below-lg">Property access</th><th class="hide-below-md">Since</th>
   </tr></thead><tbody>${USER_ROLES.map(u=>{
     const mine=PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===u.user_id);
     const names=mine.map(a=>{const p=PROPS.find(x=>x.id===a.property_id);return p?p.name:null;}).filter(Boolean);
     return `<tr>
     <td><div class="uroles-person"><span class="uroles-avatar">${esc(initials(u.name||u.email))}</span><span class="uroles-name trunc" style="max-width:150px">${esc(u.name||'—')}</span></div></td>
-    <td class="pri2 uroles-email trunc" style="max-width:180px">${esc(u.email)}</td>
+    <td class="hide-below-md uroles-email trunc" style="max-width:180px">${esc(u.email)}</td>
     <td><select class="uroles-rolepill r-${u.role}" onchange="this.className='uroles-rolepill r-'+this.value;setUserRole('${u.user_id}',this.value,'${esc(u.email)}')">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
-    <td class="pri3">${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
-    <td class="pri2 muted mono" style="white-space:nowrap;font-size:12px">${fdate(new Date(u.created_at))}</td>
+    <td class="hide-below-lg">${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
+    <td class="hide-below-md muted mono" style="white-space:nowrap;font-size:12px">${fdate(new Date(u.created_at))}</td>
   </tr>`;}).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
   <div class="uroles-foot">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>
-  ${permissionsMatrixHtml()}`;
+  ${permissionsMatrixHtml()}
+  ${dangerZoneHtml()}`;
+}
+/* Reset demo data — moved out of the always-visible top bar (Aug 2026 mobile pass). Senior
+   Admin only (this whole page already is), requires typing RESET rather than a single click,
+   and hidden entirely once the app is running against real Supabase data — a prominent
+   data-wipe button has no business being reachable once real property records are in here. */
+function dangerZoneHtml(){
+  if(SUPA_CONFIGURED)return '';
+  return `<div class="card" style="margin-top:20px;border-color:var(--red)">
+    <h3 style="color:var(--red)">⚠ Danger zone</h3>
+    <div class="body">
+      <div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.5">Resets all sample data in this local/demo session back to the original prototype data — clears every change made since. Only available while running without a live Supabase connection; this disappears automatically once real data is in use.</div>
+      <div class="field" style="max-width:280px;margin-bottom:10px">
+        <label class="f">Type RESET to confirm</label>
+        <input type="text" id="resetDemoConfirm" placeholder="RESET" autocomplete="off" oninput="const ok=this.value.trim()==='RESET';const b=document.getElementById('resetDemoBtn');b.disabled=!ok;b.style.opacity=ok?1:.4;b.style.cursor=ok?'pointer':'not-allowed';" style="width:100%">
+      </div>
+      <button class="btn red sm" id="resetDemoBtn" disabled style="opacity:.4;cursor:not-allowed" onclick="resetDemo()">↺ Reset demo data</button>
+    </div>
+  </div>`;
 }
 function permBadge(v){
   if(v==='—')return '<span class="uroles-permbadge none">—</span>';
@@ -1805,12 +1848,15 @@ function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';document.querySelec
 /* Mobile nav drawer (<=900px) — hamburger opens, tapping the scrim or a nav link closes it.
    Separate from drawer()/closeDrawer() above, which is the unrelated detail-panel slide-out. */
 function toggleNavDrawer(){document.getElementById('sideNav').classList.toggle('open');document.getElementById('navScrim').classList.toggle('open');}
+/* Top-bar account menu — sign-out lives here instead of its own always-visible button. */
+function toggleUserMenu(e){if(e)e.stopPropagation();const m=document.getElementById('userMenu');if(m)m.classList.toggle('hidden');}
+function closeUserMenu(){const m=document.getElementById('userMenu');if(m)m.classList.add('hidden');}
+document.addEventListener('click',e=>{if(!e.target.closest('#liveRoleBadge'))closeUserMenu();});
 function closeNavDrawer(){document.getElementById('sideNav').classList.remove('open');document.getElementById('navScrim').classList.remove('open');}
 function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});items.splice(aix+3,0,{id:'errorlog',ic:'🛠️',label:'Error Log',count:()=>ERROR_LOG.filter(e=>!e.resolvedAt).length});items.splice(aix+4,0,{id:'auditlog',ic:'📜',label:'Audit Log'});}
   nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
-function navigate(v){closeNavDrawer();if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
-  if(v==='approvals'){document.getElementById('viewTitle').textContent='Approvals';document.getElementById('crumb').textContent='Sign-offs & escalations';}
-  else{document.getElementById('viewTitle').textContent=t[0];document.getElementById('crumb').textContent=t[1];}
+function navigate(v){closeNavDrawer();closeUserMenu();if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
+  document.getElementById('viewTitle').textContent=v==='approvals'?'Approvals':t[0];
   const el=document.getElementById('view');el.scrollTop=0;
   ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement,errorlog:renderErrorLog,auditlog:renderAuditLog}[v]||renderDashboard)(el);}
 function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast">✓ ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);
@@ -1838,9 +1884,9 @@ async function loadErrorLog(){
 }
 function errLogTime(iso){const d=new Date(iso);return fdate(d)+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
 function errRow(e){
-  return `<tr><td class="pri2 mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
-    <td class="pri2 muted">${esc(e.path||'—')}</td>
-    <td class="pri3 muted">${esc(e.userEmail||'—')}${e.userRole?' ('+esc(e.userRole)+')':''}</td>
+  return `<tr><td class="hide-below-sm mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
+    <td class="hide-below-md muted">${esc(e.path||'—')}</td>
+    <td class="hide-below-lg muted">${esc(e.userEmail||'—')}${e.userRole?' ('+esc(e.userRole)+')':''}</td>
     <td style="max-width:420px">${esc(e.message)}</td>
     <td>${e.resolvedAt?'<span class="faint" style="font-size:11.5px">✓ resolved</span>':`<button class="btn sec sm" onclick="resolveErrorLogEntry('${e.id}')">Mark resolved</button>`}</td>
   </tr>`;
@@ -1850,10 +1896,10 @@ function renderErrorLog(el){
   const resolved=ERROR_LOG.filter(e=>e.resolvedAt);
   el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">Every " failed" message anyone sees in the app — a save, delete, restore, or upload that didn't go through — is written here automatically the moment it happens, so a background failure nobody mentioned doesn't just disappear. Most recent 200 shown, newest first.</div>
   <div class="sectitle">Open (${open.length})</div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th class="pri2">When</th><th class="pri2">Screen</th><th class="pri3">Who</th><th>Message</th><th></th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-md">Screen</th><th class="hide-below-lg">Who</th><th>Message</th><th></th></tr></thead><tbody>
   ${open.length?open.map(errRow).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open errors — nothing has failed since this started logging.</td></tr>'}
   </tbody></table></div>
-  ${resolved.length?`<div class="sectitle" style="margin-top:18px">Resolved (${resolved.length})</div><div class="card" style="overflow-x:auto"><table><thead><tr><th class="pri2">When</th><th class="pri2">Screen</th><th class="pri3">Who</th><th>Message</th><th></th></tr></thead><tbody>${resolved.map(errRow).join('')}</tbody></table></div>`:''}`;
+  ${resolved.length?`<div class="sectitle" style="margin-top:18px">Resolved (${resolved.length})</div><div class="card" style="overflow-x:auto"><table><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-md">Screen</th><th class="hide-below-lg">Who</th><th>Message</th><th></th></tr></thead><tbody>${resolved.map(errRow).join('')}</tbody></table></div>`:''}`;
 }
 async function resolveErrorLogEntry(id){
   const {data:{user}}=await sb.auth.getUser();
@@ -1898,17 +1944,17 @@ function auditRow(e){
     :e.old_value!=null?'(cleared — was '+esc(e.old_value)+')'
     :'';
   return `<tr>
-    <td class="pri2 mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
-    <td class="pri3 muted">${esc(e.actor_email||'—')}${e.actor_role?' ('+esc(e.actor_role)+')':''}</td>
+    <td class="hide-below-sm mono" style="font-size:12px;white-space:nowrap">${errLogTime(e.at)}</td>
+    <td class="hide-below-lg muted">${esc(e.actor_email||'—')}${e.actor_role?' ('+esc(e.actor_role)+')':''}</td>
     <td>${esc(e.action)}</td>
     <td class="muted">${esc(e.object_type||'')}${e.object_ref?': '+esc(e.object_ref):''}</td>
-    <td class="pri2 muted">${e.field?esc(e.field):'—'}</td>
+    <td class="hide-below-md muted">${e.field?esc(e.field):'—'}</td>
     <td style="max-width:280px">${change}</td>
   </tr>`;
 }
 function renderAuditLog(el){
   el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">An immutable record of sensitive changes — Senior-Admin-locked property/loan fields, role changes, property assignments, and permanent deletions. Nothing here can be edited or removed, by anyone, through the app. Most recent 300 shown, newest first. Scope §5.2/§5.5.</div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th class="pri2">When</th><th class="pri3">Who</th><th>Action</th><th>Record</th><th class="pri2">Field</th><th>Change</th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-lg">Who</th><th>Action</th><th>Record</th><th class="hide-below-md">Field</th><th>Change</th></tr></thead><tbody>
   ${AUDIT_LOG.length?AUDIT_LOG.map(auditRow).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No audited changes yet.</td></tr>'}
   </tbody></table></div>`;
 }
@@ -1991,10 +2037,10 @@ function renderTickets(el){
     </div></div>
   ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
   <div class="card" style="overflow-x:auto"><table style="min-width:1500px"><thead><tr>
-    <th class="pri2" style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
-    ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})))}
+    <th class="hide-below-md" style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
+    ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})),'hide-below-sm')}
     ${thSel('status','Status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))}
-    <th class="pri2" style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
+    <th class="hide-below-sm" style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
       ${thTitle(`<span>Created</span>${clearX('created','Created')}`)}
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="From MM/DD/YY" title="From date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="To MM/DD/YY" title="To date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
@@ -2004,9 +2050,9 @@ function renderTickets(el){
       <input type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.descQuery)}" oninput="setFLive('descQuery',this.value)" placeholder="Search..." title="Filter by description text" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
     </th>
     ${thSel('urgency','Priority',['Emergency','Urgent','Low'].map(u=>({v:u,l:u})))}
-    ${thSel('svc','Service Category',svcOpts.map(s=>({v:s,l:s})),'pri2')}
-    ${thSel('vendor','Vendor',vendorOpts.map(v=>({v:v,l:v})),'pri2')}
-    <th class="pri3" style="text-align:left;min-width:110px;vertical-align:top">
+    ${thSel('svc','Service Category',svcOpts.map(s=>({v:s,l:s})),'hide-below-lg')}
+    ${thSel('vendor','Vendor',vendorOpts.map(v=>({v:v,l:v})),'hide-below-lg')}
+    <th class="hide-below-lg" style="text-align:left;min-width:110px;vertical-align:top">
       ${thTitle(`<span>Cost</span>${clearX('cost','Cost')}`)}
       <div id="costTotalDisplay" style="font-weight:800;font-size:11px;color:var(--os);text-transform:none;letter-spacing:0" title="Total cost across ${rows.length} filtered ticket${rows.length===1?'':'s'} (${costedCount} costed)">${money(totalCost)}</div>
       <div style="display:flex;gap:2px;margin-top:2px">
@@ -2014,9 +2060,9 @@ function renderTickets(el){
         <input type="number" value="${FILTER.costMax}" oninput="setFLive('costMax',this.value)" placeholder="Max" title="Maximum cost" style="${fSel};width:50%;text-transform:none">
       </div>
     </th>
-    ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))],'pri2')}
-    ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}],'pri3')}
-    <th class="pri2" style="text-align:left;min-width:130px;vertical-align:top">
+    ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))],'hide-below-lg')}
+    ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}],'hide-below-md')}
+    <th class="hide-below-lg" style="text-align:left;min-width:130px;vertical-align:top">
       ${thTitle(`<span>Notes</span>${clearX('notesQuery','Notes')}`)}
       <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by notes text" style="${fSel};width:100%;text-transform:none;font-weight:400">
     </th>
@@ -2056,19 +2102,19 @@ function filtered(){
   const ct=parseMDYY(FILTER.createdTo);
   return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(FILTER.metro==='all'||(FILTER.metro==='__blank__'?!propById(t.prop).metro:propById(t.prop).metro===FILTER.metro))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
 }
-function trow(t){return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
-  <td class="pri2" onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
-  <td class="b trunc" style="max-width:130px">${propById(t.prop).name}</td>
+function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
+  <td class="hide-below-md" onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
+  <td class="b trunc hide-below-sm" style="max-width:130px">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
-  <td class="pri2 muted mono" style="white-space:nowrap">${fdate(t.created)}</td>
-  <td><div class="trunc" style="max-width:260px">${CAT[t.svc]||'🛠️'} ${t.title}</div></td>
+  <td class="hide-below-sm muted mono" style="white-space:nowrap" title="${fdate(t.created)}">${age}d</td>
+  <td><div class="trunc" style="max-width:260px"><span class="muted mono" style="font-size:11px">${ticketRef(t)}</span> · ${CAT[t.svc]||'🛠️'} ${t.title}<div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></div></td>
   <td>${ubadge(t.urgency)}</td>
-  <td class="pri2 muted">${t.svc||'—'}</td>
-  <td class="pri2">${t.vendor||'<span class="faint">—</span>'}</td>
-  <td class="pri3" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
-  <td class="pri2" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
-  <td class="pri3" onclick="event.stopPropagation()">${paySelect(t)}</td>
-  <td class="pri2" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add note…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
+  <td class="hide-below-lg muted">${t.svc||'—'}</td>
+  <td class="hide-below-lg">${t.vendor||'<span class="faint">—</span>'}</td>
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
+  <td class="hide-below-md" onclick="event.stopPropagation()">${paySelect(t)}</td>
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add note…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
 function drawTickets(){
   const rows=filtered();
   document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
@@ -2202,19 +2248,19 @@ function renderProperties(el){
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" id="propsRefreshBtn" onclick="refreshPropertiesFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
     ${ROLE==='admin'?'<button class="btn sec sm" onclick="startOnboard()">+ New property</button>':''}</div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="pri2">Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="pri2">Stage</th><th class="pri3">Open</th><th class="pri2">Total items</th><th class="pri3 right">YTD Spend</th><th class="pri2" style="text-align:left;min-width:130px">Metro
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-sm">Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th class="hide-below-md" title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="hide-below-md">Stage</th><th class="hide-below-sm">Open</th><th class="hide-below-lg">Total items</th><th class="hide-below-lg right">YTD Spend</th><th class="hide-below-lg" style="text-align:left;min-width:130px">Metro
     <select onchange="setPF('metro',this.value)" style="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer;margin-top:4px" title="Filter by Metro"><option value="all"${PFILTER.metro==='all'?' selected':''}>All</option>${metroOpts.map(m=>`<option value="${esc(m)}"${PFILTER.metro===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
   </th></tr></thead><tbody>
   ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');return `<tr class="clickable" onclick="openProperty('${p.id}')">
     <td><span class="dotc" style="background:var(--${col})"></span> <span class="b">${p.name}</span><div class="faint addr-city" style="font-size:11.5px">${p.metro||p.addr||'—'}</div><div class="faint addr-full trunc" style="font-size:11.5px;max-width:220px">${p.addr||'—'}</div></td>
-    <td class="pri2"><span class="pill ${p.own}">${p.own==='owned'?'Owned':'Leased'}</span></td>
+    <td class="hide-below-sm"><span class="pill ${p.own}">${p.own==='owned'?'Owned':'Leased'}</span></td>
     <td><span class="pill" style="border-color:var(--${col});color:var(--${col})">${p.status}</span></td>
-    <td>${readinessPill(p)}</td>
-    <td class="pri2 muted" style="font-size:12.5px">${propStage(p)}</td>
-    <td class="pri3 mono" style="color:${openN?'var(--ext)':'var(--muted)'}">${openN}</td>
-    <td class="pri2 mono">${total}</td>
-    <td class="pri3 right mono">${money(propertySpendStats(p.id).ytd)}</td>
-    <td class="pri2 muted">${p.metro||'<span class="faint">—</span>'}</td></tr>`;}).join('')}
+    <td class="hide-below-md">${readinessPill(p)}</td>
+    <td class="hide-below-md muted" style="font-size:12.5px">${propStage(p)}</td>
+    <td class="hide-below-sm mono" style="color:${openN?'var(--ext)':'var(--muted)'}">${openN}</td>
+    <td class="hide-below-lg mono">${total}</td>
+    <td class="hide-below-lg right mono">${money(propertySpendStats(p.id).ytd)}</td>
+    <td class="hide-below-lg muted">${p.metro||'<span class="faint">—</span>'}</td></tr>`;}).join('')}
   </tbody></table></div>`;
 }
 function openProperty(id){const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
@@ -2986,8 +3032,8 @@ async function approvePropertyDocExtraction(propId,kind){
 
 /* ===== leases ===== */
 function renderLeases(el){el.innerHTML=`<div class="sectitle">Leased properties</div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="pri2">Landlord</th><th class="pri3">Rent</th><th class="pri2">Term</th><th class="pri3">Next payment</th><th>Status</th><th></th></tr></thead><tbody>
-    ${LEASES.map(l=>{const p=propById(l.prop);return `<tr class="clickable" onclick="openProperty('${l.prop}')"><td class="b trunc" style="max-width:130px">${p.name}</td><td class="pri2">${l.landlord||'—'}</td><td class="pri3 mono">${l.rent!=null?money(l.rent)+'/mo':'—'}</td><td class="pri2 muted">${l.term||'—'}</td><td class="pri3 mono">${l.next?fdate(l.next):'—'}</td><td><span class="badge ${l.escalated?'b-red':'b-assigned'}">${l.status}</span></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button> <button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No leased properties.</td></tr>'}
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-lg">Landlord</th><th class="hide-below-sm">Rent</th><th class="hide-below-lg">Term</th><th class="hide-below-md">Next payment</th><th>Status</th><th></th></tr></thead><tbody>
+    ${LEASES.map(l=>{const p=propById(l.prop);return `<tr class="clickable" onclick="openProperty('${l.prop}')"><td class="b trunc" style="max-width:130px">${p.name}</td><td class="hide-below-lg">${l.landlord||'—'}</td><td class="hide-below-sm mono">${l.rent!=null?money(l.rent)+'/mo':'—'}</td><td class="hide-below-lg muted">${l.term||'—'}</td><td class="hide-below-md mono">${l.next?fdate(l.next):'—'}</td><td><span class="badge ${l.escalated?'b-red':'b-assigned'}">${l.status}</span></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button> <button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No leased properties.</td></tr>'}
   </tbody></table></div>
   <div class="sectitle">Rent reminder ladder</div><div class="card"><div class="body row"><span class="pill">7 days — reminder</span><span class="pill">Due date — scheduled</span><span class="pill" style="border-color:var(--amber);color:var(--amber)">Renewal window</span><span class="pill" style="border-color:var(--red);color:var(--red)">Missed — auto-escalate → Senior Admin</span></div></div>`;}
 function payRent(id){
@@ -3082,11 +3128,11 @@ function vendorsFiltered(){
 }
 function vrow(v){return `<tr class="clickable" onclick="openVendor('${v.id}')">
     <td class="b trunc" style="max-width:160px">${v.name}</td>
-    <td class="pri2 muted">${v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>'}</td>
-    <td class="pri2">${v.primary||'<span class="faint">—</span>'}</td>
-    <td class="pri3">${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td>
-    <td class="pri2 muted">${v.email&&v.email!=='—'?v.email:'<span class="faint">—</span>'}</td>
-    <td class="muted">${v.phone&&v.phone!=='—'?`<a onclick="event.stopPropagation()" href="tel:${v.phone.replace(/[^\d+]/g,'')}">${v.phone}</a>`:'<span class="faint">—</span>'}</td>
+    <td class="hide-below-sm muted">${v.trade?(CAT[v.trade]||'')+' '+esc(v.trade):'<span class="faint">—</span>'}</td>
+    <td class="hide-below-md">${v.primary||'<span class="faint">—</span>'}</td>
+    <td class="hide-below-lg">${v.contact&&v.contact!=='—'?v.contact:'<span class="faint">—</span>'}</td>
+    <td class="hide-below-lg muted">${v.email&&v.email!=='—'?v.email:'<span class="faint">—</span>'}</td>
+    <td class="hide-below-sm muted">${v.phone&&v.phone!=='—'?`<a onclick="event.stopPropagation()" href="tel:${v.phone.replace(/[^\d+]/g,'')}">${v.phone}</a>`:'<span class="faint">—</span>'}</td>
     <td>${vendorExpiryPill(v)}</td>
   </tr>`;}
 function drawVendors(){
@@ -3140,11 +3186,11 @@ function renderVendors(el){
   <div class="toolbar"><span class="b">${vendorsFiltered().length} of ${VENDORS.length} vendors</span>${vendorsExpiringCount()?`<span class="pill" style="border-color:var(--red);color:var(--red);margin-left:10px">⚠ ${vendorsExpiringCount()} vendor${vendorsExpiringCount()===1?'':'s'} with insurance/license expired or expiring within ${ASSUMPTIONS.complianceExpiringDays}d</span>`:''}</div>
   <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr>
     ${thText('nameQuery','Vendor')}
-    ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})),'pri2')}
-    ${thSel('primary','Primary/Secondary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))],'pri2')}
-    ${thText('contactQuery','Contact Name','pri3')}
-    ${thText('emailQuery','Email','pri2')}
-    ${thText('phoneQuery','Phone Number')}
+    ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})),'hide-below-sm')}
+    ${thSel('primary','Primary/Secondary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))],'hide-below-md')}
+    ${thText('contactQuery','Contact Name','hide-below-lg')}
+    ${thText('emailQuery','Email','hide-below-lg')}
+    ${thText('phoneQuery','Phone Number','hide-below-sm')}
     <th style="text-align:left;min-width:150px;vertical-align:top">${thTitle('<span>Insurance/License</span>')}</th>
   </tr></thead><tbody id="vtbody"></tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Fields map to Scope §4.9 Maintenance Vendor Directory · click a vendor for full details.</div>`;
@@ -3254,12 +3300,12 @@ function renderCompliance(el){
     <div class="kpi"><div class="lab">Inspections scheduled</div><div class="val">${upcoming.length}</div></div>
   </div>
   <div class="sectitle">Certificates &amp; licenses — all properties</div>
-  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr><th>Property</th><th>Type</th><th class="pri2">Authority</th><th class="pri2">Cert #</th><th class="pri3">Issued</th><th>Expires</th><th class="pri2">Cadence</th><th>Status</th><th class="pri3">Responsible</th><th></th></tr></thead><tbody>
-  ${CERTS.slice().sort((a,b)=>(daysTo(a.exp)??9999)-(daysTo(b.exp)??9999)).map(c=>`<tr><td class="b trunc" style="max-width:130px">${propById(c.prop).name}</td><td>${c.type}</td><td class="pri2 muted">${c.authority}</td><td class="pri2 muted">${c.certNo}</td><td class="pri3 mono">${dstr(c.issue)}</td><td class="mono">${c.exp?dstr(c.exp):'—'}</td><td class="pri2 muted">${c.cadence}</td><td>${certBadge(c)}</td><td class="pri3 muted">${c.resp}</td><td><button class="btn sec sm" onclick="navigate('properties');setTimeout(()=>openProperty('${c.prop}'),60)">View</button></td></tr>`).join('')}
+  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr><th class="hide-below-sm">Property</th><th>Type</th><th class="hide-below-lg">Authority</th><th class="hide-below-lg">Cert #</th><th class="hide-below-md">Issued</th><th class="hide-below-md">Expires</th><th class="hide-below-lg">Cadence</th><th>Status</th><th class="hide-below-lg">Responsible</th><th></th></tr></thead><tbody>
+  ${CERTS.slice().sort((a,b)=>(daysTo(a.exp)??9999)-(daysTo(b.exp)??9999)).map(c=>`<tr><td class="b trunc hide-below-sm" style="max-width:130px">${propById(c.prop).name}</td><td>${c.type}<div class="show-below-sm faint" style="font-size:11px">${propById(c.prop).name}</div></td><td class="hide-below-lg muted">${c.authority}</td><td class="hide-below-lg muted">${c.certNo}</td><td class="hide-below-md mono">${dstr(c.issue)}</td><td class="hide-below-md mono">${c.exp?dstr(c.exp):'—'}</td><td class="hide-below-lg muted">${c.cadence}</td><td>${certBadge(c)}</td><td class="hide-below-lg muted">${c.resp}</td><td><button class="btn sec sm" onclick="navigate('properties');setTimeout(()=>openProperty('${c.prop}'),60)">View</button></td></tr>`).join('')}
   </tbody></table></div>
   <div class="sectitle">Inspections — all properties</div>
-  <div class="card" style="overflow-x:auto"><table style="min-width:900px"><thead><tr><th>Property</th><th>Type</th><th class="pri2">Inspector</th><th class="pri2">Scheduled</th><th class="pri3">Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>
-  ${INSPECTIONS.map(i=>`<tr><td class="b trunc" style="max-width:130px">${propById(i.prop).name}</td><td>${i.type}</td><td class="pri2 muted">${i.inspector}</td><td class="pri2 mono">${dstr(i.scheduled)}</td><td class="pri3 mono">${i.completed?dstr(i.completed):'—'}</td><td>${i.result}</td><td class="mono">${dstr(i.nextDue)}</td></tr>`).join('')}
+  <div class="card" style="overflow-x:auto"><table style="min-width:900px"><thead><tr><th class="hide-below-sm">Property</th><th>Type</th><th class="hide-below-lg">Inspector</th><th class="hide-below-md">Scheduled</th><th class="hide-below-md">Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>
+  ${INSPECTIONS.map(i=>`<tr><td class="b trunc hide-below-sm" style="max-width:130px">${propById(i.prop).name}</td><td>${i.type}<div class="show-below-sm faint" style="font-size:11px">${propById(i.prop).name}</div></td><td class="hide-below-lg muted">${i.inspector}</td><td class="hide-below-md mono">${dstr(i.scheduled)}</td><td class="hide-below-md mono">${i.completed?dstr(i.completed):'—'}</td><td>${i.result}</td><td class="mono">${dstr(i.nextDue)}</td></tr>`).join('')}
   </tbody></table></div>
   <div class="card" style="margin-top:14px"><div class="body row" style="justify-content:space-between;align-items:center"><div class="muted" style="font-size:12.5px">One-click PDF compilation of current CO, current licenses, last 12 months of inspections, and open corrective actions per property.</div><button class="btn sec sm" onclick="toast('Audit pack generated (PDF) — prototype stub')">📦 Generate portfolio audit pack</button></div></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Maps to Scope §4.2 Compliance, Certificate of Occupancy &amp; Inspections (cadence &amp; reminders, compliance dashboard, audit-pack generation).</div>`;
@@ -4277,7 +4323,13 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
     }
   });
   return true;}catch(e){return false;}}
-function resetDemo(){if(confirm('Reset all sample data back to the original maintenance data? This clears changes made in this prototype.')){localStorage.removeItem(LSKEY);location.reload();}}
+function resetDemo(){
+  // Defense in depth — the button that calls this is disabled until the typed-RESET check in
+  // dangerZoneHtml() passes, but re-verify here too in case this ever gets called another way.
+  const confirmEl=document.getElementById('resetDemoConfirm');
+  if(SUPA_CONFIGURED||!confirmEl||confirmEl.value.trim()!=='RESET'){toast('Type RESET to confirm');return;}
+  localStorage.removeItem(LSKEY);location.reload();
+}
 
 /* ===== onboarding wizard ===== */
 let OB={step:0,d:{}};
