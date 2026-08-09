@@ -5,21 +5,98 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KodaRE — Property Management Platform</title>
 <style>
+  /* =====================================================================================
+     KodaRE design system — one small set of tokens, applied everywhere. No screen should
+     name a colour directly: a status badge (or button, or tile) picks a *tone*, and the
+     tone decides what colour that actually is. Change a value here and it changes
+     everywhere at once, instead of drifting screen by screen.
+     ===================================================================================== */
   :root{
-    --bg:#eef1f5; --panel:#ffffff; --panel2:#f4f6f9; --line:#dce3ec;
-    --ink:#15202b; --muted:#5a6a7c; --faint:#8a99aa;
-    --cg:#0e9aa3; --os:#2563c9; --sa:#7c3fd6; --sys:#1f9d40; --ext:#d2701a; --ten:#c2306f;
-    --red:#cf3a32; --amber:#c9880c; --green:#1f9d40; --blue:#2563c9;
-    --uroles-accent:#0d9488; --uroles-accent2:#0f766e;
+    /* ---- neutral scale — text & surfaces, lightest to darkest ---- */
+    --ink-50:#f7f9fb; --ink-100:#eef1f5; --ink-200:#dce3ec; --ink-300:#c3ccd9;
+    --ink-400:#8a99aa; --ink-500:#5a6a7c; --ink-600:#3d4b5c; --ink-700:#28303d;
+    --ink-800:#16212c; --ink-900:#0b1220;
+
+    /* ---- structure ---- */
+    --page-bg:var(--ink-100);
+    --surface:#ffffff;
+    --surface-sunken:#f4f6f9;
+    --border:var(--ink-200);
+    --accent:#0e9aa3;
+    --accent-dark:#0b7b83;
+    --on-dark:#ffffff;
+    --on-dark-1:#c7d2df; --on-dark-2:#9fb0c4; --on-dark-3:#6f8296;
     --shadow:0 1px 3px rgba(20,40,70,.10),0 6px 24px rgba(20,40,70,.06);
+
+    /* ---- role identity colours — who someone is, not the state of something. Kept as
+       their own small palette, separate from the six status tones below. ---- */
+    --role-office:#2563c9; --role-admin:#7c3fd6; --role-field:#0e9aa3;
+    --role-owned:#1f9d40; --role-external:#d2701a; --role-leased:#c2306f;
+
+    /* ---- legacy names kept as aliases so this stays one indirection, not a rename —
+       every old var(--x) reference still resolves through the token system above. ---- */
+    --bg:var(--page-bg); --panel:var(--surface); --panel2:var(--surface-sunken); --line:var(--border);
+    --ink:var(--ink-900); --muted:var(--ink-500); --faint:var(--ink-400);
+    --os:var(--role-office); --sa:var(--role-admin); --cg:var(--role-field);
+    --sys:var(--role-owned); --ext:var(--role-external); --ten:var(--role-leased);
+    --uroles-accent:var(--accent-dark); --uroles-accent2:#0a5f66;
+
+    /* ---- typography ---- */
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --fs-xs:11px; --fs-sm:12.5px; --fs-base:14px; --fs-md:15px; --fs-lg:18px; --fs-xl:22px; --fs-2xl:27px;
+
+    /* =====================================================================================
+       Six semantic tones. Each has four variants:
+         soft   — tinted background + matching text, for badges/tips
+         solid  — filled background, for buttons
+         text   — the colour alone, for text-only emphasis
+         dot    — the small status-dot colour
+       A screen never writes a hex value for a status — it names a tone (neutral / accent /
+       ok / warn / danger / info) and picks soft, solid, text, or dot.
+       ===================================================================================== */
+    --tone-neutral-soft-bg:#eef1f5; --tone-neutral-soft-text:#5a6a7c; --tone-neutral-soft-border:#dce3ec;
+    --tone-neutral-solid-bg:#5a6a7c; --tone-neutral-solid-text:#ffffff;
+    --tone-neutral-text:#5a6a7c; --tone-neutral-dot:#8a99aa;
+
+    --tone-accent-soft-bg:#e3f4f5; --tone-accent-soft-text:#0b7b83; --tone-accent-soft-border:#c1e9ec;
+    --tone-accent-solid-bg:#0e9aa3; --tone-accent-solid-text:#ffffff;
+    --tone-accent-text:#0b7b83; --tone-accent-dot:#0e9aa3;
+
+    --tone-ok-soft-bg:#eaf7ee; --tone-ok-soft-text:#157032; --tone-ok-soft-border:#c4e8ce;
+    --tone-ok-solid-bg:#1f9d40; --tone-ok-solid-text:#ffffff;
+    --tone-ok-text:#157032; --tone-ok-dot:#1f9d40;
+
+    --tone-warn-soft-bg:#fef7e0; --tone-warn-soft-text:#8a610a; --tone-warn-soft-border:#f2e4a8;
+    --tone-warn-solid-bg:#c9880c; --tone-warn-solid-text:#ffffff;
+    --tone-warn-text:#8a610a; --tone-warn-dot:#c9880c;
+
+    --tone-danger-soft-bg:#fdecea; --tone-danger-soft-text:#b02f28; --tone-danger-soft-border:#f3b7b1;
+    --tone-danger-solid-bg:#cf3a32; --tone-danger-solid-text:#ffffff;
+    --tone-danger-text:#b02f28; --tone-danger-dot:#cf3a32;
+
+    --tone-info-soft-bg:#eaf0fb; --tone-info-soft-text:#1d4ea0; --tone-info-soft-border:#cfe0fb;
+    --tone-info-solid-bg:#2563c9; --tone-info-solid-text:#ffffff;
+    --tone-info-text:#1d4ea0; --tone-info-dot:#2563c9;
+
+    /* legacy status-colour names, now sourced from the tones above */
+    --red:var(--tone-danger-solid-bg); --amber:var(--tone-warn-solid-bg);
+    --green:var(--tone-ok-solid-bg); --blue:var(--tone-info-solid-bg);
+
+    /* RGB triplets for the handful of places (Chart.js canvases) that need to build a
+       translucent fill at runtime via rgba() rather than a CSS var() */
+    --accent-rgb:14,154,163;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
-  body{background:var(--bg);color:var(--ink);
-    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  /* The page itself must never scroll sideways — only a table's own wrapper should. If
+     something here is still wider than the viewport despite that, this at least stops it
+     from dragging the header and sidebar along with it. */
+  html,body{overflow-x:hidden}
+  body{background:var(--page-bg);color:var(--ink-900);
+    font:var(--fs-base)/1.5 var(--font-sans);
     -webkit-font-smoothing:antialiased}
   button{font:inherit;cursor:pointer}
-  a{color:var(--os);text-decoration:none}
+  a{color:var(--accent-dark);text-decoration:none}
   .hidden{display:none !important}
 
   /* ---- top bar: identity, current location, and the user menu — one row, 56px, nothing
@@ -27,162 +104,218 @@
      subtitle explaining what it is; the page name is the one thing here that actually
      changes and helps someone orient. ---- */
   .topbar{position:sticky;top:0;z-index:50;height:56px;display:flex;align-items:center;gap:10px;
-    background:#0f1722;color:#fff;padding:0 14px}
+    background:var(--ink-900);color:var(--on-dark);padding:0 14px}
   .topbar .tb-brand{font-weight:800;letter-spacing:.02em;display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap}
-  .topbar .tb-brand .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--os),var(--sa));
-    display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto}
-  .topbar .tb-page{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:700;color:#dbe3ee}
-  .switch{display:flex;gap:6px;background:#1b2836;border-radius:10px;padding:4px;flex:0 1 auto;max-width:54vw;overflow-x:auto}
-  .switch button{background:transparent;border:0;color:#b7c5d6;border-radius:7px;padding:6px 12px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:7px;white-space:nowrap;flex:0 0 auto}
-  .switch button.active{background:#fff;color:#0f1722}
+  .topbar .tb-brand .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--role-admin));
+    display:flex;align-items:center;justify-content:center;font-size:13px;flex:0 0 auto;color:var(--on-dark)}
+  .topbar .tb-page{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-base);font-weight:700;color:var(--on-dark-1)}
+  .switch{display:flex;gap:6px;background:var(--ink-800);border-radius:10px;padding:4px;flex:0 1 auto;max-width:54vw;overflow-x:auto}
+  .switch button{background:transparent;border:0;color:var(--on-dark-2);border-radius:7px;padding:6px 12px;font-size:var(--fs-xs);font-weight:600;display:flex;align-items:center;gap:7px;white-space:nowrap;flex:0 0 auto}
+  .switch button.active{background:var(--on-dark);color:var(--ink-900)}
   .switch button .rc{width:9px;height:9px;border-radius:50%}
   /* Signed-in user — initials circle only below tablet width; name + role join it from
      768px up. Sign-out lives inside the dropdown, not as its own always-visible control. */
   .tb-user{position:relative;flex:0 0 auto}
-  .tb-user-btn{display:flex;align-items:center;gap:8px;background:transparent;border:0;color:#fff;padding:4px 6px;border-radius:9px;cursor:pointer}
+  .tb-user-btn{display:flex;align-items:center;gap:8px;background:transparent;border:0;color:var(--on-dark);padding:4px 6px;border-radius:9px;cursor:pointer}
   .tb-user-btn:hover{background:rgba(255,255,255,.08)}
   .tb-user-text{display:none;text-align:left;line-height:1.2}
-  .tb-user-name{font-size:12.5px;font-weight:700;color:#fff;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .tb-user-role{font-size:11px;color:#9fb0c4}
-  .tb-caret{font-size:9px;color:#9fb0c4}
-  .tb-usermenu{position:absolute;top:calc(100% + 8px);right:0;background:var(--panel);border:1px solid var(--line);
+  .tb-user-name{font-size:var(--fs-xs);font-weight:700;color:var(--on-dark);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tb-user-role{font-size:11px;color:var(--on-dark-2)}
+  .tb-caret{font-size:9px;color:var(--on-dark-2)}
+  .tb-usermenu{position:absolute;top:calc(100% + 8px);right:0;background:var(--surface);border:1px solid var(--border);
     border-radius:10px;box-shadow:var(--shadow);min-width:190px;z-index:80;overflow:hidden}
-  .tb-usermenu .tb-usermenu-who{padding:12px 14px;border-bottom:1px solid var(--line)}
-  .tb-usermenu .tb-usermenu-who .b{font-size:13px;color:var(--ink)}
+  .tb-usermenu .tb-usermenu-who{padding:12px 14px;border-bottom:1px solid var(--border)}
+  .tb-usermenu .tb-usermenu-who .b{font-size:13px;color:var(--ink-900)}
   .tb-usermenu .tb-usermenu-who .muted{font-size:11.5px}
-  .tb-usermenu button{width:100%;text-align:left;background:transparent;border:0;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer}
-  .tb-usermenu button:hover{background:var(--panel2)}
+  .tb-usermenu button{width:100%;text-align:left;background:transparent;border:0;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink-900);cursor:pointer}
+  .tb-usermenu button:hover{background:var(--surface-sunken)}
   @media(min-width:768px){ .tb-user-text{display:block} }
 
-  /* ---- desktop app shell ---- */
+  /* ---- desktop app shell — dark sidebar, light content area ---- */
   #desktop{display:grid;grid-template-columns:232px 1fr;min-height:calc(100vh - 56px)}
-  .side{background:#101a27;color:#c7d2df;padding:16px 12px;display:flex;flex-direction:column;gap:4px}
-  .side .who{display:flex;align-items:center;gap:10px;padding:8px 8px 14px;border-bottom:1px solid #22303f;margin-bottom:10px}
-  .side .avatar{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
-  .side .who .nm{font-weight:700;color:#fff;font-size:13px}
-  .side .who .rl{font-size:11px;color:#8ea0b4}
-  .nav{background:transparent;border:0;color:#c7d2df;text-align:left;border-radius:9px;padding:9px 11px;display:flex;align-items:center;gap:11px;font-size:13.5px;font-weight:600}
+  .side{background:var(--ink-900);color:var(--on-dark-1);padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+  .side .who{display:flex;align-items:center;gap:10px;padding:8px 8px 14px;border-bottom:1px solid var(--ink-800);margin-bottom:10px}
+  .side .avatar{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--on-dark)}
+  .side .who .nm{font-weight:700;color:var(--on-dark);font-size:13px}
+  .side .who .rl{font-size:11px;color:var(--on-dark-3)}
+  .nav{background:transparent;border:0;color:var(--on-dark-1);text-align:left;border-radius:9px;padding:9px 11px;display:flex;align-items:center;gap:11px;font-size:13.5px;font-weight:600}
   .nav .ic{width:20px;text-align:center;font-size:15px}
-  .nav .ct{margin-left:auto;font-size:11px;background:#22303f;border-radius:999px;padding:1px 8px;color:#9fb2c6}
-  .nav:hover{background:#1a2634;color:#fff}
-  .nav.active{background:linear-gradient(90deg,rgba(37,99,201,.28),rgba(124,63,214,.18));color:#fff;box-shadow:inset 3px 0 0 var(--os)}
-  .side .foot{margin-top:auto;font-size:11px;color:#6f8296;padding:10px 8px 0;border-top:1px solid #22303f}
+  .nav .ct{margin-left:auto;font-size:11px;background:var(--ink-800);border-radius:999px;padding:1px 8px;color:var(--on-dark-2)}
+  .nav:hover{background:var(--ink-800);color:var(--on-dark)}
+  .nav.active{background:linear-gradient(90deg,rgba(14,154,163,.30),rgba(124,63,214,.18));color:var(--on-dark);box-shadow:inset 3px 0 0 var(--accent)}
+  .side .foot{margin-top:auto;font-size:11px;color:var(--on-dark-3);padding:10px 8px 0;border-top:1px solid var(--ink-800)}
 
   /* mobile nav drawer — hamburger + off-canvas .side, hidden on desktop by default */
-  .menubtn{display:none;background:transparent;border:0;color:var(--ink);font-size:20px;width:40px;height:40px;border-radius:9px;align-items:center;justify-content:center;flex:0 0 auto}
-  .menubtn:hover{background:var(--panel2)}
-  .navscrim{display:none;position:fixed;inset:0;background:rgba(15,23,34,.42);z-index:65}
+  .menubtn{display:none;background:transparent;border:0;color:var(--ink-900);font-size:20px;width:40px;height:40px;border-radius:9px;align-items:center;justify-content:center;flex:0 0 auto}
+  .menubtn:hover{background:var(--surface-sunken)}
+  .navscrim{display:none;position:fixed;inset:0;background:rgba(11,18,32,.42);z-index:65}
   .navscrim.open{display:block}
 
   .main{display:flex;flex-direction:column;min-width:0}
-  .content{padding:22px 24px 60px;max-width:1600px;width:100%}
+  /* .content is itself a flex item of .main (flex-direction:column) — a flex/grid item
+     defaults to min-width:auto, meaning it refuses to shrink below its content's intrinsic
+     width. A wide table inside .content would otherwise push .content wide, which pushes
+     .main wide, which pushes #desktop and the whole page wide, regardless of any
+     overflow-x:auto set on the table's own wrapper further down. This is usually the actual
+     reason "overflow-x:auto did nothing." */
+  .content{padding:22px 24px 60px;max-width:1600px;width:100%;min-width:0}
+
+  /* ---- page header — eyebrow, title, description, and a right-aligned actions slot.
+     One reusable class instead of every screen hand-rolling its own heading markup. ---- */
+  .page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+    margin-bottom:20px;flex-wrap:wrap}
+  .page-header .ph-text{min-width:0}
+  .page-header .ph-eyebrow{font-size:var(--fs-xs);font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--accent-dark);margin-bottom:4px}
+  .page-header .ph-title{font-size:var(--fs-xl);font-weight:800;letter-spacing:-.01em;color:var(--ink-900);line-height:1.25}
+  .page-header .ph-desc{font-size:var(--fs-sm);color:var(--ink-500);margin-top:4px;line-height:1.5;max-width:640px}
+  .page-header .ph-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto;flex-wrap:wrap}
 
   /* ---- generic components ---- */
   .row{display:flex;gap:16px;flex-wrap:wrap}
+  /* Same min-width:auto problem as .content, one level down: a card holding a table that
+     sits inside .row/.grid2/.grid-props is itself a flex/grid item of one of these, so it
+     also needs min-width:0 or it will refuse to shrink and widen its container instead. */
+  .row>*,.grid2>*,.grid-props>*{min-width:0}
   .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
-  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
-  .kpi .lab{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
-  .kpi .val{font-size:27px;font-weight:800;margin-top:4px;letter-spacing:-.02em}
-  .kpi .sub{font-size:12px;color:var(--faint)}
-  .kpi.red .val{color:var(--red)} .kpi.amber .val{color:var(--amber)} .kpi.green .val{color:var(--green)}
+  .kpi,.stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
+  .kpi .lab,.stat-tile .lab{font-size:11.5px;color:var(--ink-500);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+  .kpi .val,.stat-tile .val{font-size:var(--fs-2xl);font-weight:800;margin-top:4px;letter-spacing:-.02em}
+  .kpi .sub,.stat-tile .sub{font-size:12px;color:var(--ink-400)}
+  .kpi.red .val,.stat-tile.tone-danger .val{color:var(--tone-danger-solid-bg)}
+  .kpi.amber .val,.stat-tile.tone-warn .val{color:var(--tone-warn-solid-bg)}
+  .kpi.green .val,.stat-tile.tone-ok .val{color:var(--tone-ok-solid-bg)}
+  .stat-tile.tone-info .val{color:var(--tone-info-solid-bg)}
+  .stat-tile.tone-accent .val{color:var(--tone-accent-text)}
 
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
-  .card h3{margin:0;padding:14px 16px;border-bottom:1px solid var(--line);font-size:14.5px;display:flex;align-items:center;gap:10px}
+  /* overflow-x:auto is the default for every card, not an opt-in per screen — a card is
+     the standard wrapper around a table in this app, and a handful of tables (bulk-upload
+     grids, the ticket table) are intentionally wider than the viewport at typical sizes.
+     Making this the card's own default means a table scrolls inside its card wherever it
+     appears, without each screen having to remember to add the style itself — and it's why
+     .content/.row/.grid2/.grid-props above all needed min-width:0: none of this works if an
+     ancestor refuses to shrink and pushes the whole page wide instead. */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow-x:auto}
+  .card h3{margin:0;padding:14px 16px;border-bottom:1px solid var(--border);font-size:14.5px;display:flex;align-items:center;gap:10px}
   .card h3 .link{margin-left:auto;font-size:12.5px;font-weight:600}
   .card .body{padding:14px 16px}
   .grid2{display:grid;grid-template-columns:2fr 1fr;gap:16px;align-items:start}
   .grid-props{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:9px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
-  td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
-  tr.clickable:hover{background:var(--panel2);cursor:pointer}
-  tbody tr:last-child td{border-bottom:0}
-
-  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;border:1px solid transparent;white-space:nowrap}
-  .b-new{background:#eaf0fb;color:#1d4ea0;border-color:#cfe0fb}
-  .b-triage{background:#eef4fd;color:#1d4ea0;border-color:#d7e6fb}
-  .b-assigned{background:#fff4e6;color:#a8550f;border-color:#f6ddbb}
-  .b-progress{background:#fef7e0;color:#8a610a;border-color:#f2e4a8}
-  .b-parts{background:#f0ecfb;color:#5a2ca6;border-color:#ddd0f6}
-  .b-resolved{background:#eaf7ee;color:#157032;border-color:#c4e8ce}
-  .b-closed{background:#eef1f5;color:#5a6a7c;border-color:#dce3ec}
-  .b-red{background:#fdecea;color:#b02f28;border-color:#f6cfcb}
-  .u-emergency{background:#fdecea;color:#b02f28;border-color:#f3b7b1}
-  .u-high{background:#fff4e6;color:#a8550f;border-color:#f6d3a6}
-  .u-normal{background:#eef1f5;color:#5a6a7c;border-color:#dce3ec}
-  .u-low{background:#f4f6f9;color:#8a99aa;border-color:#e6ebf1}
-  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
-  .dotc{width:8px;height:8px;border-radius:50%;display:inline-block}
-  .owned{color:var(--sys)} .leased{color:var(--ten)}
-
-  .btn{background:var(--os);color:#fff;border:0;border-radius:9px;padding:9px 15px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px}
-  .btn:hover{filter:brightness(1.06)}
-  .btn.sec{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
-  .btn.ghost{background:transparent;color:var(--os);padding:6px 10px}
-  .btn.green{background:var(--green)} .btn.red{background:var(--red)} .btn.amber{background:var(--amber)} .btn.purple{background:var(--sa)}
-  .btn.sm{padding:6px 11px;font-size:12px}
-  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
-  .chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--muted)}
-  .chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
-  select,input[type=text],textarea{font:inherit;border:1px solid var(--line);border-radius:9px;padding:8px 10px;background:var(--panel);color:var(--ink)}
-  label.f{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 5px}
+  /* ---- form field / form section — reusable wrappers for anything not already a table ---- */
+  .form-section{margin:22px 0 16px}
+  .form-section .fs-title{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-400);font-weight:800;margin-bottom:10px}
+  .form-section .fs-desc{font-size:12.5px;color:var(--ink-500);margin:-6px 0 12px;line-height:1.5}
+  .form-field{margin-bottom:14px}
+  .form-field label,label.f{display:block;font-size:12px;font-weight:700;color:var(--ink-500);margin:0 0 5px}
   .field{margin-bottom:14px}
 
-  .sectitle{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:800;margin:22px 0 10px}
+  /* ---- table — dense, restrained borders, sunken header ---- */
+  table,.table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--ink-500);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:9px 12px;background:var(--surface-sunken);border-bottom:1px solid var(--border);white-space:nowrap}
+  td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+  tr.clickable:hover{background:var(--surface-sunken);cursor:pointer}
+  tbody tr:last-child td{border-bottom:0}
+  tfoot td,tfoot th{background:var(--surface-sunken);font-weight:700}
+  .subline{display:block;font-size:11.5px;color:var(--ink-400);font-weight:400;margin-top:1px}
+
+  /* ---- badges — pick a tone, the tone decides the colour. Small pill + coloured dot,
+     used instead of colouring an entire row. ---- */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;border:1px solid transparent;white-space:nowrap}
+  .badge .dot,.dotc{width:7px;height:7px;border-radius:50%;display:inline-block;flex:0 0 auto}
+  .tone-neutral,.b-parts,.b-closed,.u-normal,.u-low{background:var(--tone-neutral-soft-bg);color:var(--tone-neutral-soft-text);border-color:var(--tone-neutral-soft-border)}
+  .tone-neutral .dot,.b-parts .dot,.b-closed .dot,.u-normal .dot,.u-low .dot{background:var(--tone-neutral-dot)}
+  .tone-accent{background:var(--tone-accent-soft-bg);color:var(--tone-accent-soft-text);border-color:var(--tone-accent-soft-border)}
+  .tone-accent .dot{background:var(--tone-accent-dot)}
+  .tone-ok,.b-resolved{background:var(--tone-ok-soft-bg);color:var(--tone-ok-soft-text);border-color:var(--tone-ok-soft-border)}
+  .tone-ok .dot,.b-resolved .dot{background:var(--tone-ok-dot)}
+  .tone-warn,.b-assigned,.b-progress,.u-high{background:var(--tone-warn-soft-bg);color:var(--tone-warn-soft-text);border-color:var(--tone-warn-soft-border)}
+  .tone-warn .dot,.b-assigned .dot,.b-progress .dot,.u-high .dot{background:var(--tone-warn-dot)}
+  .tone-danger,.b-red,.u-emergency{background:var(--tone-danger-soft-bg);color:var(--tone-danger-soft-text);border-color:var(--tone-danger-soft-border)}
+  .tone-danger .dot,.b-red .dot,.u-emergency .dot{background:var(--tone-danger-dot)}
+  .tone-info,.b-new,.b-triage{background:var(--tone-info-soft-bg);color:var(--tone-info-soft-text);border-color:var(--tone-info-soft-border)}
+  .tone-info .dot,.b-new .dot,.b-triage .dot{background:var(--tone-info-dot)}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;border-radius:999px;padding:3px 10px;background:var(--surface-sunken);border:1px solid var(--border);color:var(--ink-500)}
+  .owned{color:var(--role-owned)} .leased{color:var(--role-leased)}
+
+  /* ---- empty state — for a table/list/card with nothing in it yet ---- */
+  .empty-state{text-align:center;padding:34px 20px;color:var(--ink-500)}
+  .empty-state .es-icon{font-size:28px;margin-bottom:8px;opacity:.8}
+  .empty-state .es-title{font-weight:700;font-size:13.5px;color:var(--ink-700);margin-bottom:3px}
+  .empty-state .es-desc{font-size:12.5px;color:var(--ink-400);max-width:360px;margin:0 auto}
+
+  /* ---- buttons — primary / secondary / danger, small / medium.
+     Old class names (.sec, .green, .amber, .red, .purple, .ghost, .sm) are kept as aliases
+     so nothing else in the app needs to change, but they all resolve through the same
+     tone tokens now instead of their own hardcoded colours. ---- */
+  .btn,.btn.primary{background:var(--accent);color:var(--tone-accent-solid-text);border:0;border-radius:9px;padding:9px 15px;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{filter:brightness(1.06)}
+  .btn.sec,.btn.secondary{background:var(--surface);color:var(--ink-900);border:1px solid var(--border)}
+  .btn.ghost{background:transparent;color:var(--accent-dark);padding:6px 10px}
+  .btn.danger,.btn.red{background:var(--tone-danger-solid-bg);color:var(--tone-danger-solid-text)}
+  .btn.green{background:var(--tone-ok-solid-bg);color:var(--tone-ok-solid-text)}
+  .btn.amber{background:var(--tone-warn-solid-bg);color:var(--tone-warn-solid-text)}
+  .btn.purple{background:var(--role-admin);color:var(--on-dark)}
+  .btn.sm,.btn.small{padding:6px 11px;font-size:12px}
+  .btn.md,.btn.medium{padding:9px 15px;font-size:13px}
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--ink-500)}
+  .chip.active{background:var(--ink-900);color:var(--on-dark);border-color:var(--ink-900)}
+  select,input[type=text],textarea{font:inherit;border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:var(--surface);color:var(--ink-900)}
+
+  .sectitle{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-400);font-weight:800;margin:22px 0 10px}
 
   /* drawer */
-  .scrim{position:fixed;inset:0;background:rgba(15,23,34,.42);z-index:60;display:flex;justify-content:flex-end}
-  .drawer{width:560px;max-width:94vw;background:var(--bg);height:100%;overflow:auto;box-shadow:-8px 0 40px rgba(0,0,0,.2);animation:slide .18s ease}
+  .scrim{position:fixed;inset:0;background:rgba(11,18,32,.42);z-index:60;display:flex;justify-content:flex-end}
+  .drawer{width:560px;max-width:94vw;background:var(--page-bg);height:100%;overflow:auto;box-shadow:-8px 0 40px rgba(0,0,0,.2);animation:slide .18s ease}
   @keyframes slide{from{transform:translateX(30px);opacity:.6}to{transform:none;opacity:1}}
-  .drawer .dhead{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--line);padding:16px 20px;display:flex;align-items:flex-start;gap:12px;z-index:2}
-  .drawer .dhead .x{margin-left:auto;background:var(--panel2);border:1px solid var(--line);border-radius:8px;width:32px;height:32px;font-size:16px;color:var(--muted)}
+  .drawer .dhead{position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 20px;display:flex;align-items:flex-start;gap:12px;z-index:2}
+  .drawer .dhead .x{margin-left:auto;background:var(--surface-sunken);border:1px solid var(--border);border-radius:8px;width:32px;height:32px;font-size:16px;color:var(--ink-500)}
   .drawer .dbody{padding:18px 20px}
   .timeline{list-style:none;margin:0;padding:0}
-  .timeline li{position:relative;padding:0 0 16px 22px;border-left:2px solid var(--line);margin-left:5px}
+  .timeline li{position:relative;padding:0 0 16px 22px;border-left:2px solid var(--border);margin-left:5px}
   .timeline li:last-child{border-left-color:transparent}
-  .timeline li .tdot{position:absolute;left:-7px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--os);border:2px solid #fff}
+  .timeline li .tdot{position:absolute;left:-7px;top:2px;width:12px;height:12px;border-radius:50%;background:var(--accent);border:2px solid var(--surface)}
   .timeline li .tt{font-weight:700;font-size:13px}
-  .timeline li .tm{font-size:12px;color:var(--muted)}
+  .timeline li .tm{font-size:12px;color:var(--ink-500)}
   .kv{display:grid;grid-template-columns:130px 1fr;gap:8px 14px;font-size:13px}
-  .kv .k{color:var(--muted)}
-  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
-  .tab{background:transparent;border:0;padding:10px 14px;font-weight:700;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}
-  .tab.active{color:var(--os);border-bottom-color:var(--os)}
-  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:90;box-shadow:var(--shadow);animation:pop .2s ease}
+  .kv .k{color:var(--ink-500)}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap}
+  .tab{background:transparent;border:0;padding:10px 14px;font-weight:700;font-size:13px;color:var(--ink-500);border-bottom:2px solid transparent}
+  .tab.active{color:var(--accent-dark);border-bottom-color:var(--accent)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink-900);color:var(--on-dark);padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:90;box-shadow:var(--shadow);animation:pop .2s ease}
   @keyframes pop{from{transform:translate(-50%,10px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
-  .progress{height:7px;background:var(--panel2);border-radius:99px;overflow:hidden}
-  .progress > i{display:block;height:100%;background:var(--os);border-radius:99px}
-  .avatarsm{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:11px}
-  .muted{color:var(--muted)} .faint{color:var(--faint)} .b{font-weight:700} .right{text-align:right} .mono{font-variant-numeric:tabular-nums}
+  .progress{height:7px;background:var(--surface-sunken);border-radius:99px;overflow:hidden}
+  .progress > i{display:block;height:100%;background:var(--accent);border-radius:99px}
+  .avatarsm{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:var(--on-dark);font-size:11px}
+  .muted{color:var(--ink-500)} .faint{color:var(--ink-400)} .b{font-weight:700} .right{text-align:right} .mono{font-variant-numeric:tabular-nums}
 
   /* ---- mobile ---- */
   #mobile{display:flex;justify-content:center;padding:26px 12px 60px;background:
-    radial-gradient(1200px 400px at 50% -160px, #dbe3ee, transparent);min-height:calc(100vh - 56px)}
-  .phone{width:390px;max-width:96vw;height:820px;max-height:86vh;background:#0b1220;border-radius:44px;padding:12px;box-shadow:0 30px 70px rgba(15,23,34,.4);position:relative}
-  .screen{background:#f2f5f9;border-radius:34px;height:100%;overflow:hidden;display:flex;flex-direction:column;position:relative}
-  .statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;font-weight:700;color:#0b1220;flex:0 0 auto}
-  .notch{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:120px;height:26px;background:#0b1220;border-radius:0 0 16px 16px;z-index:5}
-  .mhead{background:linear-gradient(135deg,var(--cg),#0b7b83);color:#fff;padding:12px 18px 16px;flex:0 0 auto}
+    radial-gradient(1200px 400px at 50% -160px, var(--ink-100), transparent);min-height:calc(100vh - 56px)}
+  .phone{width:390px;max-width:96vw;height:820px;max-height:86vh;background:var(--ink-900);border-radius:44px;padding:12px;box-shadow:0 30px 70px rgba(11,18,32,.4);position:relative}
+  .screen{background:var(--surface-sunken);border-radius:34px;height:100%;overflow:hidden;display:flex;flex-direction:column;position:relative}
+  .statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-size:12px;font-weight:700;color:var(--ink-900);flex:0 0 auto}
+  .notch{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:120px;height:26px;background:var(--ink-900);border-radius:0 0 16px 16px;z-index:5}
+  .mhead{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:var(--on-dark);padding:12px 18px 16px;flex:0 0 auto}
   .mhead .hi{font-size:12.5px;opacity:.9}
   .mhead .nm{font-size:19px;font-weight:800}
   .mbody{flex:1;overflow:auto;padding:16px}
-  .mnav{flex:0 0 auto;display:flex;border-top:1px solid #e2e8f0;background:#fff}
-  .mnav button{flex:1;background:transparent;border:0;padding:9px 0 12px;font-size:10.5px;font-weight:700;color:var(--faint);display:flex;flex-direction:column;align-items:center;gap:3px}
+  .mnav{flex:0 0 auto;display:flex;border-top:1px solid var(--border);background:var(--surface)}
+  .mnav button{flex:1;background:transparent;border:0;padding:9px 0 12px;font-size:10.5px;font-weight:700;color:var(--ink-400);display:flex;flex-direction:column;align-items:center;gap:3px}
   .mnav button .mi{font-size:19px}
-  .mnav button.active{color:var(--cg)}
-  .mcard{background:#fff;border:1px solid #e6ecf3;border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,70,.05)}
-  .bigbtn{width:100%;background:linear-gradient(135deg,var(--cg),#0b7b83);color:#fff;border:0;border-radius:16px;padding:18px;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 8px 22px rgba(14,154,163,.35)}
+  .mnav button.active{color:var(--accent)}
+  .mcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,70,.05)}
+  .bigbtn{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:var(--on-dark);border:0;border-radius:16px;padding:18px;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 8px 22px rgba(14,154,163,.35)}
   .optgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .opt{border:1.5px solid #e2e8f0;background:#fff;border-radius:14px;padding:14px 10px;font-weight:700;font-size:13px;text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center;color:var(--ink)}
+  .opt{border:1.5px solid var(--border);background:var(--surface);border-radius:14px;padding:14px 10px;font-weight:700;font-size:13px;text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center;color:var(--ink-900)}
   .opt .oi{font-size:22px}
-  .opt.sel{border-color:var(--cg);background:#e9f7f8;color:#0b7b83}
-  .mstep{font-size:11px;font-weight:800;color:var(--cg);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+  .opt.sel{border-color:var(--accent);background:var(--tone-accent-soft-bg);color:var(--tone-accent-text)}
+  .mstep{font-size:11px;font-weight:800;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
   .mtitle{font-size:20px;font-weight:800;margin:0 0 14px}
   .mfield{margin-bottom:14px}
-  .mfield label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin-bottom:6px}
-  .mfield input,.mfield textarea,.mfield select{width:100%;border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;font:inherit;background:#fff}
-  .photo{border:2px dashed #cbd6e2;border-radius:14px;padding:22px;text-align:center;color:var(--faint);font-weight:700}
+  .mfield label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-500);margin-bottom:6px}
+  .mfield input,.mfield textarea,.mfield select{width:100%;border:1.5px solid var(--border);border-radius:12px;padding:12px;font:inherit;background:var(--surface)}
+  .photo{border:2px dashed var(--ink-300);border-radius:14px;padding:22px;text-align:center;color:var(--ink-400);font-weight:700}
   .mrow{display:flex;justify-content:space-between;align-items:center;gap:10px}
 
   /* ===== Responsive: tablet (<=900px) and phone (<=560px) ===== */
@@ -208,6 +341,8 @@
     .grid-props{gap:10px}
     table{font-size:12.5px}
     th,td{padding:9px 8px}
+    .page-header{margin-bottom:14px}
+    .page-header .ph-title{font-size:19px}
     /* stack the Issued/Expires and Scheduled/Completed field pairs */
     .field-pair{flex-direction:column !important;gap:0 !important}
     .field-pair > div{margin-bottom:10px}
@@ -254,6 +389,14 @@
   @media(max-width:639px){ .hide-below-sm{display:none} }
   .show-below-sm{display:none}
   @media(max-width:639px){ .show-below-sm{display:inline} }
+  /* Inverse of hide-below-md/-lg — for folding a column that's about to be hidden into a
+     muted second line inside a cell that stays, so the information survives even though
+     its own column doesn't. Only shows in the width range where the matching hide-below
+     class has actually hidden that column, so nothing is ever shown twice. */
+  .show-below-md{display:none}
+  @media(max-width:767px){ .show-below-md{display:inline} }
+  .show-below-lg{display:none}
+  @media(max-width:1023px){ .show-below-lg{display:inline} }
   /* explicit max-width so long values (addresses, descriptions) truncate instead of
      stretching the column — text-overflow:ellipsis alone does nothing in an auto-layout
      table cell, the column just grows to fit the content */
@@ -261,49 +404,54 @@
      and forcing block display on a table cell breaks the table layout. table-cell (and a
      flex-item span/div) both respect text-overflow fine without it. */
   .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+  /* Frozen column — stays put while a wide table (e.g. Maintenance) scrolls horizontally
+     underneath it. Needs its own opaque background since sticky positioning doesn't clip
+     scrolled content otherwise; the hover rule keeps it in sync with the rest of the row. */
+  .col-frozen{position:sticky;left:0;background:var(--surface);z-index:2;box-shadow:2px 0 6px rgba(11,18,32,.06)}
+  tr.clickable:hover .col-frozen{background:var(--surface-sunken)}
+  thead .col-frozen{z-index:3;background:var(--surface-sunken)}
   @media(max-width:900px){ .trunc{max-width:140px} }
   @media(max-width:560px){ .trunc{max-width:100px} }
-  .subline{display:block;font-size:11.5px;color:var(--faint);font-weight:400;margin-top:1px}
   .addr-full{display:none}
   .addr-city{display:block}
   @media(min-width:900px){ .addr-full{display:block} .addr-city{display:none} }
 
   /* ===== Users & Roles page — scoped restyle, does not affect other pages ===== */
   .uroles-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap}
-  .uroles-headtext{font-size:12.5px;color:var(--muted);max-width:620px;line-height:1.55}
-  .uroles-refresh{background:var(--uroles-accent);border:0;color:#fff;font-weight:700;font-size:12.5px;border-radius:8px;padding:9px 15px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+  .uroles-headtext{font-size:12.5px;color:var(--ink-500);max-width:620px;line-height:1.55}
+  .uroles-refresh{background:var(--uroles-accent);border:0;color:var(--on-dark);font-weight:700;font-size:12.5px;border-radius:8px;padding:9px 15px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
   .uroles-refresh:hover{background:var(--uroles-accent2)}
-  .uroles-card{border-radius:12px;border:1px solid var(--line);overflow:hidden;background:var(--panel);padding:0}
+  .uroles-card{border-radius:12px;border:1px solid var(--border);overflow:hidden;background:var(--surface);padding:0}
   .uroles-table{width:100%;border-collapse:collapse}
-  .uroles-table thead th{text-align:left;padding:11px 16px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--panel2);border-bottom:1px solid var(--line)}
-  .uroles-table tbody td{padding:13px 16px;border-top:1px solid var(--line);vertical-align:middle}
-  .uroles-table tbody tr:hover{background:var(--panel2)}
+  .uroles-table thead th{text-align:left;padding:11px 16px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);background:var(--surface-sunken);border-bottom:1px solid var(--border)}
+  .uroles-table tbody td{padding:13px 16px;border-top:1px solid var(--border);vertical-align:middle}
+  .uroles-table tbody tr:hover{background:var(--surface-sunken)}
   .uroles-person{display:flex;align-items:center;gap:10px}
-  .uroles-avatar{width:30px;height:30px;border-radius:50%;background:var(--uroles-accent);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
-  .uroles-name{font-weight:700;font-size:13.5px;color:var(--ink)}
-  .uroles-email{font-size:12px;color:var(--muted)}
+  .uroles-avatar{width:30px;height:30px;border-radius:50%;background:var(--uroles-accent);color:var(--on-dark);font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .uroles-name{font-weight:700;font-size:13.5px;color:var(--ink-900)}
+  .uroles-email{font-size:12px;color:var(--ink-500)}
   select.uroles-rolepill{border:1px solid transparent;border-radius:999px;padding:5px 28px 5px 13px;font-size:11.5px;font-weight:700;cursor:pointer;appearance:none;-webkit-appearance:none;background-repeat:no-repeat;background-position:right 10px center;background-size:11px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a6a7c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")}
-  select.uroles-rolepill.r-admin{background-color:rgba(13,148,136,.13);color:var(--uroles-accent2);border-color:rgba(13,148,136,.3)}
-  select.uroles-rolepill.r-office{background-color:#eef1f5;color:#5a6a7c;border-color:#dce3ec}
-  select.uroles-rolepill.r-caregiver{background-color:#fff4e6;color:#a8550f;border-color:#f6ddbb}
-  .uroles-access{font-size:12.5px;color:var(--muted)}
-  .uroles-access.none{color:var(--faint);font-style:italic}
-  .uroles-access-all{display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:var(--faint);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+  select.uroles-rolepill.r-admin{background-color:var(--tone-accent-soft-bg);color:var(--uroles-accent2);border-color:var(--tone-accent-soft-border)}
+  select.uroles-rolepill.r-office{background-color:var(--tone-neutral-soft-bg);color:var(--tone-neutral-soft-text);border-color:var(--tone-neutral-soft-border)}
+  select.uroles-rolepill.r-caregiver{background-color:var(--tone-warn-soft-bg);color:var(--tone-warn-soft-text);border-color:var(--tone-warn-soft-border)}
+  .uroles-access{font-size:12.5px;color:var(--ink-500)}
+  .uroles-access.none{color:var(--ink-400);font-style:italic}
+  .uroles-access-all{display:inline-flex;align-items:center;font-size:11px;font-weight:700;color:var(--ink-400);background:var(--surface-sunken);border:1px solid var(--border);border-radius:999px;padding:3px 10px}
   .uroles-edit{color:var(--uroles-accent2);font-weight:700;font-size:12px;cursor:pointer;margin-left:8px;white-space:nowrap}
-  .uroles-foot{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.55}
+  .uroles-foot{font-size:12px;color:var(--ink-500);margin-top:12px;line-height:1.55}
   .uroles-matrix-head{margin:22px 0 10px}
   .uroles-matrix-head h3{font-size:14px;font-weight:800;margin:0 0 3px}
-  .uroles-matrix-head .sub{font-size:12px;color:var(--muted)}
+  .uroles-matrix-head .sub{font-size:12px;color:var(--ink-500)}
   .uroles-permtable{width:100%;border-collapse:collapse}
-  .uroles-permtable thead th{text-align:left;padding:10px 14px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--panel2);border-bottom:1px solid var(--line)}
+  .uroles-permtable thead th{text-align:left;padding:10px 14px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);background:var(--surface-sunken);border-bottom:1px solid var(--border)}
   .uroles-permtable thead th.c{text-align:center}
-  .uroles-permtable tbody td{padding:10px 14px;border-top:1px solid var(--line);font-size:12.5px}
+  .uroles-permtable tbody td{padding:10px 14px;border-top:1px solid var(--border);font-size:12.5px}
   .uroles-permtable tbody td.c{text-align:center}
-  .uroles-permtable tbody tr:hover{background:var(--panel2)}
+  .uroles-permtable tbody tr:hover{background:var(--surface-sunken)}
   .uroles-permbadge{display:inline-flex;align-items:center;justify-content:center;min-width:38px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px;border:1px solid transparent}
-  .uroles-permbadge.rw{background:rgba(13,148,136,.13);color:var(--uroles-accent2);border-color:rgba(13,148,136,.3)}
-  .uroles-permbadge.r{background:#eef1f5;color:#5a6a7c;border-color:#dce3ec}
-  .uroles-permbadge.none{background:transparent;color:var(--faint);border-color:transparent}
+  .uroles-permbadge.rw{background:var(--tone-accent-soft-bg);color:var(--uroles-accent2);border-color:var(--tone-accent-soft-border)}
+  .uroles-permbadge.r{background:var(--tone-neutral-soft-bg);color:var(--tone-neutral-soft-text);border-color:var(--tone-neutral-soft-border)}
+  .uroles-permbadge.none{background:transparent;color:var(--ink-400);border-color:transparent}
 </style>
 </head>
 <body>
@@ -319,7 +467,7 @@
   </div>
   <div class="tb-user hidden" id="liveRoleBadge">
     <button class="tb-user-btn" onclick="toggleUserMenu(event)" aria-label="Account menu">
-      <span class="avatarsm" id="topAvatar" style="background:var(--os)">DC</span>
+      <span class="avatarsm" id="topAvatar" style="background:var(--os)">—</span>
       <span class="tb-user-text"><span class="tb-user-name" id="topName">—</span><span class="tb-user-role" id="topRole">—</span></span>
       <span class="tb-caret">▾</span>
     </button>
@@ -335,8 +483,8 @@
   <div class="navscrim" id="navScrim" onclick="closeNavDrawer()"></div>
   <aside class="side" id="sideNav">
     <div class="who">
-      <div class="avatar" id="sideAvatar" style="background:var(--os)">DC</div>
-      <div><div class="nm" id="sideName">Dana Cruz</div><div class="rl" id="sideRole">Office Staff</div></div>
+      <div class="avatar" id="sideAvatar" style="background:var(--os)">—</div>
+      <div><div class="nm" id="sideName">—</div><div class="rl" id="sideRole">—</div></div>
     </div>
     <nav id="nav"></nav>
     <div class="foot" id="footStatus">KodaRE — Property Management Platform<br>Live — connected to Supabase</div>
@@ -359,13 +507,13 @@
 
 <div id="drawerRoot"></div>
 <div id="toastRoot"></div>
-<div id="authGate" class="hidden" style="position:fixed;inset:0;background:#0b1220;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:inherit">
-  <div style="background:#fff;border-radius:14px;padding:32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+<div id="authGate" class="hidden" style="position:fixed;inset:0;background:var(--ink-900);display:flex;align-items:center;justify-content:center;z-index:9999;font-family:inherit">
+  <div style="background:var(--surface);border-radius:14px;padding:32px;width:340px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.35)">
     <div style="font-size:19px;font-weight:800;margin-bottom:4px">KodaRE</div>
     <div class="muted" style="font-size:12.5px;margin-bottom:18px">Sign in to your team's live workspace</div>
     <div class="field"><label class="f">Email</label><input type="email" id="authEmail" style="width:100%" placeholder="you@company.com"></div>
     <div class="field" style="margin-top:10px"><label class="f">Password</label><input type="password" id="authPassword" style="width:100%" placeholder="••••••••"></div>
-    <div id="authError" style="color:var(--red,#c0392b);font-size:12.5px;margin-top:8px;min-height:16px"></div>
+    <div id="authError" style="color:var(--red);font-size:12.5px;margin-top:8px;min-height:16px"></div>
     <button class="btn" style="width:100%;margin-top:14px" onclick="authSignIn()">Sign in</button>
   </div>
 </div>
@@ -398,7 +546,7 @@ function rowToTicket(row){
     vendor: row.vendor, cost: row.cost!=null?Number(row.cost):null,
     invoice: row.invoice_number, invoiceFileUrl: row.invoice_file_url, invoiceFileName: row.invoice_file_name,
     invoiceTotal: row.invoice_total!=null?Number(row.invoice_total):null, payment: row.payment_status,
-    reporter: row.reporter, created: new Date(row.created_at),
+    reporter: row.reporter, createdByEmail: row.created_by_email||null, created: new Date(row.created_at),
     log: acts.map(a=>[a.action, a.detail, a.created_at])
   };
 }
@@ -701,7 +849,7 @@ async function loadRealTicketAttachments(){
   TICKET_ATTACHMENTS.length=0;(data||[]).forEach(row=>TICKET_ATTACHMENTS.push(rowToTicketAttachment(row)));
 }
 async function dbInsertTicketAttachment(ticketId,kind,fileName,filePath,fileSize){
-  const {data,error}=await sb.from('ticket_attachments').insert({ticket_id:ticketId,kind,file_name:fileName,file_path:filePath,file_size:fileSize,uploaded_by:MY_NAME||''}).select().single();
+  const {data,error}=await sb.from('ticket_attachments').insert({ticket_id:ticketId,kind,file_name:fileName,file_path:filePath,file_size:fileSize,uploaded_by:currentUserDisplayName()}).select().single();
   if(error){toast('Could not save attachment record: '+error.message);return null;}
   return data;
 }
@@ -1123,8 +1271,8 @@ function mkTicket(o){return Object.assign({id:'T-'+(++TID),log:[]},o);}
 
 const SB={'Open':'b-new','Triage':'b-triage','Assigned':'b-assigned','In progress':'b-progress','Awaiting parts':'b-parts','Escalated':'b-red','Completed':'b-resolved','Resolved':'b-resolved','Closed':'b-closed'};
 const UB={'Emergency':'u-emergency','Urgent':'u-high','High':'u-high','Normal':'u-normal','Low':'u-low'};
-const badge=t=>`<span class="badge ${SB[t.status]||'b-new'}">${t.status}</span>`;
-const ubadge=u=>`<span class="badge ${UB[u]||'u-normal'}">${u==='Emergency'?'🚨 ':''}${u}</span>`;
+const badge=t=>`<span class="badge ${SB[t.status]||'b-new'}"><span class="dot"></span>${t.status}</span>`;
+const ubadge=u=>`<span class="badge ${UB[u]||'u-normal'}"><span class="dot"></span>${u==='Emergency'?'🚨 ':''}${u}</span>`;
 const OPEN=['Open','In progress','Triage','Assigned','Awaiting parts','Escalated'];
 const isOpen=t=>OPEN.includes(t.status);
 const vName=x=>x||'—';
@@ -1133,12 +1281,12 @@ function updateNote(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;cons
   if(t._backend==='supabase')dbUpdateTicket(id,{notes:val}).then(ok=>{if(!ok){t.notes=prev;refreshTickets();}});
   else saveState();
   toast('Note saved');}
-function paySelect(t){return `<select onchange="updatePayment('${t.id}',this.value)" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${t.payment==='Paid'?'#eaf7ee':t.payment==='Ready for Payment'?'#fff4e6':t.payment==='Match Proposed'?'#fef7e0':'#fff'}"><option value=""${!t.payment?' selected':''}>—</option><option value="Match Proposed"${t.payment==='Match Proposed'?' selected':''}>⚠ Match Proposed</option><option value="Ready for Payment"${t.payment==='Ready for Payment'?' selected':''}>Ready for Payment</option><option value="Paid"${t.payment==='Paid'?' selected':''}>Paid</option></select>`;}
+function paySelect(t){return `<select onchange="updatePayment('${t.id}',this.value)" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${t.payment==='Paid'?'var(--tone-ok-soft-bg)':t.payment==='Ready for Payment'?'var(--tone-warn-soft-bg)':t.payment==='Match Proposed'?'var(--tone-warn-soft-bg)':'var(--surface)'}"><option value=""${!t.payment?' selected':''}>—</option><option value="Match Proposed"${t.payment==='Match Proposed'?' selected':''}>⚠ Match Proposed</option><option value="Ready for Payment"${t.payment==='Ready for Payment'?' selected':''}>Ready for Payment</option><option value="Paid"${t.payment==='Paid'?' selected':''}>Paid</option></select>`;}
 function refreshTickets(){computeHealth();if(VIEW==='tickets'&&MAINT_TAB==='items')renderTickets(document.getElementById('view'));}
 function renderTrash(el){
-  if(ROLE!=='admin'){el.innerHTML='<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view Trash.</div>';return;}
+  if(ROLE!=='admin'){el.innerHTML=pageHeader('trash')+'<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view Trash.</div>';return;}
   const rows=TRASH.slice().sort((a,b)=>new Date(b.deletedAt)-new Date(a.deletedAt));
-  el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:10px">Deleted properties, vendors, and tickets land here first. Restore brings them back exactly as they were, or delete permanently to remove them for good.</div>
+  el.innerHTML=`${pageHeader('trash')}<div class="muted" style="font-size:12.5px;margin-bottom:10px">Deleted properties, vendors, and tickets land here first. Restore brings them back exactly as they were, or delete permanently to remove them for good.</div>
   <div class="card"><div class="body">${rows.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="text-align:left;padding:8px 6px">Type</th><th style="text-align:left;padding:8px 6px">Item</th><th style="text-align:left;padding:8px 6px">Deleted</th><th style="padding:8px 6px"></th>
   </tr></thead><tbody>${rows.map(r=>`<tr style="border-top:1px solid var(--line)">
@@ -1151,9 +1299,9 @@ function renderTrash(el){
     </td></tr>`).join('')}</tbody></table>`:'<div class="muted" style="text-align:center;padding:26px">Trash is empty.</div>'}</div></div>`;
 }
 function renderUserManagement(el){
-  if(ROLE!=='admin'){el.innerHTML='<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view User Management.</div>';return;}
+  if(ROLE!=='admin'){el.innerHTML=pageHeader('users')+'<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view User Management.</div>';return;}
   const roleOpts=[['admin','Senior Admin'],['office','Office Staff'],['caregiver','Field Staff']];
-  el.innerHTML=`<div class="uroles-head">
+  el.innerHTML=`${pageHeader('users')}<div class="uroles-head">
     <div class="uroles-headtext">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</div>
     <button class="uroles-refresh" onclick="refreshUserRoles()">🔄 Refresh</button></div>
   <div class="card uroles-card" style="overflow-x:auto"><div class="body" style="padding:0">${USER_ROLES.length?`<table class="uroles-table"><thead><tr>
@@ -1334,8 +1482,10 @@ function updatePayment(id,val){
   toast(val?('Payment: '+val):'Payment cleared');refreshTickets();
 }
 const STATUS_OPTS=['Open','In progress','Completed','Closed'];
-const STATUS_BG={'Open':'#eaf0fb','In progress':'#fef7e0','Completed':'#eaf7ee','Closed':'#eef1f5'};
-function statusSelect(t){return `<select onchange="setStatus('${t.id}',this.value,'Updated from Maintenance table')" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${STATUS_BG[t.status]||'#fff'}">${STATUS_OPTS.map(s=>`<option value="${s}"${t.status===s?' selected':''}>${s}</option>`).join('')}</select>`;}
+// Status intentionally does not vary background by value (unlike Priority) — Sonia asked for
+// this to read as one flat, low-key control rather than a second set of status colours next
+// to Priority's, so it always uses the same light-grey tone (matching Priority's "Low").
+function statusSelect(t){return `<select onchange="setStatus('${t.id}',this.value,'Updated from Maintenance table')" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:var(--tone-neutral-soft-bg)">${STATUS_OPTS.map(s=>`<option value="${s}"${t.status===s?' selected':''}>${s}</option>`).join('')}</select>`;}
 function updateCost(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const v=val.trim();const prev=t.cost;
   if(v===''){t.cost=null;}else{const n=Number(v);if(!isNaN(n))t.cost=n;}
   if(t._backend==='supabase')dbUpdateTicket(id,{cost:t.cost}).then(ok=>{if(!ok){t.cost=prev;refreshTickets();}});
@@ -1409,7 +1559,7 @@ async function attachInvoiceFile(t,file,invoiceTotal){
   t.invoiceTotal=(invoiceTotal!=null)?invoiceTotal:null;
   return true;
 }
-function rowDragOver(ev){ev.preventDefault();ev.currentTarget.style.background='#fef7e0';}
+function rowDragOver(ev){ev.preventDefault();ev.currentTarget.style.background='var(--tone-warn-soft-bg)';}
 function rowDragLeave(ev){ev.currentTarget.style.background='';}
 async function dropInvoiceOnTicket(id,ev){
   ev.preventDefault();ev.currentTarget.style.background='';
@@ -1424,7 +1574,7 @@ async function dropInvoiceOnTicket(id,ev){
   toast('Invoice attached to '+id+' — status set to Match Proposed, review and confirm');
   refreshTickets();
 }
-function bulkDragOver(ev){ev.preventDefault();if(SELECTED.size)ev.currentTarget.style.background='#fef7e0';}
+function bulkDragOver(ev){ev.preventDefault();if(SELECTED.size)ev.currentTarget.style.background='var(--tone-warn-soft-bg)';}
 function bulkDragLeave(ev){ev.currentTarget.style.background='';}
 async function dropInvoiceOnSelected(ev){
   ev.preventDefault();ev.currentTarget.style.background='';
@@ -1561,7 +1711,7 @@ function openInvoiceMatchReview(result,uploaded){
       <div style="flex:1">
         <div class="b" style="font-size:13px">${esc(ticketRef(t))} — ${esc(t.title||'')}</div>
         <div class="faint" style="font-size:11.5px">${p?esc(p.name):'—'} · matched from: "${esc(it.description||'')}"</div>
-        ${it._lumpDefault?'<div class="faint" style="font-size:11px;color:var(--amber,#b8860b);margin-top:2px">⚠ Lump-sum invoice — full total defaulted here; split across the other matched tickets below as needed</div>':''}
+        ${it._lumpDefault?'<div class="faint" style="font-size:11px;color:var(--tone-warn-text);margin-top:2px">⚠ Lump-sum invoice — full total defaulted here; split across the other matched tickets below as needed</div>':''}
       </div>
       <div style="width:120px"><label class="f" style="font-size:10.5px">Proposed cost</label><input type="number" step="0.01" id="invRevCost_${it._ix}" value="${it.amount!=null?it.amount:''}" style="width:100%;font-size:13px"></div>
       <div style="width:24px;padding-top:20px"><input type="checkbox" id="invRevInclude_${it._ix}" checked title="Include this match"></div>
@@ -1640,7 +1790,7 @@ let NOTES=[
 let CERTS=[];
 let INSPECTIONS=[];
 function daysTo(d){if(!d)return null;const dd=new Date(/^\d{4}-\d{2}-\d{2}$/.test(d)?d+'T00:00:00':d);return Math.round((dd-today)/864e5);}
-function certBadge(c){if(c.status==='expired')return '<span class="badge b-red">⚠ Expired</span>';if(c.status==='in renewal')return '<span class="badge b-progress">↻ In renewal</span>';if(!c.exp)return '<span class="badge b-resolved">✓ Active (perpetual)</span>';const d=daysTo(c.exp);if(d<=ASSUMPTIONS.complianceExpiringDays&&d>=0)return `<span class="badge b-assigned">⏳ Expires in ${d}d</span>`;return '<span class="badge b-resolved">✓ Active</span>';}
+function certBadge(c){if(c.status==='expired')return '<span class="badge b-red"><span class="dot"></span>⚠ Expired</span>';if(c.status==='in renewal')return '<span class="badge b-progress"><span class="dot"></span>↻ In renewal</span>';if(!c.exp)return '<span class="badge b-resolved"><span class="dot"></span>✓ Active (perpetual)</span>';const d=daysTo(c.exp);if(d<=ASSUMPTIONS.complianceExpiringDays&&d>=0)return `<span class="badge b-assigned"><span class="dot"></span>⏳ Expires in ${d}d</span>`;return '<span class="badge b-resolved"><span class="dot"></span>✓ Active</span>';}
 
 /* ===== Compliance readiness / "survey readiness" scoring (Scope §4.2.4) =====
  * Answers "if a surveyor/DHS walked in tomorrow, would this property pass?" — narrower
@@ -1708,7 +1858,7 @@ function readinessBanner(p){
   const c=READINESS_COLOR[r.verdict];
   return `<div class="card" style="margin-bottom:12px;border-color:var(--${c})"><div class="body">
     <div style="color:var(--${c})"><b>${r.verdict==='fail'?'⚠':'⏳'} ${READINESS_LABEL[r.verdict]}</b></div>
-    <div style="margin-top:6px">${r.gaps.map(g=>`<div style="font-size:12.5px;margin-top:3px"><span class="badge ${g.severity==='fail'?'b-red':'b-assigned'}" style="margin-right:6px">${g.severity==='fail'?'Missing/expired':'Expiring'}</span>${esc(g.label)} — <span class="muted">${esc(g.detail)}</span></div>`).join('')}</div>
+    <div style="margin-top:6px">${r.gaps.map(g=>`<div style="font-size:12.5px;margin-top:3px"><span class="badge ${g.severity==='fail'?'b-red':'b-assigned'}" style="margin-right:6px"><span class="dot"></span>${g.severity==='fail'?'Missing/expired':'Expiring'}</span>${esc(g.label)} — <span class="muted">${esc(g.detail)}</span></div>`).join('')}</div>
   </div></div>`;
 }
 
@@ -1838,9 +1988,50 @@ let MY_NAME='';
 let SELECTED=new Set();
 let TRASH=[];
 let PFILTER={metro:'all'};
+// ===== single source of truth for "who is signed in" =====
+// Every place that needs to default a field to the current person, attribute an action to
+// them, or show their name/initials MUST call this function rather than reading MY_NAME or
+// STAFF directly. In live mode MY_NAME only ever comes from dbResolveMyRole(), which looks
+// the signed-in user's auth id up in user_roles — never a stored/cached name, never "the
+// first row". In demo mode (no Supabase configured) it falls back to the role-switcher's
+// STAFF constant, and only there — checking SUPA_CONFIGURED explicitly (not just "is
+// MY_NAME empty") means a real live session can never silently fall through to a fake demo
+// name, even in an edge case where the profile row has no name and no email yet.
+function currentUserDisplayName(){
+  if(SUPA_CONFIGURED)return MY_NAME||'';
+  return STAFF[ROLE]?STAFF[ROLE].name:'';
+}
+// The signed-in user's auth email, resolved fresh from the Supabase session each time —
+// used to stamp who actually created a record (maintenance_tickets.created_by_email) so
+// attribution has a verifiable source instead of resting entirely on the editable
+// human-readable "reporter" name. Demo mode has no real session, so returns null.
+async function currentUserEmail(){
+  if(!SUPA_CONFIGURED)return null;
+  const {data:{user}}=await sb.auth.getUser();
+  return user?user.email:null;
+}
 
 const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'reports',ic:'📊',label:'Reports'},{id:'assumptions',ic:'🧮',label:'Assumptions'},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length},{id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length}];
 const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2'],errorlog:['Error Log','Background failures, auto-logged — Senior Admin only'],auditlog:['Audit Log','Sensitive data changes, immutable — Senior Admin only · Scope §5.2/§5.5']};
+// ===== page-header component (design system) — one reusable eyebrow/title/description/
+// actions block, fed by the TITLES map above, so every screen's header comes from the
+// same markup instead of each render function hand-rolling its own heading. Called from
+// the top of every render*(el) function below so it survives re-renders triggered from
+// anywhere (filters, saves, etc.), not just the initial navigate().
+const PAGE_EYEBROW={dashboard:'Overview',tickets:'Operations',properties:'Portfolio',leases:'Portfolio',vendors:'Operations',compliance:'Compliance',assumptions:'Configuration',clientexp:'Financial',reports:'Financial',recon:'Financial',approvals:'Operations',trash:'System',users:'Administration',errorlog:'Administration',auditlog:'Administration'};
+function pageHeader(v,actionsHtml){
+  const t=TITLES[v]||[v,''];
+  const title=v==='approvals'?'Approvals':t[0];
+  const desc=v==='approvals'?'Items waiting on Senior Admin review':t[1];
+  const eyebrow=PAGE_EYEBROW[v]||'';
+  return `<div class="page-header">
+    <div class="ph-text">${eyebrow?`<div class="ph-eyebrow">${esc(eyebrow)}</div>`:''}
+      <div class="ph-title">${esc(title)}</div>
+      ${desc?`<div class="ph-desc">${esc(desc)}</div>`:''}
+    </div>
+    ${actionsHtml?`<div class="ph-actions">${actionsHtml}</div>`:''}
+  </div>`;
+}
 function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
   const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
@@ -1894,7 +2085,7 @@ function errRow(e){
 function renderErrorLog(el){
   const open=ERROR_LOG.filter(e=>!e.resolvedAt);
   const resolved=ERROR_LOG.filter(e=>e.resolvedAt);
-  el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">Every " failed" message anyone sees in the app — a save, delete, restore, or upload that didn't go through — is written here automatically the moment it happens, so a background failure nobody mentioned doesn't just disappear. Most recent 200 shown, newest first.</div>
+  el.innerHTML=`${pageHeader('errorlog')}<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">Every " failed" message anyone sees in the app — a save, delete, restore, or upload that didn't go through — is written here automatically the moment it happens, so a background failure nobody mentioned doesn't just disappear. Most recent 200 shown, newest first.</div>
   <div class="sectitle">Open (${open.length})</div>
   <div class="card" style="overflow-x:auto"><table><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-md">Screen</th><th class="hide-below-lg">Who</th><th>Message</th><th></th></tr></thead><tbody>
   ${open.length?open.map(errRow).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open errors — nothing has failed since this started logging.</td></tr>'}
@@ -1953,7 +2144,7 @@ function auditRow(e){
   </tr>`;
 }
 function renderAuditLog(el){
-  el.innerHTML=`<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">An immutable record of sensitive changes — Senior-Admin-locked property/loan fields, role changes, property assignments, and permanent deletions. Nothing here can be edited or removed, by anyone, through the app. Most recent 300 shown, newest first. Scope §5.2/§5.5.</div>
+  el.innerHTML=`${pageHeader('auditlog')}<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">An immutable record of sensitive changes — Senior-Admin-locked property/loan fields, role changes, property assignments, and permanent deletions. Nothing here can be edited or removed, by anyone, through the app. Most recent 300 shown, newest first. Scope §5.2/§5.5.</div>
   <div class="card" style="overflow-x:auto"><table><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-lg">Who</th><th>Action</th><th>Record</th><th class="hide-below-md">Field</th><th>Change</th></tr></thead><tbody>
   ${AUDIT_LOG.length?AUDIT_LOG.map(auditRow).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No audited changes yet.</td></tr>'}
   </tbody></table></div>`;
@@ -1966,7 +2157,7 @@ function renderDashboard(el){
   const exc=RECON.weekly.exceptions.length+RECON.monthly.exceptions.length;
   const spend=TICKETS.filter(t=>t.cost&&t.payment==='Paid'&&new Date(t.created)>=fyStart()).reduce((s,t)=>s+t.cost,0);
   const recent=[...TICKETS].sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,7);
-  el.innerHTML=`
+  el.innerHTML=`${pageHeader('dashboard')}
   <div class="kpis">
     <div class="kpi"><div class="lab">Open items</div><div class="val">${open.length}</div><div class="sub">${TICKETS.length} total tracked</div></div>
     <div class="kpi red"><div class="lab">Emergencies</div><div class="val">${emerg.length}</div><div class="sub">need action now</div></div>
@@ -1992,7 +2183,7 @@ function renderDashboard(el){
 /* ===== tickets ===== */
 function renderTickets(el){
   const MT=`<div class="tabs"><button class="tab ${MAINT_TAB==='items'?'active':''}" onclick="MAINT_TAB='items';renderTickets(document.getElementById('view'))">🎫 Items</button><button class="tab ${MAINT_TAB==='notes'?'active':''}" onclick="MAINT_TAB='notes';renderTickets(document.getElementById('view'))">🗒️ Notes</button></div>`;
-  if(MAINT_TAB==='notes'){el.innerHTML=MT+notesHtml();return;}
+  if(MAINT_TAB==='notes'){el.innerHTML=pageHeader('tickets')+MT+notesHtml();return;}
   const rows=filtered();
   const totalCost=rows.reduce((s,t)=>s+(t.cost||0),0);
   const costedCount=rows.filter(t=>t.cost!=null).length;
@@ -2015,7 +2206,7 @@ function renderTickets(el){
     ${metroOpts.map(m=>`<span class="chip ${FILTER.metro===m?'active':''}" onclick="setF('metro','${esc(m)}')">${esc(m)}</span>`).join('')}
     <span class="faint" style="font-size:11.5px;margin-left:4px">— filter to your area first; different Metros are used by different regional teams</span>
   </div>`;
-  el.innerHTML=MT+metroBar+`
+  el.innerHTML=pageHeader('tickets')+MT+metroBar+`
   <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Add ticket</button>
     <button class="btn sec sm" onclick="openBulkGrid()">📋 Bulk add tickets</button>
     <button class="btn sec sm" onclick="document.getElementById('bulkTicketFile').click()">⬆ Upload spreadsheet</button>
@@ -2038,7 +2229,7 @@ function renderTickets(el){
   ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
   <div class="card" style="overflow-x:auto"><table style="min-width:1500px"><thead><tr>
     <th class="hide-below-md" style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
-    ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})),'hide-below-sm')}
+    ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})),'hide-below-sm col-frozen')}
     ${thSel('status','Status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))}
     <th class="hide-below-sm" style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
       ${thTitle(`<span>Created</span>${clearX('created','Created')}`)}
@@ -2104,10 +2295,10 @@ function filtered(){
 }
 function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
   <td class="hide-below-md" onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
-  <td class="b trunc hide-below-sm" style="max-width:130px">${propById(t.prop).name}</td>
+  <td class="b trunc hide-below-sm col-frozen" style="max-width:130px">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
-  <td class="hide-below-sm muted mono" style="white-space:nowrap" title="${fdate(t.created)}">${age}d</td>
-  <td><div class="trunc" style="max-width:260px"><span class="muted mono" style="font-size:11px">${ticketRef(t)}</span> · ${CAT[t.svc]||'🛠️'} ${t.title}<div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></div></td>
+  <td class="hide-below-sm muted mono" style="white-space:nowrap" title="${age}d ago">${fdate(t.created)}</td>
+  <td><div class="trunc" style="max-width:260px">${CAT[t.svc]||'🛠️'} ${t.title}<div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></div></td>
   <td>${ubadge(t.urgency)}</td>
   <td class="hide-below-lg muted">${t.svc||'—'}</td>
   <td class="hide-below-lg">${t.vendor||'<span class="faint">—</span>'}</td>
@@ -2159,10 +2350,11 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Target completion</div><div><span class="faint">— (not captured in this sample)</span></div>
       <div class="k">Actual completion</div><div>${actualCompletionDate(t)?fdate(actualCompletionDate(t)):'<span class="faint">—</span>'}</div>
       <div class="k">Year / Month completed</div><div>${actualCompletionDate(t)?actualCompletionDate(t).toLocaleDateString('en-US',{year:'numeric',month:'long'}):'<span class="faint">—</span>'}</div>
-      <div class="k">Finance recon</div><div><span class="badge ${ticketRecon(t).cls}">${ticketRecon(t).label}</span></div>
+      <div class="k">Finance recon</div><div><span class="badge ${ticketRecon(t).cls}"><span class="dot"></span>${ticketRecon(t).label}</span></div>
       <div class="k">Payment</div><div>${paySelect(t)}</div>
       <div class="k">Notes</div><div><textarea style="width:100%;min-height:56px" placeholder="add / update notes…" onchange="updateNote('${t.id}',this.value)">${esc(t.notes)}</textarea></div>
       <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
+      <div class="k">Reporter</div><div>${esc(t.reporter||'—')}${t.createdByEmail?`<div class="faint" style="font-size:10.5px;margin-top:2px">✓ Created by ${esc(t.createdByEmail)}</div>`:(t._backend==='supabase'?'<div class="faint" style="font-size:10.5px;margin-top:2px">No verified creator on file — entered before this was tracked, or via bulk import.</div>':'')}</div>
     </div></div></div>
     <div class="sectitle">Description</div><div class="card"><div class="body">${t.desc||t.title}</div></div>
     <div class="sectitle">Attachments</div>${ticketAttachmentsSectionHtml(t)}
@@ -2244,7 +2436,7 @@ function setPF(key,val){PFILTER[key]=val;if(VIEW==='properties')renderProperties
 function renderProperties(el){
   const metroOpts=REF_LISTS.metro.values;
   const list=[...PROPS].filter(p=>PFILTER.metro==='all'||p.metro===PFILTER.metro).sort((a,b)=>a.name.localeCompare(b.name));
-  el.innerHTML=`<div class="toolbar"><span class="b">${list.length} of ${PROPS.length} properties</span>
+  el.innerHTML=`${pageHeader('properties')}<div class="toolbar"><span class="b">${list.length} of ${PROPS.length} properties</span>
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" id="propsRefreshBtn" onclick="refreshPropertiesFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
     ${ROLE==='admin'?'<button class="btn sec sm" onclick="startOnboard()">+ New property</button>':''}</div>
@@ -2253,7 +2445,7 @@ function renderProperties(el){
   </th></tr></thead><tbody>
   ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');return `<tr class="clickable" onclick="openProperty('${p.id}')">
     <td><span class="dotc" style="background:var(--${col})"></span> <span class="b">${p.name}</span><div class="faint addr-city" style="font-size:11.5px">${p.metro||p.addr||'—'}</div><div class="faint addr-full trunc" style="font-size:11.5px;max-width:220px">${p.addr||'—'}</div></td>
-    <td class="hide-below-sm"><span class="pill ${p.own}">${p.own==='owned'?'Owned':'Leased'}</span></td>
+    <td class="hide-below-sm"><span class="pill">${p.own==='owned'?'Owned':'Leased'}</span></td>
     <td><span class="pill" style="border-color:var(--${col});color:var(--${col})">${p.status}</span></td>
     <td class="hide-below-md">${readinessPill(p)}</td>
     <td class="hide-below-md muted" style="font-size:12.5px">${propStage(p)}</td>
@@ -2426,7 +2618,7 @@ function propDisposition(p){
       const wideNote=it==='Comments'||it==='User Notes';const fw=wideNote?280:190;
       const visTag=it==='User Notes'?'<span class="faint" style="font-size:10.5px;margin-left:6px">🔒 Private — only you</span>':it==='Comments'?'<span class="faint" style="font-size:10.5px;margin-left:6px">👥 Visible to other users</span>':'';
       const field=it==='Stage'?`<select style="width:190px;font-size:12.5px" onchange="setDispChkText('${p.id}',${ix},this.value)"><option value="">—</option>${REF_LISTS.dispositionStage.values.map(o=>`<option value="${o}" ${c.t===o?'selected':''}>${o}</option>`).join('')}</select>`:`<input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="notes / value…" style="width:${fw}px;font-size:12.5px" onchange="setDispChkText('${p.id}',${ix},this.value)">`;
-      const toggle=it==='Stage'?`<span style="min-width:80px;display:inline-block"></span>`:wideNote?'':`<span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleDispChk('${p.id}',${ix})">${lbl}</span>`;
+      const toggle=it==='Stage'?`<span style="min-width:80px;display:inline-block"></span>`:wideNote?'':`<span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleDispChk('${p.id}',${ix})"><span class="dot"></span>${lbl}</span>`;
       return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}${visTag}</div>${field}${toggle}</div>`;}).join('')}
     </div></div>`;
   if(closed){
@@ -2461,7 +2653,7 @@ function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licen
   ${items.map((it,ix)=>{const c=p.licensingChk[it]||{s:'pending',t:''};const cls=c.s==='done'?'b-resolved':c.s==='na'?'b-closed':'b-new';const lbl=c.s==='done'?'✓ Done':c.s==='na'?'— N/A':'▢ Pending';
     const wideNote=it==='Comments'||it==='User Notes';const fw=wideNote?280:190;
     const visTag=it==='User Notes'?'<span class="faint" style="font-size:10.5px;margin-left:6px">🔒 Private — only you</span>':it==='Comments'?'<span class="faint" style="font-size:10.5px;margin-left:6px">👥 Visible to other users</span>':'';
-    const toggle=wideNote?'':`<span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleLicChk('${p.id}',${ix})">${lbl}</span>`;
+    const toggle=wideNote?'':`<span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleLicChk('${p.id}',${ix})"><span class="dot"></span>${lbl}</span>`;
     return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}${visTag}</div><input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="${wideNote?'add / update '+(it==='Comments'?'comments':'notes')+'…':'notes / date…'}" style="width:${fw}px;font-size:12.5px" onchange="setLicChkText('${p.id}',${ix},this.value)">${toggle}</div>`;}).join('')}
   </div></div>
   <div class="muted" style="font-size:12px;margin:10px 0">Initial Licensing Checklist &amp; Monitoring: reflects the ODP licensing workflow from non-contiguous approval through move-in. Consistent with Scope §4.3.</div>`;}
@@ -2505,7 +2697,7 @@ let ASSUMPTIONS={complianceExpiringDays:90,valuationVariancePct:10,capitalReserv
 function renderAssumptions(el){
   const tabsHtml=`<div class="tabs">${ASSUMPTIONS_SECTIONS.map(s=>`<button class="tab ${ASSUMPTIONS_TAB===s.id?'active':''}" onclick="ASSUMPTIONS_TAB='${s.id}';renderAssumptions(document.getElementById('view'))">${s.ic} ${s.label}</button>`).join('')}</div>`;
   const body={capitalreserves:capitalReservesSection,valuation:valuationSection,complianceReminders:complianceRemindersSection,reportsAccess:reportsAccessSection,sessionTimeouts:sessionTimeoutsSection,referenceLists:referenceListsSection}[ASSUMPTIONS_TAB]?.() || '<div class="card"><div class="body muted">Section coming soon.</div></div>';
-  el.innerHTML=tabsHtml+body;
+  el.innerHTML=pageHeader('assumptions')+tabsHtml+body;
 }
 function updateAssumption(key,val){
   const n=Number(val);
@@ -2748,7 +2940,7 @@ function propDocs(p){
   <div class="card"><div class="body">
   ${docs.length?docs.map(x=>`<div class="mrow" style="padding:9px 0;border-bottom:1px solid var(--line);align-items:flex-start">
     <div><div>${docBadge(x.type)} <span class="b">${x.type}</span> <span class="muted" style="font-size:12px">· ${esc(x.file)}${x.size?' · '+x.size:''}</span></div><div class="faint" style="font-size:11px;margin-top:2px">Uploaded ${fdate(x.uploaded)}${x.note?' · '+esc(x.note):''}</div></div>
-    <div style="display:flex;gap:10px;align-items:center;white-space:nowrap">${x._backend==='supabase'&&(ROLE==='admin'||ROLE==='office')?`<label style="display:flex;align-items:center;gap:4px;cursor:pointer" title="Posted documents are visible to Field Staff assigned to this property; unposted stays office/admin only"><input type="checkbox" ${x.posted?'checked':''} onchange="toggleDocPosted('${x.id}',this.checked)" style="margin:0"><span style="font-size:11.5px" class="muted">${x.posted?'Posted':'Draft'}</span></label>`:(x.posted?'<span class="badge b-resolved">Posted</span>':'<span class="badge b-closed">Draft</span>')}<a onclick="viewDoc('${x.id}')">View</a><a onclick="deleteDoc('${x.id}')" style="color:var(--red)">Delete</a></div>
+    <div style="display:flex;gap:10px;align-items:center;white-space:nowrap">${x._backend==='supabase'&&(ROLE==='admin'||ROLE==='office')?`<label style="display:flex;align-items:center;gap:4px;cursor:pointer" title="Posted documents are visible to Field Staff assigned to this property; unposted stays office/admin only"><input type="checkbox" ${x.posted?'checked':''} onchange="toggleDocPosted('${x.id}',this.checked)" style="margin:0"><span style="font-size:11.5px" class="muted">${x.posted?'Posted':'Draft'}</span></label>`:(x.posted?'<span class="badge b-resolved"><span class="dot"></span>Posted</span>':'<span class="badge b-closed"><span class="dot"></span>Draft</span>')}<a onclick="viewDoc('${x.id}')">View</a><a onclick="deleteDoc('${x.id}')" style="color:var(--red)">Delete</a></div>
   </div>`).join(''):'<div class="muted" style="padding:6px 0">No documents uploaded yet for this property.</div>'}
   </div></div>`;}
 function fmtBytes(n){if(n==null)return '';if(n<1024)return n+' B';if(n<1024*1024)return Math.round(n/1024)+' KB';return (n/1024/1024).toFixed(1)+' MB';}
@@ -2839,7 +3031,7 @@ function propChecklist(p){const items=chkListFor(p);p.checklist=p.checklist||{};
       const wideNote=it==='Comments'||it==='User Notes';const fw=wideNote?280:190;
       const visTag=it==='User Notes'?'<span class="faint" style="font-size:10.5px;margin-left:6px">🔒 Private — only you</span>':it==='Comments'?'<span class="faint" style="font-size:10.5px;margin-left:6px">👥 Visible to other users</span>':'';
       const field=it==='Stage'?`<select style="width:190px;font-size:12.5px" onchange="setChkText('${p.id}',${ix},this.value)"><option value="">—</option>${stageOpts.map(o=>`<option value="${o}" ${c.t===o?'selected':''}>${o}</option>`).join('')}</select>`:`<input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="notes / value…" style="width:${fw}px;font-size:12.5px" onchange="setChkText('${p.id}',${ix},this.value)">`;
-      const toggle=it==='Stage'?`<span style="min-width:80px;display:inline-block"></span>`:wideNote?'':`<span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleChk('${p.id}',${ix})">${lbl}</span>`;
+      const toggle=it==='Stage'?`<span style="min-width:80px;display:inline-block"></span>`:wideNote?'':`<span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleChk('${p.id}',${ix})"><span class="dot"></span>${lbl}</span>`;
       return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}${visTag}</div>${field}${toggle}</div>`;}).join('')}
     </div></div>`;}
 function cycleChk(pid,ix){const p=propById(pid);const it=chkListFor(p)[ix];p.checklist=p.checklist||{};const cur=(p.checklist[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.checklist[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('purchase_checklists',p.id,p.checklist);else saveState();document.getElementById('propTabBody').innerHTML=propChecklist(p);}
@@ -3031,9 +3223,9 @@ async function approvePropertyDocExtraction(propId,kind){
 }
 
 /* ===== leases ===== */
-function renderLeases(el){el.innerHTML=`<div class="sectitle">Leased properties</div>
+function renderLeases(el){el.innerHTML=`${pageHeader('leases')}<div class="sectitle">Leased properties</div>
   <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-lg">Landlord</th><th class="hide-below-sm">Rent</th><th class="hide-below-lg">Term</th><th class="hide-below-md">Next payment</th><th>Status</th><th></th></tr></thead><tbody>
-    ${LEASES.map(l=>{const p=propById(l.prop);return `<tr class="clickable" onclick="openProperty('${l.prop}')"><td class="b trunc" style="max-width:130px">${p.name}</td><td class="hide-below-lg">${l.landlord||'—'}</td><td class="hide-below-sm mono">${l.rent!=null?money(l.rent)+'/mo':'—'}</td><td class="hide-below-lg muted">${l.term||'—'}</td><td class="hide-below-md mono">${l.next?fdate(l.next):'—'}</td><td><span class="badge ${l.escalated?'b-red':'b-assigned'}">${l.status}</span></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button> <button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No leased properties.</td></tr>'}
+    ${LEASES.map(l=>{const p=propById(l.prop);return `<tr class="clickable" onclick="openProperty('${l.prop}')"><td class="b trunc" style="max-width:130px">${p.name}</td><td class="hide-below-lg">${l.landlord||'—'}</td><td class="hide-below-sm mono">${l.rent!=null?money(l.rent)+'/mo':'—'}</td><td class="hide-below-lg muted">${l.term||'—'}</td><td class="hide-below-md mono">${l.next?fdate(l.next):'—'}</td><td><span class="badge ${l.escalated?'b-red':'b-assigned'}"><span class="dot"></span>${l.status}</span></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button> <button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No leased properties.</td></tr>'}
   </tbody></table></div>
   <div class="sectitle">Rent reminder ladder</div><div class="card"><div class="body row"><span class="pill">7 days — reminder</span><span class="pill">Due date — scheduled</span><span class="pill" style="border-color:var(--amber);color:var(--amber)">Renewal window</span><span class="pill" style="border-color:var(--red);color:var(--red)">Missed — auto-escalate → Senior Admin</span></div></div>`;}
 function payRent(id){
@@ -3091,9 +3283,9 @@ function vendorExpiryStatus(dateStr){
 }
 function vendorFieldExpiryBadge(dateStr){
   const s=vendorExpiryStatus(dateStr);
-  if(s==='expired')return '<span class="badge b-red">⚠ Expired</span>';
-  if(s==='warn')return `<span class="badge b-assigned">⏳ Expires in ${daysTo(dateStr)}d</span>`;
-  if(s==='ok')return '<span class="badge b-resolved">✓ Current</span>';
+  if(s==='expired')return '<span class="badge b-red"><span class="dot"></span>⚠ Expired</span>';
+  if(s==='warn')return `<span class="badge b-assigned"><span class="dot"></span>⏳ Expires in ${daysTo(dateStr)}d</span>`;
+  if(s==='ok')return '<span class="badge b-resolved"><span class="dot"></span>✓ Current</span>';
   return '';
 }
 function vendorExpiryWorst(v){
@@ -3175,7 +3367,7 @@ function renderVendors(el){
     ${metroOpts.map(m=>`<span class="chip ${VFILTER.metro===m?'active':''}" onclick="setVF('metro','${esc(m)}')">${esc(m)}</span>`).join('')}
     <span class="faint" style="font-size:11.5px;margin-left:4px">— filter to your area first; different Metros are used by different regional teams</span>
   </div>`;
-  el.innerHTML=metroBar+`<div class="toolbar"><button class="btn sm" onclick="openAddVendor()">+ Add vendor</button>
+  el.innerHTML=pageHeader('vendors')+metroBar+`<div class="toolbar"><button class="btn sm" onclick="openAddVendor()">+ Add vendor</button>
     <button class="btn sec sm" onclick="openBulkVendorGrid()">📋 Bulk add vendors</button>
     <button class="btn sec sm" onclick="document.getElementById('bulkVendorFile').click()">⬆ Upload spreadsheet</button>
     <input type="file" id="bulkVendorFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkVendorUploadFile(this)">
@@ -3292,7 +3484,7 @@ function renderCompliance(el){
   const expired=CERTS.filter(c=>c.status==='expired');
   const expiring=CERTS.filter(c=>c.exp&&daysTo(c.exp)>=0&&daysTo(c.exp)<=ASSUMPTIONS.complianceExpiringDays&&c.status!=='expired');
   const upcoming=INSPECTIONS.filter(i=>!i.completed);
-  el.innerHTML=`
+  el.innerHTML=`${pageHeader('compliance')}
   <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
     <div class="kpi ${expired.length?'red':'green'}"><div class="lab">Expired / overdue</div><div class="val">${expired.length}</div></div>
     <div class="kpi ${expiring.length?'amber':'green'}"><div class="lab">Expiring in ${ASSUMPTIONS.complianceExpiringDays} days</div><div class="val">${expiring.length}</div></div>
@@ -3312,7 +3504,7 @@ function renderCompliance(el){
 }
 
 /* ===== client expenses (Phase 2 placeholder) ===== */
-function renderClientExpenses(el){el.innerHTML=`
+function renderClientExpenses(el){el.innerHTML=`${pageHeader('clientexp')}
   <div class="card"><div class="body" style="text-align:center;padding:44px 24px">
     <div style="font-size:42px;margin-bottom:12px">💳</div>
     <div class="b" style="font-size:16.5px">Client Expenses</div>
@@ -3477,7 +3669,7 @@ function renderReports(el){
   const tabs=ROLE==='admin'?allTabs:allTabs.filter(t=>!REPORTS_ADMIN_ONLY.includes(t));
   if(REPORTS_ADMIN_ONLY.includes(REPTAB)&&ROLE!=='admin')REPTAB='operational';
   const labels={operational:'Operational',maintspend:'Maintenance spend',compliance:'Compliance',financial:'Financial',capital:'Capital planning',executive:'Executive dashboard',export:'Data export'};
-  el.innerHTML=`<div class="tabs" style="display:flex;align-items:center">${tabs.map(t=>`<button class="tab ${REPTAB===t?'active':''}" onclick="REPTAB='${t}';renderReports(document.getElementById('view'))">${labels[t]}</button>`).join('')}
+  el.innerHTML=`${pageHeader('reports')}<div class="tabs" style="display:flex;align-items:center">${tabs.map(t=>`<button class="tab ${REPTAB===t?'active':''}" onclick="REPTAB='${t}';renderReports(document.getElementById('view'))">${labels[t]}</button>`).join('')}
     ${REPTAB!=='export'?`<div style="margin-left:auto;display:flex;gap:6px">
       <button class="btn sec sm" onclick="exportCurrentReport('csv')">⬇ CSV</button>
       <button class="btn sec sm" onclick="exportCurrentReport('xlsx')">⬇ Excel</button>
@@ -3576,7 +3768,12 @@ function reportBody(tab){
 }
 
 /* ===== maintenance spend charts (Chart.js — loaded via CDN, see <head>) ===== */
-const CHART_PALETTE=['#2563c9','#7c3fd6','#0e9aa3','#d2701a','#c2306f','#1f9d40','#c9880c','#cf3a32','#5a6a7c','#8a99aa'];
+// Chart.js draws to a <canvas>, which can't resolve a live CSS var() — so these read the
+// same design-system tokens once, at draw time, via getComputedStyle, rather than
+// hardcoding their own copy of the palette.
+function cssVar(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim();}
+function hexToRgba(hex,alpha){const h=hex.replace('#','');const r=parseInt(h.substring(0,2),16),g=parseInt(h.substring(2,4),16),b=parseInt(h.substring(4,6),16);return `rgba(${r},${g},${b},${alpha})`;}
+const CHART_PALETTE=()=>[cssVar('--role-office'),cssVar('--role-admin'),cssVar('--role-field'),cssVar('--role-external'),cssVar('--role-leased'),cssVar('--tone-ok-solid-bg'),cssVar('--tone-warn-solid-bg'),cssVar('--tone-danger-solid-bg'),cssVar('--ink-500'),cssVar('--ink-400')];
 let MSCHARTS={};
 function destroyMSChart(key){if(MSCHARTS[key]){MSCHARTS[key].destroy();delete MSCHARTS[key];}}
 function renderMaintSpendCharts(){
@@ -3591,36 +3788,40 @@ function renderMaintSpendCharts(){
   const topCats=catRows.slice(0,TOPN).map(r=>r.k);
   const hasOther=catRows.length>TOPN;
   const matrixCats=hasOther?[...topCats,OTHER_KEY]:topCats;
-  const catColor={};matrixCats.forEach((c,i)=>catColor[c]=CHART_PALETTE[i%CHART_PALETTE.length]);
+  const _cp=CHART_PALETTE();const catColor={};matrixCats.forEach((c,i)=>catColor[c]=_cp[i%_cp.length]);
 
   const c1=document.getElementById('chartPropSpend');
-  if(c1)MSCHARTS.chartPropSpend=new Chart(c1,{type:'bar',data:{labels:propRows.map(r=>r.p.name),datasets:[{label:'Maintenance spend',data:propRows.map(r=>r.spend),backgroundColor:'#2563c9',borderRadius:4,maxBarThickness:22}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>money(ctx.parsed.x)}}},scales:{x:{ticks:{callback:v=>'$'+Number(v).toLocaleString()}},y:{grid:{display:false}}}}});
+  if(c1)MSCHARTS.chartPropSpend=new Chart(c1,{type:'bar',data:{labels:propRows.map(r=>r.p.name),datasets:[{label:'Maintenance spend',data:propRows.map(r=>r.spend),backgroundColor:cssVar('--accent'),borderRadius:4,maxBarThickness:22}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>money(ctx.parsed.x)}}},scales:{x:{ticks:{callback:v=>'$'+Number(v).toLocaleString()}},y:{grid:{display:false}}}}});
 
   const c2=document.getElementById('chartMatrix');
   if(c2)MSCHARTS.chartMatrix=new Chart(c2,{type:'bar',data:{labels:propRows.map(r=>r.p.name),datasets:matrixCats.map(cat=>({label:cat===OTHER_KEY?'Other categories':((CAT[cat]||'')+' '+cat).trim(),data:propRows.map(r=>priced.filter(t=>t.prop===r.p.id&&(cat===OTHER_KEY?!topCats.includes(t.svc||'Uncategorized'):(t.svc||'Uncategorized')===cat)).reduce((s,t)=>s+t.cost,0)),backgroundColor:catColor[cat],stack:'s'}))},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+money(ctx.parsed.x)}}},scales:{x:{stacked:true,ticks:{callback:v=>'$'+Number(v).toLocaleString()}},y:{stacked:true,grid:{display:false}}}}});
 
   const c3=document.getElementById('chartCatSpend');
-  if(c3)MSCHARTS.chartCatSpend=new Chart(c3,{type:'doughnut',data:{labels:catRows.map(r=>((CAT[r.k]||'')+' '+r.k).trim()),datasets:[{data:catRows.map(r=>r.spend),backgroundColor:catRows.map((r,i)=>CHART_PALETTE[i%CHART_PALETTE.length])}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>ctx.label+': '+money(ctx.parsed)}}}}});
+  if(c3)MSCHARTS.chartCatSpend=new Chart(c3,{type:'doughnut',data:{labels:catRows.map(r=>((CAT[r.k]||'')+' '+r.k).trim()),datasets:[{data:catRows.map(r=>r.spend),backgroundColor:catRows.map((r,i)=>_cp[i%_cp.length])}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:ctx=>ctx.label+': '+money(ctx.parsed)}}}}});
 
   const monthKey=d=>{const dt=new Date(d);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');};
   const monthLabel=k=>{const parts=k.split('-').map(Number);return new Date(parts[0],parts[1]-1,1).toLocaleString('en-US',{month:'short',year:'numeric'});};
   const monthly={};priced.forEach(t=>{const k=monthKey(t.created);monthly[k]=(monthly[k]||0)+t.cost;});
   const monthRows=Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0]));
   const c4=document.getElementById('chartMonthly');
-  if(c4)MSCHARTS.chartMonthly=new Chart(c4,{type:'line',data:{labels:monthRows.map(r=>monthLabel(r[0])),datasets:[{label:'Maintenance spend',data:monthRows.map(r=>r[1]),borderColor:'#2563c9',backgroundColor:'rgba(37,99,201,.12)',fill:true,tension:.25,pointRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>money(ctx.parsed.y)}}},scales:{y:{ticks:{callback:v=>'$'+Number(v).toLocaleString()}}}}});
+  if(c4)MSCHARTS.chartMonthly=new Chart(c4,{type:'line',data:{labels:monthRows.map(r=>monthLabel(r[0])),datasets:[{label:'Maintenance spend',data:monthRows.map(r=>r[1]),borderColor:cssVar('--accent'),backgroundColor:hexToRgba(cssVar('--accent'),.12),fill:true,tension:.25,pointRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>money(ctx.parsed.y)}}},scales:{y:{ticks:{callback:v=>'$'+Number(v).toLocaleString()}}}}});
 }
 
 /* ===== reconciliation ===== */
 let RTAB='weekly';
-function renderRecon(el){const R=RECON[RTAB];el.innerHTML=`
+function renderRecon(el){const R=RECON[RTAB];el.innerHTML=`${pageHeader('recon')}
   <div class="tabs"><button class="tab ${RTAB==='weekly'?'active':''}" onclick="RTAB='weekly';renderRecon(document.getElementById('view'))">📊 Weekly · preliminary</button><button class="tab ${RTAB==='monthly'?'active':''}" onclick="RTAB='monthly';renderRecon(document.getElementById('view'))">📒 Monthly · final</button></div>
-  <div class="card"><div class="body mrow"><div><div class="b">${RTAB==='weekly'?'Weekly preliminary reconciliation':'Monthly final reconciliation'}</div><div class="muted" style="font-size:12.5px">Input: ${RTAB==='weekly'?'Finance preliminary ledger (weekly)':'Finance final ledger at month-end close'} · matching engine S1</div></div><div>${R.signed?`<span class="badge b-resolved">✓ Signed off</span>`:`<button class="btn ${R.exceptions.length?'sec':'green'}" ${R.exceptions.length?'disabled title="Clear exceptions first" style="opacity:.5;cursor:not-allowed"':''} onclick="signRecon()">Sign off ${RTAB==='weekly'?'(preliminary)':'& lock month'}</button>`}</div></div></div>
+  <div class="card"><div class="body mrow"><div><div class="b">${RTAB==='weekly'?'Weekly preliminary reconciliation':'Monthly final reconciliation'}</div><div class="muted" style="font-size:12.5px">Input: ${RTAB==='weekly'?'Finance preliminary ledger (weekly)':'Finance final ledger at month-end close'} · matching engine S1</div></div><div>${R.signed?`<span class="badge b-resolved"><span class="dot"></span>✓ Signed off</span>`:`<button class="btn ${R.exceptions.length?'sec':'green'}" ${R.exceptions.length?'disabled title="Clear exceptions first" style="opacity:.5;cursor:not-allowed"':''} onclick="signRecon()">Sign off ${RTAB==='weekly'?'(preliminary)':'& lock month'}</button>`}</div></div></div>
   <div class="sectitle">Matched groups <span class="faint">— KodaRE items ↔ Finance ledger</span></div>
-  <div class="card"><table><thead><tr><th>Vendor</th><th>Property</th><th>Items</th><th class="right">KodaRE</th><th class="right">Ledger</th><th>Match</th><th></th></tr></thead><tbody>
-    ${R.groups.map((g,i)=>`<tr><td class="b">${g.vendor}</td><td class="muted">${g.prop}</td><td class="faint">${g.tickets.join(', ')}</td><td class="right mono">${money(g.koda)}</td><td class="right mono">${money(g.ledger)}</td><td>${g.status==='auto'?'<span class="badge b-resolved">⚡ Auto-clear</span>':'<span class="badge b-progress">👀 Review</span>'}</td><td>${g.status==='review'?`<button class="btn sm" onclick="confirmGroup(${i})">Confirm</button>`:'<span class="faint">✓</span>'}</td></tr>`).join('')}
+  <div class="card" style="overflow-x:auto"><table><thead><tr>
+    <th>Vendor</th><th class="hide-below-md">Property</th><th class="hide-below-md">Items</th><th class="hide-below-md right">KodaRE</th><th class="hide-below-md right">Ledger</th><th>Match</th><th></th>
+  </tr></thead><tbody>
+    ${R.groups.map((g,i)=>`<tr><td class="b trunc" style="max-width:170px">${esc(g.vendor)}<span class="subline show-below-md">${esc(g.prop)}${g.tickets.length?' · '+esc(g.tickets.join(', ')):''}</span><span class="subline show-below-md">KodaRE ${money(g.koda)} · Ledger ${money(g.ledger)}</span></td><td class="hide-below-md muted trunc" style="max-width:150px">${esc(g.prop)}</td><td class="hide-below-md faint trunc" style="max-width:170px">${esc(g.tickets.join(', '))}</td><td class="hide-below-md right mono">${money(g.koda)}</td><td class="hide-below-md right mono">${money(g.ledger)}</td><td>${g.status==='auto'?'<span class="badge b-resolved"><span class="dot"></span>⚡ Auto-clear</span>':'<span class="badge b-progress"><span class="dot"></span>👀 Review</span>'}</td><td>${g.status==='review'?`<button class="btn sm" onclick="confirmGroup(${i})">Confirm</button>`:'<span class="faint">✓</span>'}</td></tr>`).join('')}
   </tbody></table></div>
   <div class="sectitle">Exception worklist</div>
-  <div class="card">${R.exceptions.length?`<table><thead><tr><th>Vendor</th><th>Issue</th><th class="right">Ledger</th><th class="right">KodaRE</th><th></th></tr></thead><tbody>${R.exceptions.map((e,i)=>`<tr><td class="b">${e.vendor}</td><td class="muted">${e.reason}</td><td class="right mono">${money(e.ledger)}</td><td class="right mono">${money(e.koda)}</td><td><button class="btn amber sm" onclick="resolveExc(${i})">Resolve</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ No open exceptions — ready for sign-off.</div>'}</div>
+  <div class="card" style="overflow-x:auto">${R.exceptions.length?`<table><thead><tr>
+    <th>Vendor</th><th class="hide-below-md">Issue</th><th class="hide-below-md right">Ledger</th><th class="hide-below-md right">KodaRE</th><th></th>
+  </tr></thead><tbody>${R.exceptions.map((e,i)=>`<tr><td class="b trunc" style="max-width:170px">${esc(e.vendor)}<span class="subline show-below-md">${esc(e.reason)}</span><span class="subline show-below-md">Ledger ${money(e.ledger)} · KodaRE ${money(e.koda)}</span></td><td class="hide-below-md muted trunc" style="max-width:220px">${esc(e.reason)}</td><td class="hide-below-md right mono">${money(e.ledger)}</td><td class="hide-below-md right mono">${money(e.koda)}</td><td><button class="btn amber sm" onclick="resolveExc(${i})">Resolve</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ No open exceptions — ready for sign-off.</div>'}</div>
   <div class="card" style="margin-top:16px"><div class="body"><div class="b">Principles</div><div class="muted" style="font-size:12.5px;margin-top:4px">Finance ledger is the system of record for dollar amounts; KodaRE never overrides ledger totals. KodaRE adds category, property & component detail for spend-by-area reporting. Unresolved exceptions escalate to Senior Admin.</div></div></div>`;}
 function confirmGroup(i){RECON[RTAB].groups[i].status='auto';RECON[RTAB].groups[i].ledger=RECON[RTAB].groups[i].koda;saveState();toast('Group confirmed & matched');renderRecon(document.getElementById('view'));}
 function resolveExc(i){RECON[RTAB].exceptions.splice(i,1);saveState();toast('Exception resolved');buildNav();renderRecon(document.getElementById('view'));}
@@ -3628,7 +3829,7 @@ function signRecon(){RECON[RTAB].signed=true;saveState();toast(RTAB==='weekly'?'
 
 /* ===== approvals ===== */
 function approvalItems(){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));const recon=[];if(!RECON.weekly.signed&&!RECON.weekly.exceptions.length)recon.push('w');if(!RECON.monthly.signed&&!RECON.monthly.exceptions.length)recon.push('m');return [...esc,...recon];}
-function renderApprovals(el){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));el.innerHTML=`
+function renderApprovals(el){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));el.innerHTML=`${pageHeader('approvals')}
   <div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi red"><div class="lab">Open emergencies</div><div class="val">${esc.length}</div></div><div class="kpi amber"><div class="lab">Recon awaiting sign-off</div><div class="val">${(RECON.weekly.signed?0:1)+(RECON.monthly.signed?0:1)}</div></div><div class="kpi green"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div></div>
   <div class="sectitle">Open emergencies</div>
   <div class="card">${esc.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b">${CAT[t.svc]||'🛠️'} ${t.title}</td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
@@ -3722,12 +3923,13 @@ function openAddTicket(){
       </select>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Reporter</label>
-      <input type="text" id="nt_reporter" value="${STAFF.office.name}" style="width:100%">
+      <input type="text" id="nt_reporter" value="${esc(currentUserDisplayName())}" readonly style="width:100%;background:var(--surface-sunken);color:var(--ink-500);cursor:not-allowed">
+      <div class="faint" style="font-size:10.5px;margin-top:4px">Always the signed-in user who's creating this ticket — not editable.</div>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Notes</label>
       <textarea id="nt_notes" style="width:100%;min-height:50px" placeholder="optional"></textarea>
     </div>
-    <div id="nt_error" style="color:var(--red,#c0392b);font-size:12.5px;margin-top:10px;min-height:16px"></div>
+    <div id="nt_error" style="color:var(--red);font-size:12.5px;margin-top:10px;min-height:16px"></div>
     <button class="btn" style="width:100%;margin-top:14px" onclick="submitNewTicket()">Create ticket</button>`
   );
 }
@@ -3744,7 +3946,9 @@ async function submitNewTicket(){
   const costRaw=(document.getElementById('nt_cost').value||'').trim();
   const invoice=(document.getElementById('nt_invoice').value||'').trim();
   const payment=document.getElementById('nt_payment').value;
-  const reporter=(document.getElementById('nt_reporter').value||'').trim()||STAFF.office.name;
+  // nt_reporter is a read-only field always populated from currentUserDisplayName() above —
+  // this fallback exists only in case the element is ever missing, not as an editable default.
+  const reporter=(document.getElementById('nt_reporter').value||'').trim()||currentUserDisplayName();
   const notes=(document.getElementById('nt_notes').value||'').trim();
   const errEl=document.getElementById('nt_error');
   errEl.textContent='';
@@ -3758,7 +3962,7 @@ async function submitNewTicket(){
   const title=desc.slice(0,60);
 
   if(p&&p._backend==='supabase'){
-    const payload={property_id:propId,title,description:desc,notes,service_category:svc||null,service_type:svctype||null,urgency,status,vendor:vendor||null,cost,invoice_number:invoice||null,payment_status:payment||null,reporter,created_at:created.toISOString()};
+    const payload={property_id:propId,title,description:desc,notes,service_category:svc||null,service_type:svctype||null,urgency,status,vendor:vendor||null,cost,invoice_number:invoice||null,payment_status:payment||null,reporter,created_at:created.toISOString(),created_by_email:await currentUserEmail()};
     const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
     if(error){errEl.textContent='Could not create ticket: '+error.message;return;}
     await dbLogActivity(data.id,'Logged','Entered in maintenance tracker');
@@ -3899,14 +4103,15 @@ async function processBulkTicketRows(rows){
       const vend=VENDORS.find(x=>x.name.toLowerCase()===vendorName.toLowerCase());
       if(vend){if(!svc&&vend.trade)svc=vend.trade;if(!svctype&&vend.svctype)svctype=vend.svctype;}
     }
-    parsed.push({prop,status,urgency,svc,svctype,vendor:vendorName,cost,invoice:String(f.invoice||'').trim()||null,payment,reporter:String(f.reporter||'').trim()||STAFF.office.name,notes:String(f.notes||'').trim(),desc,title:desc.slice(0,60),created});
+    parsed.push({prop,status,urgency,svc,svctype,vendor:vendorName,cost,invoice:String(f.invoice||'').trim()||null,payment,reporter:String(f.reporter||'').trim()||currentUserDisplayName(),notes:String(f.notes||'').trim(),desc,title:desc.slice(0,60),created});
   });
   if(!parsed.length){alert('No rows could be imported.'+(skipped.length?'\n\n'+skipped.join('\n'):''));return;}
   let created=0;
   const liveRows=parsed.filter(r=>r.prop._backend==='supabase');
   const demoRows=parsed.filter(r=>r.prop._backend!=='supabase');
   if(liveRows.length){
-    const payloads=liveRows.map(r=>{const payload={property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:r.status,urgency:r.urgency,service_category:r.svc,service_type:r.svctype,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:r.payment,reporter:r.reporter};if(r.created)payload.created_at=r.created.toISOString();return payload;});
+    const uploaderEmail=await currentUserEmail();
+    const payloads=liveRows.map(r=>{const payload={property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:r.status,urgency:r.urgency,service_category:r.svc,service_type:r.svctype,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:r.payment,reporter:r.reporter,created_by_email:uploaderEmail};if(r.created)payload.created_at=r.created.toISOString();return payload;});
     const {data,error}=await sb.from('maintenance_tickets').insert(payloads).select();
     if(error){toast('Bulk import failed: '+error.message);return;}
     for(const row of data){
@@ -3978,7 +4183,7 @@ function openAddVendor(){
     <div class="field" style="margin-top:10px"><label class="f">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></label><textarea id="nv_comments" style="width:100%;min-height:50px" placeholder="optional"></textarea></div>
     <div class="field" style="margin-top:10px"><label class="f">Specific Properties</label><input type="text" id="nv_properties" style="width:100%" placeholder="e.g. Fox-1, Highlands, or All"></div>
     <div class="field" style="margin-top:10px"><label class="f">User Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></label><textarea id="nv_usernotes" style="width:100%;min-height:50px" placeholder="optional"></textarea></div>
-    <div id="nv_error" style="color:var(--red,#c0392b);font-size:12.5px;margin-top:10px;min-height:16px"></div>
+    <div id="nv_error" style="color:var(--red);font-size:12.5px;margin-top:10px;min-height:16px"></div>
     <button class="btn" style="width:100%;margin-top:14px" onclick="submitNewVendor()">Create vendor</button>`
   );
 }
@@ -4180,21 +4385,21 @@ async function processBulkVendorRows(rows){
 /* ===== mobile ===== */
 let MB={tab:'home',step:0,draft:{}};
 function renderMobile(){const app=document.getElementById('mobileApp');let body='';if(MB.tab==='home')body=mHome();else if(MB.tab==='report')body=mReport();else if(MB.tab==='reports')body=mReports();
-  app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${MY_NAME||STAFF.caregiver.name}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Field Staff</div></div><div class="mbody">${body}</div>
+  app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${esc(currentUserDisplayName())}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Field Staff</div></div><div class="mbody">${body}</div>
   <div class="mnav"><button class="${MB.tab==='home'?'active':''}" onclick="mGo('home')"><span class="mi">🏠</span>Home</button><button class="${MB.tab==='report'?'active':''}" onclick="mStartReport()"><span class="mi">➕</span>Report</button><button class="${MB.tab==='reports'?'active':''}" onclick="mGo('reports')"><span class="mi">📋</span>My reports</button></div>`;}
 function mGo(t){MB.tab=t;renderMobile();}
 function mStartReport(){MB.tab='report';MB.step=0;MB.draft={};renderMobile();}
-function myReports(){const me=MY_NAME||STAFF.caregiver.name;return TICKETS.filter(t=>t.reporter===me).sort((a,b)=>new Date(b.created)-new Date(a.created));}
+function myReports(){const me=currentUserDisplayName();return TICKETS.filter(t=>t.reporter===me).sort((a,b)=>new Date(b.created)-new Date(a.created));}
 function mHome(){const mine=myReports();const open=mine.filter(isOpen);return `<button class="bigbtn" onclick="mStartReport()">🚨 Report an issue</button><div style="text-align:center;font-size:12px;color:var(--faint);margin:10px 0 18px">Takes under 60 seconds</div>
   <div class="mrow" style="margin-bottom:10px"><div class="b">Your open reports</div><a style="font-size:12.5px" onclick="mGo('reports')">See all</a></div>
   ${open.length?open.slice(0,3).map(mCard).join(''):'<div class="mcard muted">Nothing open right now 🎉</div>'}
-  <div class="mcard" style="background:linear-gradient(135deg,#eef7f8,#fff);border-color:#c9ebee"><div class="b">💡 Tip</div><div class="muted" style="font-size:12.5px">For emergencies (flooding, sparks, no heat), pick <b>Emergency</b> — an admin is paged by text immediately.</div></div>`;}
+  <div class="mcard" style="background:linear-gradient(135deg,var(--tone-accent-soft-bg),var(--surface));border-color:var(--tone-accent-soft-border)"><div class="b">💡 Tip</div><div class="muted" style="font-size:12.5px">For emergencies (flooding, sparks, no heat), pick <b>Emergency</b> — an admin is paged by text immediately.</div></div>`;}
 function mCard(t){const nAtt=ticketAttachmentsList(t.id).length;return `<div class="mcard" onclick="mDetail('${t.id}')" style="cursor:pointer"><div class="mrow"><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div>${ubadge(t.urgency)}</div><div class="muted" style="font-size:12px;margin:4px 0 8px">${propById(t.prop).name} · ${fdate(t.created)}${nAtt?' · 📎 '+nAtt:''}</div><div class="mrow">${badge(t)}<span class="faint" style="font-size:11.5px">${t.vendor||'awaiting assignment'}</span></div></div>`;}
 function mReports(){const mine=myReports();return `<div class="mtitle">My reports</div>${mine.length?mine.map(mCard).join(''):'<div class="mcard muted">No reports yet.</div>'}`;}
-function mDetail(id){const t=TICKETS.find(x=>x.id===id);const mine=t.reporter===(MY_NAME||STAFF.caregiver.name);const canEdit=mine&&t.status==='Open';
+function mDetail(id){const t=TICKETS.find(x=>x.id===id);const mine=t.reporter===currentUserDisplayName();const canEdit=mine&&t.status==='Open';
   document.querySelector('#mobile .mbody').innerHTML=`<a style="font-size:13px" onclick="renderMobile()">← Back</a><div class="mtitle" style="margin-top:8px">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="mcard"><div class="mrow">${badge(t)}${ubadge(t.urgency)}</div><div class="muted" style="font-size:12.5px;margin-top:8px">${propById(t.prop).name}<br>Reported ${fdate(t.created)} · ${t.vendor?'Assigned to '+t.vendor:'Awaiting assignment'}</div></div>
   <div class="b" style="margin:14px 0 8px">Description</div>
-  <div class="mcard" style="padding:12px">${canEdit?`<textarea id="mEditDesc_${t.id}" rows="3" style="width:100%;border:1.5px solid #e2e8f0;border-radius:10px;padding:10px;font:inherit">${esc(t.desc)}</textarea><button class="opt" style="width:100%;margin-top:8px" onclick="saveOwnTicketDesc('${t.id}')">Save changes</button><div class="faint" style="font-size:11px;margin-top:6px">Editable until office/admin assigns a vendor or starts work.</div>`:`<div style="font-size:13px">${t.desc?esc(t.desc):'<span class="faint">—</span>'}</div>${mine&&t.status!=='Open'?'<div class="faint" style="font-size:11px;margin-top:6px">This has been picked up, so it can no longer be edited.</div>':''}`}</div>
+  <div class="mcard" style="padding:12px">${canEdit?`<textarea id="mEditDesc_${t.id}" rows="3" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px;font:inherit">${esc(t.desc)}</textarea><button class="opt" style="width:100%;margin-top:8px" onclick="saveOwnTicketDesc('${t.id}')">Save changes</button><div class="faint" style="font-size:11px;margin-top:6px">Editable until office/admin assigns a vendor or starts work.</div>`:`<div style="font-size:13px">${t.desc?esc(t.desc):'<span class="faint">—</span>'}</div>${mine&&t.status!=='Open'?'<div class="faint" style="font-size:11px;margin-top:6px">This has been picked up, so it can no longer be edited.</div>':''}`}</div>
   <div class="b" style="margin:14px 0 8px">Photos &amp; files</div><div class="mcard" style="padding:12px">${mTicketAttachmentsHtml(t,canEdit)}</div>
   <div class="b" style="margin:14px 0 8px">Status updates</div>${t.log.map(l=>`<div class="mcard" style="padding:11px"><div class="b" style="font-size:13px">${l[0]}</div><div class="muted" style="font-size:12px">${l[1]} · ${logAge(l)}</div></div>`).join('')}`;}
 async function saveOwnTicketDesc(id){
@@ -4241,7 +4446,7 @@ async function mSubmit(){
     toast('Ticket '+displayId+' created');
   }
   if(p&&p._backend==='supabase'){
-    const payload={property_id:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),description:d.desc||'',service_category:d.cat,service_type:'Reported',urgency:d.urgency,status:'Open',reporter:MY_NAME||STAFF.caregiver.name};
+    const payload={property_id:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),description:d.desc||'',service_category:d.cat,service_type:'Reported',urgency:d.urgency,status:'Open',reporter:currentUserDisplayName(),created_by_email:await currentUserEmail()};
     const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
     if(error){toast('Could not submit report: '+error.message);return;}
     const detail='Submitted from mobile'+(d.desc?': '+d.desc:'');
@@ -4258,7 +4463,7 @@ async function mSubmit(){
     showSuccess(t.id);
     return;
   }
-  const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),desc:d.desc||'',svc:d.cat,svctype:'Reported',urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:MY_NAME||STAFF.caregiver.name,log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
+  const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),desc:d.desc||'',svc:d.cat,svctype:'Reported',urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:currentUserDisplayName(),log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
   TICKETS.push(t);saveState();
   if(d.files&&d.files.length){for(const f of d.files){await uploadTicketAttachment(t.id,f.file,f.kind);}}
   computeHealth();
