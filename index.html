@@ -197,7 +197,13 @@
      appears, without each screen having to remember to add the style itself — and it's why
      .content/.row/.grid2/.grid-props above all needed min-width:0: none of this works if an
      ancestor refuses to shrink and pushes the whole page wide instead. */
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow-x:auto}
+  /* overflow-y:clip (rather than leaving it as the default "visible") matters here for a
+     reason that isn't obvious: setting overflow-x:auto with no overflow-y forces the browser
+     to silently treat overflow-y as auto too, which makes .card its own vertical scroll
+     container. A sticky table header inside it would then stick to the top of the card
+     instead of the top of .main where it actually needs to line up. clip keeps the
+     horizontal scrollbar working without creating that second, invisible scroll context. */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow-x:auto;overflow-y:clip}
   .card h3{margin:0;padding:14px 16px;border-bottom:1px solid var(--border);font-size:14.5px;display:flex;align-items:center;gap:10px}
   .card h3 .link{margin-left:auto;font-size:12.5px;font-weight:600}
   .card .body{padding:14px 16px}
@@ -214,7 +220,10 @@
 
   /* ---- table — dense, restrained borders, sunken header ---- */
   table,.table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;color:var(--ink-500);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:9px 12px;background:var(--surface-sunken);border-bottom:1px solid var(--border);white-space:nowrap}
+  /* sticky, not just for style — on a long list this is what keeps the column you're reading
+     lined up with its heading. Needs its own opaque background (already had one) or the rows
+     show through/slide underneath it as the table scrolls past. */
+  th{text-align:left;color:var(--ink-500);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:9px 12px;background:var(--surface-sunken);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:3}
   td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
   tr.clickable:hover{background:var(--surface-sunken);cursor:pointer}
   tbody tr:last-child td{border-bottom:0}
@@ -346,6 +355,22 @@
     .grid2,.grid-props{grid-template-columns:1fr}
     .content{padding:16px 14px 50px}
   }
+  /* ===== Fixed-height shell, tablet width and up =====
+     Below 900px .side is already an off-canvas drawer (see above) and the page scrolls
+     normally — a locked-height shell fights the address bar showing/hiding as a phone
+     scrolls, so this is deliberately scoped to the same breakpoint the drawer switches at,
+     not applied everywhere.
+     #desktop becomes the fixed-height row: the sidebar and top bar stay put, and .main —
+     the flex:1 column next to .side — is the only thing that scrolls. 100dvh accounts for
+     mobile browser chrome the plain 100vh unit ignores; 100vh is kept first as a fallback
+     for browsers that don't support dvh, since an unsupported value is simply ignored and
+     the next declaration for the same property wins. */
+  @media(min-width:901px){
+    html,body{overflow:hidden}
+    #desktop{display:flex;height:calc(100vh - 56px);height:calc(100dvh - 56px);overflow:hidden}
+    .side{flex:0 0 232px;width:232px;height:100%;overflow-y:auto}
+    .main{flex:1;min-width:0;height:100%;overflow-y:auto}
+  }
   @media(max-width:560px){
     .kpis{grid-template-columns:1fr !important}
     .content{padding:12px 10px 46px}
@@ -422,7 +447,11 @@
   .uroles-headtext{font-size:12.5px;color:var(--ink-500);max-width:620px;line-height:1.55}
   .uroles-refresh{background:var(--uroles-accent);border:0;color:var(--on-dark);font-weight:700;font-size:12.5px;border-radius:8px;padding:9px 15px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
   .uroles-refresh:hover{background:var(--uroles-accent2)}
-  .uroles-card{border-radius:12px;border:1px solid var(--border);overflow:hidden;background:var(--surface);padding:0}
+  /* overflow:hidden here (rather than the .card class's overflow-x:auto/overflow-y:clip
+     combo) would make this card its own vertical scroll container and trap the sticky table
+     header inside it instead of letting it stick to .main — no overflow override needed,
+     the shared .card rule already clips these rounded corners correctly. */
+  .uroles-card{border-radius:12px;border:1px solid var(--border);background:var(--surface);padding:0}
   .uroles-table{width:100%;border-collapse:collapse}
   .uroles-table thead th{text-align:left;padding:11px 16px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);background:var(--surface-sunken);border-bottom:1px solid var(--border)}
   .uroles-table tbody td{padding:13px 16px;border-top:1px solid var(--border);vertical-align:middle}
@@ -2115,7 +2144,12 @@ function buildNav(){const nav=document.getElementById('nav');let items=NAV.filte
   nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
 function navigate(v){closeNavDrawer();closeUserMenu();if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
   document.getElementById('viewTitle').textContent=v==='approvals'?'Approvals':t[0];
+  // .content ('view') itself never scrolls — .main (its parent, tablet width and up) does.
+  // Reset both, plus the window for the phone breakpoint where the page scrolls normally,
+  // so landing on a new page never starts halfway down from wherever the last page left off.
   const el=document.getElementById('view');el.scrollTop=0;
+  const mainCol=el.closest('.main');if(mainCol)mainCol.scrollTop=0;
+  window.scrollTo(0,0);
   ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement,errorlog:renderErrorLog,auditlog:renderAuditLog}[v]||renderDashboard)(el);}
 function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast">✓ ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);
   if(/ failed:/i.test(msg))logError(msg);}
