@@ -430,6 +430,10 @@
      and forcing block display on a table cell breaks the table layout. table-cell (and a
      flex-item span/div) both respect text-overflow fine without it. */
   .trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+  /* Two-line clamp for ticket cards/rows that now lead with a free-typed description instead
+     of a short fixed category label — a long one needs to wrap and truncate after two lines,
+     not run on forever or get cut mid-word with no ellipsis at all. */
+  .trunc2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-overflow:ellipsis;white-space:normal}
   /* Frozen column — stays put while a wide table (e.g. Maintenance) scrolls horizontally
      underneath it. Needs its own opaque background since sticky positioning doesn't clip
      scrolled content otherwise; the hover rule keeps it in sync with the rest of the row. */
@@ -580,6 +584,16 @@ function rowToTicket(row){
 // using the ticket_no sequence column (Scope: Maintenance, Phase 4). Demo/sample tickets
 // already carry a friendly id (T-101 etc.) as their primary id, so they're shown as-is.
 function ticketRef(t){return t._backend==='supabase'&&t.ticketNo!=null?'MT-'+t.ticketNo:t.id;}
+// The single source of truth for "what identifies this ticket in a list" — the description
+// the reporter actually typed, not the service category (which is now usually unset until
+// triage) and not a synthesized title. Two tickets at the same property on the same day used
+// to both read "Handyman General issue"; this is what tells them apart. Falls back to the
+// ticket number, never to category, when there's no description on file (older tickets,
+// bulk-imported rows, or a report submitted with the description left blank).
+function ticketCardText(t){const d=(t.desc||'').trim();return esc(d||ticketRef(t));}
+// "Not yet categorised" reads as an outstanding triage step; a blank cell or an em dash both
+// read as missing data, which this isn't — it's a decision nobody has made yet.
+function svcLabel(t){return t.svc?esc((CAT[t.svc]||'')+' '+t.svc).trim():'<span class="faint">Not yet categorised</span>';}
 async function dbUpdateTicket(id,patch){
   const {error}=await sb.from('maintenance_tickets').update(patch).eq('id',id);
   if(error){toast('Save failed: '+error.message);return false;}
@@ -1022,8 +1036,18 @@ async function dbUnassignProperty(userId,propertyId){
   return true;
 }
 async function dbUpdateUserRole(userId,role){
-  const {error}=await sb.from('user_roles').update({role,updated_at:new Date().toISOString()}).eq('user_id',userId);
+  // .select() + checking the returned rows, not just `error`, catches the case where Row
+  // Level Security silently matches zero rows (a missing/misconfigured update policy) rather
+  // than reporting it as a failure — Supabase returns that as success with no error otherwise.
+  const {data,error}=await sb.from('user_roles').update({role,updated_at:new Date().toISOString()}).eq('user_id',userId).select();
   if(error){toast('Could not update role: '+error.message);return false;}
+  if(!data||!data.length){toast('Role update did not apply — check the update policy on user_roles.');return false;}
+  return true;
+}
+async function dbUpdateUserName(userId,name){
+  const {data,error}=await sb.from('user_roles').update({name:name||null,updated_at:new Date().toISOString()}).eq('user_id',userId).select();
+  if(error){toast('Could not update name: '+error.message);return false;}
+  if(!data||!data.length){toast('Name update did not apply — check the update policy on user_roles.');return false;}
   return true;
 }
 async function dbUpsertChecklist(table,propertyId,items){
@@ -1132,17 +1156,17 @@ function resolveDisplayName(name,email){
 // a real name still needs to be collected (see maybeShowNameGate).
 async function dbResolveMyRole(){
   const {data:{user}}=await sb.auth.getUser();
-  if(!user)return {role:'office',name:'',email:'',userId:null};
+  if(!user)return {role:'office',name:'',email:'',userId:null,namePromptDismissed:false};
   const {data,error}=await sb.from('user_roles').select('*').eq('user_id',user.id).maybeSingle();
-  if(error){toast('Could not load your role — defaulted to Office Staff: '+error.message);return {role:'office',name:'',email:user.email,userId:user.id};}
-  if(data)return {role:data.role,name:data.name||'',email:data.email,userId:user.id};
+  if(error){toast('Could not load your role — defaulted to Office Staff: '+error.message);return {role:'office',name:'',email:user.email,userId:user.id,namePromptDismissed:false};}
+  if(data)return {role:data.role,name:data.name||'',email:data.email,userId:user.id,namePromptDismissed:!!data.name_prompt_dismissed};
   // First-ever sign-in: self-register as Office Staff. name is left null rather than being
   // set to the email address — writing the email into the name column just relocates the
   // "email instead of a name" problem into the database instead of fixing it.
   const{error:insErr}=await sb.from('user_roles').insert({user_id:user.id,email:user.email,name:null,role:'office'});
   if(insErr){toast('Could not set up your account — defaulted to Office Staff: '+insErr.message);}
   else toast('Welcome! Your account was set up as Office Staff — ask a Senior Admin to update your role in User Management if needed.');
-  return {role:'office',name:'',email:user.email,userId:user.id};
+  return {role:'office',name:'',email:user.email,userId:user.id,namePromptDismissed:false};
 }
 const LIVE_ROLE_LABEL={admin:'Senior Admin',office:'Office Staff',caregiver:'Field Staff'};
 /* Role-based session idle timeout — Scope §5.2: "Session timeouts: Field Staff/Caregiver
@@ -1229,10 +1253,17 @@ async function enterLiveApp(){
 // resolved name) ticket attribution and the audit trail. There's no separate "invite"
 // composer in this app — accounts are created directly in Supabase Auth and self-register
 // into user_roles on first sign-in — so the right place to close this gap is here: ask once,
-// right after sign-in, rather than leaving it to be noticed later. Not a hard block — Skip
-// is always available, and the resolved title-cased-from-email name keeps working meanwhile.
+// right after sign-in, rather than leaving it to be noticed later.
+// The condition is a fresh database read every time (me comes from dbResolveMyRole()'s live
+// select, not a cached/local value) — never localStorage or any other per-browser flag, so
+// signing in on a second machine can't show a stale "already answered" state, and it can't
+// suppress the prompt on one device while the profile itself is still empty everywhere else.
+// Skip records a real decline (name_prompt_dismissed, schema_phase34.sql) rather than just
+// closing the modal, so skipping means "don't ask again," not "ask again next refresh" — the
+// same repeat-prompt problem in a different form. A Senior Admin can still set someone's name
+// later from User Management if they skip and never come back to it.
 function maybeShowNameGate(me){
-  if(!me.userId || (me.name && !looksLikeEmail(me.name)))return;
+  if(!me.userId || me.namePromptDismissed || (me.name && !looksLikeEmail(me.name)))return;
   if(document.getElementById('nameGateScrim'))return;
   const guess=titleCaseFromEmail(me.email);
   const scrim=document.createElement('div');
@@ -1244,8 +1275,9 @@ function maybeShowNameGate(me){
       <div style="font-size:16px;font-weight:800;margin-bottom:6px">What should we call you?</div>
       <div class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Your name is what shows up in the greeting, the top bar, on any maintenance ticket you report, and in the audit trail — easier for everyone to recognize than your email address.</div>
       <div class="field"><label class="f">Full name</label><input type="text" id="nameGateInput" value="${esc(guess)}" style="width:100%"></div>
+      <div id="nameGateError" style="color:var(--red);font-size:12px;margin-top:8px;min-height:14px"></div>
       <div style="display:flex;gap:10px;margin-top:6px">
-        <button class="btn sec sm" onclick="dismissNameGate()">Skip for now</button>
+        <button class="btn sec sm" onclick="skipNameGate('${me.userId}')">Skip for now</button>
         <button class="btn sm" style="margin-left:auto" onclick="saveNameGate('${me.userId}')">Save</button>
       </div>
     </div>
@@ -1253,12 +1285,31 @@ function maybeShowNameGate(me){
   document.body.appendChild(scrim);
 }
 function dismissNameGate(){const s=document.getElementById('nameGateScrim');if(s)s.remove();}
+// Skip closes the modal right away (no reason to make someone wait on a network round-trip
+// just to dismiss it) but still tries to persist the decline in the background. If that write
+// fails, the only consequence is being asked again next time — not a trap, just a miss — so
+// this logs rather than blocking or nagging with a toast for what's a low-stakes preference.
+async function skipNameGate(userId){
+  dismissNameGate();
+  if(!userId)return;
+  const {data,error}=await sb.from('user_roles').update({name_prompt_dismissed:true}).eq('user_id',userId).select();
+  if(error||!data||!data.length)console.error('Could not record name-prompt decline — will likely be asked again next sign-in',error||'update matched no rows (RLS?)');
+}
 async function saveNameGate(userId){
   const input=document.getElementById('nameGateInput');
+  const errEl=document.getElementById('nameGateError');
   const name=(input?input.value:'').trim();
-  if(!name){toast('Enter a name, or Skip for now');return;}
-  const {error}=await sb.from('user_roles').update({name}).eq('user_id',userId);
-  if(error){toast('Could not save your name: '+error.message);return;}
+  if(errEl)errEl.textContent='';
+  if(!name){if(errEl)errEl.textContent='Enter a name, or Skip for now.';return;}
+  // A Supabase update returns an error object rather than throwing, and if Row Level Security
+  // silently matches zero rows (no update policy covering this user's own row, or a policy
+  // that's more restrictive than intended) that comes back as success with no error at all —
+  // .select() forces the response to include the row(s) actually changed, so "0 rows updated"
+  // is something this can actually detect and surface, instead of reporting a save that didn't
+  // happen as if it had.
+  const {data,error}=await sb.from('user_roles').update({name}).eq('user_id',userId).select();
+  if(error){if(errEl)errEl.textContent='Could not save: '+error.message;return;}
+  if(!data||!data.length){if(errEl)errEl.textContent="Could not save — your account doesn't have permission to update this. Ask a Senior Admin to set your name in User Management, or to check the update policy on user_roles.";return;}
   MY_NAME=name;
   const topName=document.getElementById('topName');if(topName)topName.textContent=name;
   const menuName=document.getElementById('menuName');if(menuName)menuName.textContent=name;
@@ -1406,7 +1457,7 @@ function renderUserManagement(el){
     const mine=PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===u.user_id);
     const names=mine.map(a=>{const p=PROPS.find(x=>x.id===a.property_id);return p?p.name:null;}).filter(Boolean);
     return `<tr>
-    <td><div class="uroles-person"><span class="uroles-avatar">${esc(initials(u.name||u.email))}</span><span class="uroles-name trunc" style="max-width:150px">${esc(u.name||'—')}</span></div></td>
+    <td><div class="uroles-person"><span class="uroles-avatar">${esc(initials(u.name||u.email))}</span><input type="text" class="uroles-name" value="${esc(u.name||'')}" placeholder="No name on file" style="max-width:150px;border:1px solid transparent;background:transparent;font:inherit;color:inherit;padding:2px 4px;border-radius:5px" onfocus="this.style.borderColor='var(--line)';this.style.background='var(--surface)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'" onchange="setUserName('${u.user_id}',this.value,'${esc(u.email)}')" title="Set this person's name — useful if they skipped the name prompt"></div></td>
     <td class="hide-below-md uroles-email trunc" style="max-width:180px">${esc(u.email)}</td>
     <td><select class="uroles-rolepill r-${u.role}" onchange="this.className='uroles-rolepill r-'+this.value;setUserRole('${u.user_id}',this.value,'${esc(u.email)}')">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
     <td class="hide-below-lg">${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
@@ -1464,7 +1515,7 @@ function permissionsMatrixHtml(){
   <div class="card uroles-card"><div class="body" style="padding:0"><table class="uroles-permtable"><thead><tr>
     <th>Capability</th><th class="c">Field Staff</th><th class="c">Office Staff</th><th class="c">Senior Admin</th>
   </tr></thead><tbody>${rows.map(([cap,fs,os,sa])=>`<tr><td>${esc(cap)}</td><td class="c">${permBadge(fs)}</td><td class="c">${permBadge(os)}</td><td class="c">${permBadge(sa)}</td></tr>`).join('')}</tbody></table></div></div>
-  <div class="uroles-foot">R = Read, W = Write/Edit, — = No access. * Field Staff access is scoped only to properties they're assigned to — never other properties, and never other Field Staff's tickets. <b>Field Staff have zero access to Property documents</b> (deeds, leases, insurance certificates, inspection reports, loan/mortgage paperwork) — confirmed Aug 4, 2026, enforced at the database level, not just the app's navigation. They only ever touch photos/files attached directly to their own maintenance ticket, and can edit that ticket's description or remove its photos only while it's still Open (locks once a vendor is assigned or work starts); adding new photos stays open at any status. Every property field — including "basic info" and Loan &amp; debt — is Senior Admin edit-only; Office Staff sees these as read-only, enforced both in the app and (as of Aug 4, 2026) the database. Leases & Rent and the Purchase/Disposition/Licensing checklists aren't listed in the source matrix at all; per your direction, Field Staff have zero access to those today, enforced in the app's navigation. <b>Updated Aug 5, 2026:</b> Property records (basic info), Compliance (CO/licenses/inspections), and Vendor directory now show Field Staff as zero access, not scoped read — their mobile view has only Home, Report an issue, and My reports; there’s no Properties, Compliance, or Vendor Directory screen to read from. This corrects the matrix to match what’s actually built rather than the source doc’s original scoped-read intent for those three rows.</div>`;
+  <div class="uroles-foot">R = Read, W = Write/Edit, — = No access. * Field Staff access is scoped only to properties they're assigned to — never other properties, and never other Field Staff's tickets. <b>Field Staff have zero access to Property documents</b> (deeds, leases, insurance certificates, inspection reports, loan/mortgage paperwork) — confirmed Aug 4, 2026, enforced at the database level, not just the app's navigation. They only ever touch photos/files attached directly to their own maintenance ticket, and can edit that ticket's description or remove its photos only while it's still Open (locks once a vendor is assigned or work starts); adding new photos stays open at any status. Every property field — including "basic info" and Loan &amp; debt — is Senior Admin edit-only; Office Staff sees these as read-only, enforced both in the app and (as of Aug 4, 2026) the database. Leases & Rent and the Purchase/Disposition/Licensing checklists aren't listed in the source matrix at all; per your direction, Field Staff have zero access to those today, enforced in the app's navigation. <b>Updated Aug 5, 2026:</b> Property records (basic info), Compliance (CO/licenses/inspections), and Vendor directory now show Field Staff as zero access, not scoped read — their mobile view has only Home and My reports (with Report an issue as the action on Home, not a separate screen); there’s no Properties, Compliance, or Vendor Directory screen to read from. This corrects the matrix to match what’s actually built rather than the source doc’s original scoped-read intent for those three rows.</div>`;
 }
 function openPropertyAssignments(userId,email){
   const assigned=new Set(PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===userId).map(a=>a.property_id));
@@ -1509,6 +1560,21 @@ async function setUserRole(userId,role,email){
   toast('Role updated: '+email+' → '+(LIVE_ROLE_LABEL[role]||role));
   if(isSelf){applyLiveRole(role,row?row.name:email);buildNav();navigate(ROLE==='admin'?'users':'dashboard');}
   else if(VIEW==='users')renderUserManagement(document.getElementById('view'));
+}
+// Escape hatch for someone who skipped the name prompt and never came back to it (or can't —
+// e.g. they no longer have access): Senior Admin can set it here instead. Same underlying
+// write as saveNameGate(), just admin-on-someone-else's-row instead of self-on-own-row.
+async function setUserName(userId,name,email){
+  name=(name||'').trim();
+  const ok=await dbUpdateUserName(userId,name);
+  if(!ok){if(VIEW==='users')renderUserManagement(document.getElementById('view'));return;}
+  const row=USER_ROLES.find(u=>u.user_id===userId);
+  const prevName=row?row.name:null;
+  if(row)row.name=name;
+  if(prevName!==name)logAudit('Set name','user_role',email,'name',prevName||'(none)',name||'(none)');
+  toast('Name updated: '+email+' → '+(name||'(cleared)'));
+  const {data:{user}}=await sb.auth.getUser();
+  if(user&&user.id===userId){applyLiveRole(ROLE,resolveDisplayName(name,email));}
 }
 async function restoreTrashItem(type,id){
   if(ROLE!=='admin'){toast('Only Senior Admin can restore items');return;}
@@ -1601,8 +1667,12 @@ function updateDescription(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)retu
 /* ===== ticket-detail inline editors: Service category/type, Vendor, Priority — Office
    Staff and Senior Admin can edit category/type/vendor/cost/invoice/payment; Priority is
    Senior Admin only (Office Staff sees a read-only badge, same as before). ===== */
-function svcSelect(t){const opts=Object.keys(CAT);if(t.svc&&!opts.includes(t.svc))opts.push(t.svc);return `<select onchange="updateSvc('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.svc?' selected':''}>—</option>${opts.map(c=>`<option value="${c}"${t.svc===c?' selected':''}>${CAT[c]||''} ${c}</option>`).join('')}</select>`;}
-function svcTypeSelect(t){const opts=SVC_TYPES.slice();if(t.svctype&&!opts.includes(t.svctype))opts.push(t.svctype);return `<select onchange="updateSvcType('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.svctype?' selected':''}>—</option>${opts.map(s=>`<option value="${s}"${t.svctype===s?' selected':''}>${s}</option>`).join('')}</select>`;}
+// Category (and type) start unset on every new ticket — it's a dispatch decision made here,
+// during triage, not something the reporter should have had to guess at submission. The
+// placeholder option says so explicitly rather than showing an em dash, so an untriaged
+// ticket reads as "needs a decision" rather than "field left blank."
+function svcSelect(t){const opts=Object.keys(CAT);if(t.svc&&!opts.includes(t.svc))opts.push(t.svc);return `<select onchange="updateSvc('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.svc?' selected':''}>Not yet categorised</option>${opts.map(c=>`<option value="${c}"${t.svc===c?' selected':''}>${CAT[c]||''} ${c}</option>`).join('')}</select>`;}
+function svcTypeSelect(t){const opts=SVC_TYPES.slice();if(t.svctype&&!opts.includes(t.svctype))opts.push(t.svctype);return `<select onchange="updateSvcType('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.svctype?' selected':''}>Not yet set</option>${opts.map(s=>`<option value="${s}"${t.svctype===s?' selected':''}>${s}</option>`).join('')}</select>`;}
 function vendorSelect(t){return `<select onchange="updateVendor('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.vendor?' selected':''}>Not assigned</option>${VENDORS.map(v=>`<option value="${v.name}"${t.vendor===v.name?' selected':''}>${v.name} (${v.trade})</option>`).join('')}</select>`;}
 function priorityEditSelect(t){return `<select onchange="updatePriority('${t.id}',this.value)" style="font-size:13px">${['Emergency','Urgent','Low'].map(u=>`<option value="${u}"${t.urgency===u?' selected':''}>${u}</option>`).join('')}</select>`;}
 function updateSvc(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const prev=t.svc;t.svc=val||null;
@@ -2276,7 +2346,7 @@ function renderDashboard(el){
   <div class="grid2" style="margin-top:18px">
     <div class="card"><h3>🎫 Maintenance priority queue<a class="link" onclick="navigate('tickets')">View all →</a></h3>
       <table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th>Status</th><th>Age</th></tr></thead><tbody>
-      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="faint" style="font-size:11.5px">${t.svc}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono">${ageDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
+      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b trunc2" style="max-width:280px">${ticketCardText(t)}</div><div class="faint" style="font-size:11.5px">${svcLabel(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono">${ageDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
       </tbody></table></div>
     <div class="card"><h3>🏠 Portfolio health</h3><div class="body">
       ${PROPS.map(p=>`<div class="mrow" style="padding:7px 0;border-bottom:1px solid var(--line)"><div><span class="dotc" style="background:var(--${p.health==='green'?'green':(p.health==='red'?'red':'amber')})"></span> <span class="b">${p.name}</span> <span class="faint" style="font-size:11.5px">· ${p.own==='owned'?'Owned':'Leased'}</span></div><div class="pill" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">${p.status}</div></div>`).join('')}
@@ -2284,7 +2354,7 @@ function renderDashboard(el){
   </div>
   <div class="sectitle">Recent activity</div>
   <div class="card"><table><thead><tr><th>Logged</th><th>Item</th><th>Property</th><th>Vendor</th><th>Status</th></tr></thead><tbody>
-    ${recent.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="muted mono">${fdate(t.created)}</td><td><span class="b">${t.title}</span></td><td>${propById(t.prop).name}</td><td class="muted">${t.vendor||'—'}</td><td>${badge(t)}</td></tr>`).join('')}
+    ${recent.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="muted mono">${fdate(t.created)}</td><td><span class="b trunc2" style="max-width:280px">${ticketCardText(t)}</span></td><td>${propById(t.prop).name}</td><td class="muted">${t.vendor||'—'}</td><td>${badge(t)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -2315,7 +2385,7 @@ function renderTickets(el){
     <span class="faint" style="font-size:11.5px;margin-left:4px">— filter to your area first; different Metros are used by different regional teams</span>
   </div>`;
   el.innerHTML=pageHeader('tickets')+MT+metroBar+`
-  <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Add ticket</button>
+  <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Report an issue</button>
     <button class="btn sec sm" onclick="openBulkGrid()">📋 Bulk add tickets</button>
     <button class="btn sec sm" onclick="document.getElementById('bulkTicketFile').click()">⬆ Upload spreadsheet</button>
     <input type="file" id="bulkTicketFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkUploadFile(this)">
@@ -2406,9 +2476,9 @@ function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="ope
   <td class="b trunc hide-below-sm col-frozen" style="max-width:130px">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
   <td class="hide-below-sm muted mono" style="white-space:nowrap" title="${age}d ago">${fdate(t.created)}</td>
-  <td><div class="trunc" style="max-width:260px">${CAT[t.svc]||'🛠️'} ${t.title}<div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></div></td>
+  <td><div class="trunc2" style="max-width:260px">${ticketCardText(t)}</div><div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></td>
   <td>${ubadge(t.urgency)}</td>
-  <td class="hide-below-lg muted">${t.svc||'—'}</td>
+  <td class="hide-below-lg muted">${svcLabel(t)}</td>
   <td class="hide-below-lg">${t.vendor||'<span class="faint">—</span>'}</td>
   <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
   <td class="hide-below-lg" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
@@ -2445,7 +2515,7 @@ function ticketRecon(t){const inMonthly=RECON.monthly.groups.some(g=>g.tickets.i
   if(t.status==='Completed'||t.status==='Closed')return {label:'Pending reconciliation',cls:'b-new'};
   return {label:'—',cls:'b-closed'};}
 function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=propById(t.prop);
-  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${ticketRef(t)} · ${t.svc} ${CAT[t.svc]||''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${t.title}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${ticketRef(t)}${t.svc?' · '+esc((CAT[t.svc]||'')+' '+t.svc).trim():''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${ticketCardText(t)}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
    `<div class="card"><div class="body"><div class="kv">
       <div class="k">Property</div><div><a onclick="closeDrawer();navigate('properties');setTimeout(()=>openProperty('${p.id}'),60)">${p.name}</a> · ${p.addr||'—'}</div>
       <div class="k">Status</div><div>${badge(t)}</div>
@@ -2921,7 +2991,7 @@ function referenceListsSection(){
     <button class="btn sm" onclick="addSvcTypeEntry()">+ Add type</button>
   </div>
   </div></div>
-  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.9 Service Category/Type picklists used across Maintenance, the "Add ticket" drawer, and bulk ticket uploads.</div>
+  <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.9 Service Category/Type picklists used across Maintenance ticket triage (Office Staff/Senior Admin set these when dispatching, not at ticket creation) and bulk ticket uploads.</div>
   <div class="sectitle" style="margin-top:22px">Live property/lease stage lists</div>
   <div class="muted" style="font-size:12.5px;margin:6px 0 14px;line-height:1.5">These drive real dropdowns on each property's Acquisition/Disposition checklist tab and the Vendor Directory drill-down (§4.9) — edits here change what's selectable there immediately.</div>
   ${Object.keys(REF_LISTS).filter(k=>REF_LISTS[k].live).map(refListCard).join('')}
@@ -3031,7 +3101,7 @@ function propComponents(p){const names=Object.keys(LIFE_TABLE);
   ${rows.map(r=>`<tr><td class="b">${r.n}</td><td class="muted">${r.life} yr</td><td class="right mono">${money(r.cost)}</td></tr>`).join('')}
   </tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Replacement costs &amp; average lifespans per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions). Per-property component age/install-date tracking and end-of-life flagging aren't built yet — this table shows portfolio-wide assumptions only, not this property's actual components.</div>`;}
-function propTickets(tks){return tks.length?`<div class="card"><table><thead><tr><th>Description</th><th>Priority</th><th>Status</th><th class="right">Cost</th></tr></thead><tbody>${tks.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td>${CAT[t.svc]||'🛠️'} ${t.title}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="right mono">${t.cost!=null?money(t.cost):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card"><div class="body muted">No maintenance items for this property.</div></div>';}
+function propTickets(tks){return tks.length?`<div class="card"><table><thead><tr><th>Description</th><th>Priority</th><th>Status</th><th class="right">Cost</th></tr></thead><tbody>${tks.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="trunc2" style="max-width:280px">${ticketCardText(t)}</div></td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="right mono">${t.cost!=null?money(t.cost):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card"><div class="body muted">No maintenance items for this property.</div></div>';}
 function propDocs(p){
   const docs=DOCS.filter(x=>x.prop===p.id).sort((a,b)=>new Date(b.uploaded)-new Date(a.uploaded));
   const typeOpts=docTypesFor(p).map(t=>`<option value="${t}">${t}</option>`).join('');
@@ -3940,33 +4010,25 @@ function approvalItems(){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&is
 function renderApprovals(el){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));el.innerHTML=`${pageHeader('approvals')}
   <div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi red"><div class="lab">Open emergencies</div><div class="val">${esc.length}</div></div><div class="kpi amber"><div class="lab">Recon awaiting sign-off</div><div class="val">${(RECON.weekly.signed?0:1)+(RECON.monthly.signed?0:1)}</div></div><div class="kpi green"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div></div>
   <div class="sectitle">Open emergencies</div>
-  <div class="card">${esc.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b">${CAT[t.svc]||'🛠️'} ${t.title}</td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
+  <div class="card">${esc.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketCardText(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
   <div class="sectitle">Reconciliation sign-off</div><div class="card"><div class="body row"><button class="btn ${RECON.weekly.signed?'sec':'green'}" onclick="RTAB='weekly';navigate('recon')">${RECON.weekly.signed?'Weekly ✓ signed':'Review weekly →'}</button><button class="btn ${RECON.monthly.signed?'sec':'green'}" onclick="RTAB='monthly';navigate('recon')">${RECON.monthly.signed?'Monthly ✓ locked':'Review monthly →'}</button></div></div>`;}
 
 /* ===== search ===== */
 function globalSearch(q){q=q.trim().toLowerCase();if(!q){navigate(VIEW);return;}if(VIEW!=='tickets')navigate('tickets');
-  const rows=TICKETS.filter(t=>(t.title+' '+t.id+' '+t.svc+' '+propById(t.prop).name+' '+(t.vendor||'')+' '+(t.invoice||'')).toLowerCase().includes(q)).sort(rankSort);
+  const rows=TICKETS.filter(t=>(t.title+' '+(t.desc||'')+' '+t.id+' '+(t.svc||'')+' '+propById(t.prop).name+' '+(t.vendor||'')+' '+(t.invoice||'')).toLowerCase().includes(q)).sort(rankSort);
   const tb=document.getElementById('tbody');if(tb)tb.innerHTML=rows.length?rows.map(trow).join(''):`<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No matches for “${q}”.</td></tr>`;}
 
 /* ===== drawer ===== */
 function drawer(head,body){document.getElementById('drawerRoot').innerHTML=`<div class="scrim" onclick="if(event.target===this)closeDrawer()"><div class="drawer"><div class="dhead">${head}<button class="x" onclick="closeDrawer()">✕</button></div><div class="dbody">${body}</div></div></div>`;}
 function closeDrawer(){document.getElementById('drawerRoot').innerHTML='';}
-/* Vendor Directory defines a Service Category (Default) and Service Type (Default) per
-   vendor (Scope §4.9); whenever a vendor is attached to a ticket those defaults should
-   kick in automatically. Office Staff and Senior Admin can still change them afterward. */
-function applyNewTicketVendorDefaults(vendorName){
-  const v=VENDORS.find(x=>x.name===vendorName);
-  if(!v)return;
-  const svcSel=document.getElementById('nt_svc');
-  const svcTypeSel=document.getElementById('nt_svctype');
-  if(svcSel&&v.trade)svcSel.value=v.trade;
-  if(svcTypeSel&&v.svctype)svcTypeSel.value=v.svctype;
-}
 function openAddTicket(){
   const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
-  const svcOpts=Object.keys(CAT);
-  const svcTypeOpts=SVC_TYPES.slice(); // was a stale hardcoded duplicate of SVC_TYPES; now stays in sync with Reference Lists edits
   const todayStr=toISODate(new Date());
+  // Property, Priority, and Description come first — the same order as the mobile report
+  // flow. Service category/type aren't asked here at all: which vendor to send is a dispatch
+  // decision, made during triage (see svcSelect/svcTypeSelect in the ticket drawer), not
+  // something whoever is logging the ticket should have to guess up front. Everything below
+  // Description is optional context for staff logging a ticket with more already known.
   drawer(
     `<div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:19px;font-weight:800">New ticket</div></div>`,
     `${SUPA_CONFIGURED&&!plist.length?'<div class="muted" style="margin-bottom:10px">No properties set up yet — add one in Supabase (Table Editor → properties) first.</div>':''}
@@ -3975,6 +4037,16 @@ function openAddTicket(){
         <option value="">Select a property…</option>
         ${plist.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
       </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Priority</label>
+      <select id="nt_urgency" style="width:100%">
+        <option value="Low">Low — whenever convenient</option>
+        <option value="Urgent">Urgent — needs attention soon</option>
+        <option value="Emergency">Emergency — danger / flooding / no heat</option>
+      </select>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Description</label>
+      <textarea id="nt_desc" style="width:100%;min-height:70px" placeholder="What's the issue?"></textarea>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Status</label>
       <select id="nt_status" style="width:100%">
@@ -3987,34 +4059,11 @@ function openAddTicket(){
     <div class="field" style="margin-top:10px"><label class="f">Created</label>
       <input type="date" id="nt_created" value="${todayStr}" style="width:100%">
     </div>
-    <div class="field" style="margin-top:10px"><label class="f">Description</label>
-      <textarea id="nt_desc" style="width:100%;min-height:70px" placeholder="What's the issue?"></textarea>
-    </div>
-    <div class="field" style="margin-top:10px"><label class="f">Priority</label>
-      <select id="nt_urgency" style="width:100%">
-        <option value="Low">Low — whenever convenient</option>
-        <option value="Urgent">Urgent — needs attention soon</option>
-        <option value="Emergency">Emergency — danger / flooding / no heat</option>
-      </select>
-    </div>
-    <div class="field" style="margin-top:10px"><label class="f">Service category</label>
-      <select id="nt_svc" style="width:100%">
-        <option value="">— optional —</option>
-        ${svcOpts.map(s=>`<option value="${s}">${CAT[s]||''} ${s}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field" style="margin-top:10px"><label class="f">Service type</label>
-      <select id="nt_svctype" style="width:100%">
-        <option value="">— optional —</option>
-        ${svcTypeOpts.map(s=>`<option value="${s}">${s}</option>`).join('')}
-      </select>
-    </div>
     <div class="field" style="margin-top:10px"><label class="f">Vendor</label>
-      <select id="nt_vendor" style="width:100%" onchange="applyNewTicketVendorDefaults(this.value)">
+      <select id="nt_vendor" style="width:100%">
         <option value="">— not assigned yet —</option>
         ${VENDORS.map(v=>`<option value="${v.name}">${v.name} (${v.trade})</option>`).join('')}
       </select>
-      <div class="faint" style="font-size:11px;margin-top:4px">Selecting a vendor fills Service category/type from that vendor's defaults below — you can still change them.</div>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Estimated cost ($)</label>
       <input type="text" id="nt_cost" inputmode="decimal" placeholder="optional" style="width:100%">
@@ -4048,8 +4097,6 @@ async function submitNewTicket(){
   const createdRaw=(document.getElementById('nt_created').value||'').trim();
   const desc=(document.getElementById('nt_desc').value||'').trim();
   const urgency=document.getElementById('nt_urgency').value;
-  const svc=document.getElementById('nt_svc').value;
-  const svctype=document.getElementById('nt_svctype').value;
   const vendor=document.getElementById('nt_vendor').value;
   const costRaw=(document.getElementById('nt_cost').value||'').trim();
   const invoice=(document.getElementById('nt_invoice').value||'').trim();
@@ -4069,8 +4116,11 @@ async function submitNewTicket(){
   const p=propById(propId);
   const title=desc.slice(0,60);
 
+  // Service category/type are deliberately not set here — there's no field for them on this
+  // form. They stay null until Office Staff or Senior Admin triages the ticket (svcSelect/
+  // svcTypeSelect in the ticket drawer), same as a mobile-submitted report.
   if(p&&p._backend==='supabase'){
-    const payload={property_id:propId,title,description:desc,notes,service_category:svc||null,service_type:svctype||null,urgency,status,vendor:vendor||null,cost,invoice_number:invoice||null,payment_status:payment||null,reporter,created_at:created.toISOString(),created_by_email:await currentUserEmail()};
+    const payload={property_id:propId,title,description:desc,notes,service_category:null,service_type:null,urgency,status,vendor:vendor||null,cost,invoice_number:invoice||null,payment_status:payment||null,reporter,created_at:created.toISOString(),created_by_email:await currentUserEmail()};
     const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
     if(error){errEl.textContent='Could not create ticket: '+error.message;return;}
     await dbLogActivity(data.id,'Logged','Entered in maintenance tracker');
@@ -4081,7 +4131,7 @@ async function submitNewTicket(){
     refreshTickets();
     return;
   }
-  const t=mkTicket({prop:propId,title,desc,notes,svc:svc||null,svctype:svctype||null,urgency,status,vendor:vendor||null,cost,invoice:invoice||null,payment:payment||null,created,reporter,log:[['Logged','Entered in maintenance tracker',0]]});
+  const t=mkTicket({prop:propId,title,desc,notes,svc:null,svctype:null,urgency,status,vendor:vendor||null,cost,invoice:invoice||null,payment:payment||null,created,reporter,log:[['Logged','Entered in maintenance tracker',0]]});
   TICKETS.push(t);saveState();
   closeDrawer();
   toast('Ticket '+t.id+' created');
@@ -4494,7 +4544,7 @@ async function processBulkVendorRows(rows){
 let MB={tab:'home',step:0,draft:{}};
 function renderMobile(){const app=document.getElementById('mobileApp');let body='';if(MB.tab==='home')body=mHome();else if(MB.tab==='report')body=mReport();else if(MB.tab==='reports')body=mReports();
   app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${esc(currentUserDisplayName())}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Field Staff</div></div><div class="mbody">${body}</div>
-  <div class="mnav"><button class="${MB.tab==='home'?'active':''}" onclick="mGo('home')"><span class="mi">🏠</span>Home</button><button class="${MB.tab==='report'?'active':''}" onclick="mStartReport()"><span class="mi">➕</span>Report</button><button class="${MB.tab==='reports'?'active':''}" onclick="mGo('reports')"><span class="mi">📋</span>My reports</button></div>`;}
+  <div class="mnav"><button class="${MB.tab==='home'?'active':''}" onclick="mGo('home')"><span class="mi">🏠</span>Home</button><button class="${MB.tab==='reports'?'active':''}" onclick="mGo('reports')"><span class="mi">📋</span>My reports</button></div>`;}
 function mGo(t){MB.tab=t;renderMobile();}
 function mStartReport(){MB.tab='report';MB.step=0;MB.draft={};renderMobile();}
 function myReports(){const me=currentUserDisplayName();return TICKETS.filter(t=>t.reporter===me).sort((a,b)=>new Date(b.created)-new Date(a.created));}
@@ -4502,10 +4552,15 @@ function mHome(){const mine=myReports();const open=mine.filter(isOpen);return `<
   <div class="mrow" style="margin-bottom:10px"><div class="b">Your open reports</div><a style="font-size:12.5px" onclick="mGo('reports')">See all</a></div>
   ${open.length?open.slice(0,3).map(mCard).join(''):'<div class="mcard muted">Nothing open right now 🎉</div>'}
   <div class="mcard" style="background:linear-gradient(135deg,var(--tone-accent-soft-bg),var(--surface));border-color:var(--tone-accent-soft-border)"><div class="b">💡 Tip</div><div class="muted" style="font-size:12.5px">For emergencies (flooding, sparks, no heat), pick <b>Emergency</b> — an admin is paged by text immediately.</div></div>`;}
-function mCard(t){const nAtt=ticketAttachmentsList(t.id).length;return `<div class="mcard" onclick="mDetail('${t.id}')" style="cursor:pointer"><div class="mrow"><div class="b">${CAT[t.svc]||'🛠️'} ${t.title}</div>${ubadge(t.urgency)}</div><div class="muted" style="font-size:12px;margin:4px 0 8px">${propById(t.prop).name} · ${fdate(t.created)}${nAtt?' · 📎 '+nAtt:''}</div><div class="mrow">${badge(t)}<span class="faint" style="font-size:11.5px">${t.vendor||'awaiting assignment'}</span></div></div>`;}
+// Leads with the description (what makes this report distinguishable from the next one at
+// the same property, on the same day), not the service category — two-line clamp so a long
+// description truncates with an ellipsis instead of pushing the card's layout around.
+// Property, date, and attachment count stay on the second line; urgency/status badges stay
+// where they were.
+function mCard(t){const nAtt=ticketAttachmentsList(t.id).length;return `<div class="mcard" onclick="mDetail('${t.id}')" style="cursor:pointer"><div class="mrow" style="align-items:flex-start"><div class="b trunc2" style="flex:1">${ticketCardText(t)}</div>${ubadge(t.urgency)}</div><div class="muted" style="font-size:12px;margin:4px 0 8px">${propById(t.prop).name} · ${fdate(t.created)}${nAtt?' · 📎 '+nAtt:''}</div><div class="mrow">${badge(t)}<span class="faint" style="font-size:11.5px">${t.vendor||'awaiting assignment'}</span></div></div>`;}
 function mReports(){const mine=myReports();return `<div class="mtitle">My reports</div>${mine.length?mine.map(mCard).join(''):'<div class="mcard muted">No reports yet.</div>'}`;}
 function mDetail(id){const t=TICKETS.find(x=>x.id===id);const mine=t.reporter===currentUserDisplayName();const canEdit=mine&&t.status==='Open';
-  document.querySelector('#mobile .mbody').innerHTML=`<a style="font-size:13px" onclick="renderMobile()">← Back</a><div class="mtitle" style="margin-top:8px">${CAT[t.svc]||'🛠️'} ${t.title}</div><div class="mcard"><div class="mrow">${badge(t)}${ubadge(t.urgency)}</div><div class="muted" style="font-size:12.5px;margin-top:8px">${propById(t.prop).name}<br>Reported ${fdate(t.created)} · ${t.vendor?'Assigned to '+t.vendor:'Awaiting assignment'}</div></div>
+  document.querySelector('#mobile .mbody').innerHTML=`<a style="font-size:13px" onclick="renderMobile()">← Back</a><div class="mtitle" style="margin-top:8px">${ticketCardText(t)}</div><div class="mcard"><div class="mrow">${badge(t)}${ubadge(t.urgency)}</div><div class="muted" style="font-size:12.5px;margin-top:8px">${propById(t.prop).name}<br>Reported ${fdate(t.created)} · ${t.vendor?'Assigned to '+t.vendor:'Awaiting assignment'}</div></div>
   <div class="b" style="margin:14px 0 8px">Description</div>
   <div class="mcard" style="padding:12px">${canEdit?`<textarea id="mEditDesc_${t.id}" rows="3" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px;font:inherit">${esc(t.desc)}</textarea><button class="opt" style="width:100%;margin-top:8px" onclick="saveOwnTicketDesc('${t.id}')">Save changes</button><div class="faint" style="font-size:11px;margin-top:6px">Editable until office/admin assigns a vendor or starts work.</div>`:`<div style="font-size:13px">${t.desc?esc(t.desc):'<span class="faint">—</span>'}</div>${mine&&t.status!=='Open'?'<div class="faint" style="font-size:11px;margin-top:6px">This has been picked up, so it can no longer be edited.</div>':''}`}</div>
   <div class="b" style="margin:14px 0 8px">Photos &amp; files</div><div class="mcard" style="padding:12px">${mTicketAttachmentsHtml(t,canEdit)}</div>
@@ -4526,14 +4581,18 @@ async function saveOwnTicketDesc(id){
   toast('Description updated');
   mDetail(id);
 }
-function mReport(){const s=MB.step,d=MB.draft;const prog=`<div class="progress" style="margin-bottom:16px"><i style="width:${(s+1)/5*100}%"></i></div>`;
+// Four steps: which property, how urgent, describe it, review & submit. Service category
+// used to be its own step here ("What kind of issue?") — removed. Categorising the problem
+// is a dispatch decision Office Staff/Senior Admin make during triage once they know which
+// vendor to send, not something the person reporting it should have to guess, and asking for
+// it up front just made this take longer than it needs to.
+function mReport(){const s=MB.step,d=MB.draft;const prog=`<div class="progress" style="margin-bottom:16px"><i style="width:${(s+1)/4*100}%"></i></div>`;
   if(s===0){const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
-    if(SUPA_CONFIGURED&&!plist.length)return prog+`<div class="mstep">Step 1 of 5</div><div class="mtitle">Which property?</div><div class="muted" style="padding:20px 0">No properties set up yet — ask an admin to add one first (Supabase → Table Editor → properties).</div>`;
-    return prog+`<div class="mstep">Step 1 of 5</div><div class="mtitle">Which property?</div><div class="optgrid">${plist.map(p=>`<div class="opt ${d.prop===p.id?'sel':''}" onclick="mSet('prop','${p.id}')"><span class="oi">🏠</span>${p.name}</div>`).join('')}</div>${navBtns(!!d.prop)}`;}
-  if(s===1)return prog+`<div class="mstep">Step 2 of 5</div><div class="mtitle">What kind of issue?</div><div class="optgrid">${Object.keys(CAT).map(c=>`<div class="opt ${d.cat===c?'sel':''}" onclick="mSet('cat','${c}')"><span class="oi">${CAT[c]}</span>${c}</div>`).join('')}</div>${navBtns(!!d.cat)}`;
-  if(s===2){const U=[['Emergency','🚨','Danger / flooding / no heat'],['Urgent','⚠️','Needs attention soon'],['Low','🌿','Whenever convenient']];return prog+`<div class="mstep">Step 3 of 5</div><div class="mtitle">How urgent?</div>${U.map(u=>`<div class="opt ${d.urgency===u[0]?'sel':''}" style="flex-direction:row;justify-content:flex-start;gap:12px;margin-bottom:10px" onclick="mSet('urgency','${u[0]}')"><span class="oi">${u[1]}</span><div style="text-align:left"><div>${u[0]}</div><div class="muted" style="font-size:11.5px;font-weight:500">${u[2]}</div></div></div>`).join('')}${navBtns(!!d.urgency)}`;}
-  if(s===3)return prog+`<div class="mstep">Step 4 of 5</div><div class="mtitle">Describe it</div><div class="mfield"><label>What's happening?</label><textarea id="mDesc" rows="4" placeholder="e.g. Water leaking under the kitchen sink…">${d.desc||''}</textarea></div><div class="mfield"><label>Photos / files (optional)</label><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px"><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📷 Take a photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="mAddFile(this,'photo')"></label><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📎 Attach a file<input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple style="display:none" onchange="mAddFile(this,'file')"></label></div>${(d.files&&d.files.length)?d.files.map((f,i)=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">${f.kind==='photo'?'📷':'📄'} ${esc(f.file.name)}</span><a onclick="mRemoveFile(${i})" style="color:var(--red);font-size:12px">Remove</a></div>`).join(''):''}</div>${navBtns(true,'mCapture')}`;
-  const p=propById(d.prop);return prog+`<div class="mstep">Step 5 of 5</div><div class="mtitle">Review & submit</div><div class="mcard"><div class="kv" style="grid-template-columns:90px 1fr"><div class="k">Property</div><div class="b">${p.name}</div><div class="k">Issue</div><div class="b">${CAT[d.cat]} ${d.cat}</div><div class="k">Urgency</div><div>${ubadge(d.urgency)}</div><div class="k">Details</div><div>${d.desc||'<span class="faint">—</span>'}</div><div class="k">Photos/files</div><div>${(d.files&&d.files.length)?d.files.length+' attached':'<span class="faint">—</span>'}</div></div></div>${d.urgency==='Emergency'?'<div class="mcard" style="border-color:var(--red);color:var(--red);font-size:12.5px"><b>🚨 Emergency:</b> an on-call admin is paged by text on submit.</div>':''}<button class="bigbtn" onclick="mSubmit()">Submit report ✓</button><button class="opt" style="width:100%;margin-top:10px" onclick="MB.step=3;renderMobile()">← Edit</button>`;}
+    if(SUPA_CONFIGURED&&!plist.length)return prog+`<div class="mstep">Step 1 of 4</div><div class="mtitle">Which property?</div><div class="muted" style="padding:20px 0">No properties set up yet — ask an admin to add one first (Supabase → Table Editor → properties).</div>`;
+    return prog+`<div class="mstep">Step 1 of 4</div><div class="mtitle">Which property?</div><div class="optgrid">${plist.map(p=>`<div class="opt ${d.prop===p.id?'sel':''}" onclick="mSet('prop','${p.id}')"><span class="oi">🏠</span>${p.name}</div>`).join('')}</div>${navBtns(!!d.prop)}`;}
+  if(s===1){const U=[['Emergency','🚨','Danger / flooding / no heat'],['Urgent','⚠️','Needs attention soon'],['Low','🌿','Whenever convenient']];return prog+`<div class="mstep">Step 2 of 4</div><div class="mtitle">How urgent?</div>${U.map(u=>`<div class="opt ${d.urgency===u[0]?'sel':''}" style="flex-direction:row;justify-content:flex-start;gap:12px;margin-bottom:10px" onclick="mSet('urgency','${u[0]}')"><span class="oi">${u[1]}</span><div style="text-align:left"><div>${u[0]}</div><div class="muted" style="font-size:11.5px;font-weight:500">${u[2]}</div></div></div>`).join('')}${navBtns(!!d.urgency)}`;}
+  if(s===2)return prog+`<div class="mstep">Step 3 of 4</div><div class="mtitle">Describe it</div><div class="mfield"><label>What's happening?</label><textarea id="mDesc" rows="4" placeholder="e.g. Water leaking under the kitchen sink…">${d.desc||''}</textarea></div><div class="mfield"><label>Photos / files (optional)</label><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px"><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📷 Take a photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="mAddFile(this,'photo')"></label><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📎 Attach a file<input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple style="display:none" onchange="mAddFile(this,'file')"></label></div>${(d.files&&d.files.length)?d.files.map((f,i)=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">${f.kind==='photo'?'📷':'📄'} ${esc(f.file.name)}</span><a onclick="mRemoveFile(${i})" style="color:var(--red);font-size:12px">Remove</a></div>`).join(''):''}</div>${navBtns(true,'mCapture')}`;
+  const p=propById(d.prop);return prog+`<div class="mstep">Step 4 of 4</div><div class="mtitle">Review & submit</div><div class="mcard"><div class="kv" style="grid-template-columns:90px 1fr"><div class="k">Property</div><div class="b">${p.name}</div><div class="k">Urgency</div><div>${ubadge(d.urgency)}</div><div class="k">Details</div><div>${d.desc||'<span class="faint">—</span>'}</div><div class="k">Photos/files</div><div>${(d.files&&d.files.length)?d.files.length+' attached':'<span class="faint">—</span>'}</div></div></div>${d.urgency==='Emergency'?'<div class="mcard" style="border-color:var(--red);color:var(--red);font-size:12.5px"><b>🚨 Emergency:</b> an on-call admin is paged by text on submit.</div>':''}<button class="bigbtn" onclick="mSubmit()">Submit report ✓</button><button class="opt" style="width:100%;margin-top:10px" onclick="MB.step=2;renderMobile()">← Edit</button>`;}
 function navBtns(ok,capture){return `<div style="display:flex;gap:10px;margin-top:20px">${MB.step>0?`<button class="opt" style="flex:1" onclick="MB.step--;renderMobile()">← Back</button>`:''}<button class="bigbtn" style="flex:2;opacity:${ok?1:.5};pointer-events:${ok?'auto':'none'}" onclick="${capture||'mNext'}()">Continue →</button></div>`;}
 function mCapture(){const d=document.getElementById('mDesc');if(d)MB.draft.desc=d.value;mNext();}
 function mSet(k,v){MB.draft[k]=v;renderMobile();}
@@ -4553,8 +4612,11 @@ async function mSubmit(){
     document.querySelector('#mobile .mbody').innerHTML=`<div style="text-align:center;padding:30px 10px"><div style="font-size:60px">✅</div><div class="mtitle" style="margin-top:10px">Report submitted!</div><div class="muted" style="margin-bottom:6px">Ticket <b>${displayId}</b> created${d.urgency==='Emergency'?' — flagged Emergency':''}.</div><div class="muted" style="font-size:12.5px">${d.urgency==='Emergency'?'Call your office/admin directly for anything urgent — automatic paging isn\'t built yet. ':''}Office staff will triage and assign a vendor.</div><button class="bigbtn" style="margin-top:22px" onclick="mGo('reports')">View my reports</button><button class="opt" style="width:100%;margin-top:10px" onclick="mGo('home')">Done</button></div>`;
     toast('Ticket '+displayId+' created');
   }
+  // service_category/service_type stay null — nobody's picked one yet. Office Staff or
+  // Senior Admin sets these during triage, alongside vendor assignment.
+  const fallbackTitle=(p?p.name+' — ':'')+'maintenance report';
   if(p&&p._backend==='supabase'){
-    const payload={property_id:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),description:d.desc||'',service_category:d.cat,service_type:'Reported',urgency:d.urgency,status:'Open',reporter:currentUserDisplayName(),created_by_email:await currentUserEmail()};
+    const payload={property_id:d.prop,title:d.desc?d.desc.slice(0,60):fallbackTitle,description:d.desc||'',service_category:null,service_type:null,urgency:d.urgency,status:'Open',reporter:currentUserDisplayName(),created_by_email:await currentUserEmail()};
     const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
     if(error){toast('Could not submit report: '+error.message);return;}
     const detail='Submitted from mobile'+(d.desc?': '+d.desc:'');
@@ -4571,7 +4633,7 @@ async function mSubmit(){
     showSuccess(t.id);
     return;
   }
-  const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):(d.cat+' issue'),desc:d.desc||'',svc:d.cat,svctype:'Reported',urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:currentUserDisplayName(),log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
+  const t=mkTicket({prop:d.prop,title:d.desc?d.desc.slice(0,60):fallbackTitle,desc:d.desc||'',svc:null,svctype:null,urgency:d.urgency,status:'Open',vendor:null,cost:null,invoice:null,created:new Date(today),reporter:currentUserDisplayName(),log:[['Reported','Submitted from mobile'+(d.desc?': '+d.desc:''),0]]});
   TICKETS.push(t);saveState();
   if(d.files&&d.files.length){for(const f of d.files){await uploadTicketAttachment(t.id,f.file,f.kind);}}
   computeHealth();
