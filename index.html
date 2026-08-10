@@ -295,6 +295,7 @@
   .tab{background:transparent;border:0;padding:10px 14px;font-weight:700;font-size:13px;color:var(--ink-500);border-bottom:2px solid transparent}
   .tab.active{color:var(--accent-dark);border-bottom-color:var(--accent)}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink-900);color:var(--on-dark);padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;z-index:90;box-shadow:var(--shadow);animation:pop .2s ease}
+  .toast.err{background:var(--red)}
   @keyframes pop{from{transform:translate(-50%,10px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
   .progress{height:7px;background:var(--surface-sunken);border-radius:99px;overflow:hidden}
   .progress > i{display:block;height:100%;background:var(--accent);border-radius:99px}
@@ -590,7 +591,18 @@ function ticketRef(t){return t._backend==='supabase'&&t.ticketNo!=null?'MT-'+t.t
 // to both read "Handyman General issue"; this is what tells them apart. Falls back to the
 // ticket number, never to category, when there's no description on file (older tickets,
 // bulk-imported rows, or a report submitted with the description left blank).
-function ticketCardText(t){const d=(t.desc||'').trim();return esc(d||ticketRef(t));}
+// Two variants of "what identifies this ticket" — which one to use depends on whether a
+// missing description is safe to show as genuinely empty, or needs something in its place.
+// ticketDescCell is for table/list cells that already have other columns identifying the row
+// (Property, Status, etc.) — there, a missing description must read as missing data, an
+// outstanding thing to chase down, never silently replaced by the ticket number (that would
+// hide exactly the gap someone triaging needs to notice).
+function ticketDescCell(t){const d=(t.desc||'').trim();return d?esc(d):'<span class="faint">No description</span>';}
+// ticketCardTitle is for places that need to render SOME title (a card, a detail heading) —
+// a blank title reads as broken, not as missing data. The ticket number is a defensible last
+// resort there, but shown muted with an explicit "No description" alongside it, so it reads
+// as a placeholder standing in for missing data, not as the ticket's actual name.
+function ticketCardTitle(t){const d=(t.desc||'').trim();if(d)return esc(d);return `<span class="muted">${esc(ticketRef(t))}</span> <span class="faint" style="font-weight:400">· No description</span>`;}
 // "Not yet categorised" reads as an outstanding triage step; a blank cell or an em dash both
 // read as missing data, which this isn't — it's a decision nobody has made yet.
 function svcLabel(t){return t.svc?esc((CAT[t.svc]||'')+' '+t.svc).trim():'<span class="faint">Not yet categorised</span>';}
@@ -2228,7 +2240,17 @@ function navigate(v){closeNavDrawer();closeUserMenu();if((v==='assumptions'||v==
   const mainCol=el.closest('.main');if(mainCol)mainCol.scrollTop=0;
   window.scrollTo(0,0);
   ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement,errorlog:renderErrorLog,auditlog:renderAuditLog}[v]||renderDashboard)(el);}
-function toast(msg){const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast">✓ ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);
+// Second arg lets a call site mark a toast as a genuine failure rather than a confirmation —
+// before this, every toast (success AND error) rendered with the same ✓ checkmark, so "Ticket
+// created" and "Could not submit report: <raw Postgres error>" looked identically reassuring.
+// 'error' swaps the icon and tints the toast red; anything else (including omitted) stays the
+// existing ✓ success look, so no existing call site needs to change to keep working as before.
+// Logging stays on the original " failed:" convention below, unchanged — callers that want a
+// raw error captured in the error_log should still call logError() themselves (as mSubmit's
+// error branch does), same as before. The 'error' type here only changes how the toast looks;
+// it deliberately doesn't also change what gets logged, so this stays a pure visual fix and
+// doesn't alter logging behavior at any of the app's existing toast() call sites.
+function toast(msg,type){const isErr=type==='error';const r=document.getElementById('toastRoot');r.innerHTML=`<div class="toast${isErr?' err':''}">${isErr?'⚠️':'✓'} ${msg}</div>`;clearTimeout(window._tt);window._tt=setTimeout(()=>r.innerHTML='',2600);
   if(/ failed:/i.test(msg))logError(msg);}
 /* ===== lightweight error log (adapted from reshab-platform's error_log pattern) =====
    Every " failed: " toast across the app (save/delete/restore/upload failures — the
@@ -2244,6 +2266,26 @@ async function logError(message){
     const {data:{user}}=await sb.auth.getUser();
     await sb.from('error_log').insert({message:String(message).slice(0,2000),path:VIEW||null,user_id:user?user.id:null,user_email:user?user.email:null,user_role:ROLE||null});
   }catch(e){/* swallow - logging must never itself break the app */}
+}
+// Turns a raw Supabase/Postgres error into something a field worker can actually act on. The
+// mobile submit flow used to show error.message verbatim — e.g. "new row for relation
+// \"maintenance_tickets\" violates check constraint \"maintenance_tickets_description_required\""
+// — which is meaningless to anyone who isn't looking at the schema. The raw message is never
+// discarded, just kept out of the user-facing toast: callers should still console.error it and
+// pass it to logError() separately so a developer can find it in the error log.
+function friendlyDbError(error){
+  const raw=(error&&error.message)||String(error||'');
+  if(/maintenance_tickets_description_required|description.*check constraint/i.test(raw))
+    return 'Please add a description of the problem before submitting.';
+  if(/violates not-null constraint/i.test(raw))
+    return 'A required field is missing — please check the form and try again.';
+  if(/row-level security|permission denied|42501/i.test(raw))
+    return "You don't have permission to do that.";
+  if(/violates foreign key constraint/i.test(raw))
+    return 'One of the selected options is no longer valid — please refresh and try again.';
+  if(/Failed to fetch|NetworkError|network request failed/i.test(raw))
+    return "Couldn't reach the server — check your connection and try again.";
+  return 'Something went wrong submitting this. Please try again, or contact your office admin if it keeps happening.';
 }
 async function loadErrorLog(){
   if(!SUPA_CONFIGURED)return;
@@ -2346,7 +2388,7 @@ function renderDashboard(el){
   <div class="grid2" style="margin-top:18px">
     <div class="card"><h3>🎫 Maintenance priority queue<a class="link" onclick="navigate('tickets')">View all →</a></h3>
       <table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th>Status</th><th>Age</th></tr></thead><tbody>
-      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b trunc2" style="max-width:280px">${ticketCardText(t)}</div><div class="faint" style="font-size:11.5px">${svcLabel(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono">${ageDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
+      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b trunc2" style="max-width:280px">${ticketDescCell(t)}</div><div class="faint" style="font-size:11.5px">${svcLabel(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono">${ageDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
       </tbody></table></div>
     <div class="card"><h3>🏠 Portfolio health</h3><div class="body">
       ${PROPS.map(p=>`<div class="mrow" style="padding:7px 0;border-bottom:1px solid var(--line)"><div><span class="dotc" style="background:var(--${p.health==='green'?'green':(p.health==='red'?'red':'amber')})"></span> <span class="b">${p.name}</span> <span class="faint" style="font-size:11.5px">· ${p.own==='owned'?'Owned':'Leased'}</span></div><div class="pill" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">${p.status}</div></div>`).join('')}
@@ -2354,7 +2396,7 @@ function renderDashboard(el){
   </div>
   <div class="sectitle">Recent activity</div>
   <div class="card"><table><thead><tr><th>Logged</th><th>Item</th><th>Property</th><th>Vendor</th><th>Status</th></tr></thead><tbody>
-    ${recent.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="muted mono">${fdate(t.created)}</td><td><span class="b trunc2" style="max-width:280px">${ticketCardText(t)}</span></td><td>${propById(t.prop).name}</td><td class="muted">${t.vendor||'—'}</td><td>${badge(t)}</td></tr>`).join('')}
+    ${recent.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="muted mono">${fdate(t.created)}</td><td><span class="b trunc2" style="max-width:280px">${ticketDescCell(t)}</span></td><td>${propById(t.prop).name}</td><td class="muted">${t.vendor||'—'}</td><td>${badge(t)}</td></tr>`).join('')}
   </tbody></table></div>`;
 }
 
@@ -2476,7 +2518,7 @@ function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="ope
   <td class="b trunc hide-below-sm col-frozen" style="max-width:130px">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
   <td class="hide-below-sm muted mono" style="white-space:nowrap" title="${age}d ago">${fdate(t.created)}</td>
-  <td><div class="trunc2" style="max-width:260px">${ticketCardText(t)}</div><div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></td>
+  <td><div class="trunc2" style="max-width:260px">${ticketDescCell(t)}</div><div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></td>
   <td>${ubadge(t.urgency)}</td>
   <td class="hide-below-lg muted">${svcLabel(t)}</td>
   <td class="hide-below-lg">${t.vendor||'<span class="faint">—</span>'}</td>
@@ -2515,7 +2557,7 @@ function ticketRecon(t){const inMonthly=RECON.monthly.groups.some(g=>g.tickets.i
   if(t.status==='Completed'||t.status==='Closed')return {label:'Pending reconciliation',cls:'b-new'};
   return {label:'—',cls:'b-closed'};}
 function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=propById(t.prop);
-  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${ticketRef(t)}${t.svc?' · '+esc((CAT[t.svc]||'')+' '+t.svc).trim():''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${ticketCardText(t)}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${ticketRef(t)}${t.svc?' · '+esc((CAT[t.svc]||'')+' '+t.svc).trim():''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${ticketCardTitle(t)}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
    `<div class="card"><div class="body"><div class="kv">
       <div class="k">Property</div><div><a onclick="closeDrawer();navigate('properties');setTimeout(()=>openProperty('${p.id}'),60)">${p.name}</a> · ${p.addr||'—'}</div>
       <div class="k">Status</div><div>${badge(t)}</div>
@@ -2534,7 +2576,7 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
       <div class="k">Reporter</div><div>${esc(t.reporter||'—')}${t.createdByEmail?`<div class="faint" style="font-size:10.5px;margin-top:2px">✓ Created by ${esc(t.createdByEmail)}</div>`:(t._backend==='supabase'?'<div class="faint" style="font-size:10.5px;margin-top:2px">No verified creator on file — entered before this was tracked, or via bulk import.</div>':'')}</div>
     </div></div></div>
-    <div class="sectitle">Description</div><div class="card"><div class="body">${ROLE==='admin'?`<textarea style="width:100%;min-height:72px;font:inherit" onchange="updateDescription('${t.id}',this.value)" placeholder="Describe the issue…">${esc(t.desc||t.title)}</textarea>`:esc(t.desc||t.title)}</div></div>
+    <div class="sectitle">Description</div><div class="card"><div class="body">${ROLE==='admin'?`<textarea style="width:100%;min-height:72px;font:inherit" onchange="updateDescription('${t.id}',this.value)" placeholder="Describe the issue…">${esc(t.desc||'')}</textarea>`:(t.desc?esc(t.desc):'<span class="faint">No description</span>')}</div></div>
     <div class="sectitle">Attachments</div>${ticketAttachmentsSectionHtml(t)}
     <div class="sectitle">Actions</div><div class="card"><div class="body" style="display:flex;gap:10px;flex-wrap:wrap">${ticketActions(t)}</div></div>
     <div class="sectitle">Activity</div><div class="card"><div class="body"><ul class="timeline">${t.log.map(l=>`<li><span class="tdot"></span><div class="tt">${l[0]}</div><div class="tm">${l[1]} · ${logAge(l)}</div></li>`).join('')}</ul></div></div>`);
@@ -3101,7 +3143,7 @@ function propComponents(p){const names=Object.keys(LIFE_TABLE);
   ${rows.map(r=>`<tr><td class="b">${r.n}</td><td class="muted">${r.life} yr</td><td class="right mono">${money(r.cost)}</td></tr>`).join('')}
   </tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Replacement costs &amp; average lifespans per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions). Per-property component age/install-date tracking and end-of-life flagging aren't built yet — this table shows portfolio-wide assumptions only, not this property's actual components.</div>`;}
-function propTickets(tks){return tks.length?`<div class="card"><table><thead><tr><th>Description</th><th>Priority</th><th>Status</th><th class="right">Cost</th></tr></thead><tbody>${tks.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="trunc2" style="max-width:280px">${ticketCardText(t)}</div></td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="right mono">${t.cost!=null?money(t.cost):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card"><div class="body muted">No maintenance items for this property.</div></div>';}
+function propTickets(tks){return tks.length?`<div class="card"><table><thead><tr><th>Description</th><th>Priority</th><th>Status</th><th class="right">Cost</th></tr></thead><tbody>${tks.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="right mono">${t.cost!=null?money(t.cost):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card"><div class="body muted">No maintenance items for this property.</div></div>';}
 function propDocs(p){
   const docs=DOCS.filter(x=>x.prop===p.id).sort((a,b)=>new Date(b.uploaded)-new Date(a.uploaded));
   const typeOpts=docTypesFor(p).map(t=>`<option value="${t}">${t}</option>`).join('');
@@ -4010,7 +4052,7 @@ function approvalItems(){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&is
 function renderApprovals(el){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));el.innerHTML=`${pageHeader('approvals')}
   <div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi red"><div class="lab">Open emergencies</div><div class="val">${esc.length}</div></div><div class="kpi amber"><div class="lab">Recon awaiting sign-off</div><div class="val">${(RECON.weekly.signed?0:1)+(RECON.monthly.signed?0:1)}</div></div><div class="kpi green"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div></div>
   <div class="sectitle">Open emergencies</div>
-  <div class="card">${esc.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketCardText(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
+  <div class="card">${esc.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
   <div class="sectitle">Reconciliation sign-off</div><div class="card"><div class="body row"><button class="btn ${RECON.weekly.signed?'sec':'green'}" onclick="RTAB='weekly';navigate('recon')">${RECON.weekly.signed?'Weekly ✓ signed':'Review weekly →'}</button><button class="btn ${RECON.monthly.signed?'sec':'green'}" onclick="RTAB='monthly';navigate('recon')">${RECON.monthly.signed?'Monthly ✓ locked':'Review monthly →'}</button></div></div>`;}
 
 /* ===== search ===== */
@@ -4542,7 +4584,19 @@ async function processBulkVendorRows(rows){
 
 /* ===== mobile ===== */
 let MB={tab:'home',step:0,draft:{}};
-function renderMobile(){const app=document.getElementById('mobileApp');let body='';if(MB.tab==='home')body=mHome();else if(MB.tab==='report')body=mReport();else if(MB.tab==='reports')body=mReports();
+// Real bug found and fixed here (not just a validation gap): mAddFile()/mRemoveFile() on the
+// "Describe it" step call renderMobile() directly to redraw the attached-files list, which
+// rebuilds the whole screen — including a fresh <textarea id="mDesc"> seeded from whatever
+// was last captured into MB.draft.desc. Nothing captured the textarea's live value before
+// that rebuild, so typing a description and then attaching a photo (the natural order — this
+// step offers both) silently wiped what had just been typed, and the ticket went on to submit
+// with an empty description while the photo attached fine. Capturing here, once, centrally,
+// before ANY re-render touches the DOM, closes this for every current and future call site —
+// not just the two that happen to exist today.
+function renderMobile(){
+  const liveDesc=document.getElementById('mDesc');
+  if(liveDesc)MB.draft.desc=liveDesc.value;
+  const app=document.getElementById('mobileApp');let body='';if(MB.tab==='home')body=mHome();else if(MB.tab==='report')body=mReport();else if(MB.tab==='reports')body=mReports();
   app.innerHTML=`<div class="mhead"><div class="hi">Good morning 👋</div><div class="nm">${esc(currentUserDisplayName())}</div><div style="font-size:12px;opacity:.9;margin-top:2px">Field Staff</div></div><div class="mbody">${body}</div>
   <div class="mnav"><button class="${MB.tab==='home'?'active':''}" onclick="mGo('home')"><span class="mi">🏠</span>Home</button><button class="${MB.tab==='reports'?'active':''}" onclick="mGo('reports')"><span class="mi">📋</span>My reports</button></div>`;}
 function mGo(t){MB.tab=t;renderMobile();}
@@ -4557,10 +4611,10 @@ function mHome(){const mine=myReports();const open=mine.filter(isOpen);return `<
 // description truncates with an ellipsis instead of pushing the card's layout around.
 // Property, date, and attachment count stay on the second line; urgency/status badges stay
 // where they were.
-function mCard(t){const nAtt=ticketAttachmentsList(t.id).length;return `<div class="mcard" onclick="mDetail('${t.id}')" style="cursor:pointer"><div class="mrow" style="align-items:flex-start"><div class="b trunc2" style="flex:1">${ticketCardText(t)}</div>${ubadge(t.urgency)}</div><div class="muted" style="font-size:12px;margin:4px 0 8px">${propById(t.prop).name} · ${fdate(t.created)}${nAtt?' · 📎 '+nAtt:''}</div><div class="mrow">${badge(t)}<span class="faint" style="font-size:11.5px">${t.vendor||'awaiting assignment'}</span></div></div>`;}
+function mCard(t){const nAtt=ticketAttachmentsList(t.id).length;return `<div class="mcard" onclick="mDetail('${t.id}')" style="cursor:pointer"><div class="mrow" style="align-items:flex-start"><div class="b trunc2" style="flex:1">${ticketCardTitle(t)}</div>${ubadge(t.urgency)}</div><div class="muted" style="font-size:12px;margin:4px 0 8px">${propById(t.prop).name} · ${fdate(t.created)}${nAtt?' · 📎 '+nAtt:''}</div><div class="mrow">${badge(t)}<span class="faint" style="font-size:11.5px">${t.vendor||'awaiting assignment'}</span></div></div>`;}
 function mReports(){const mine=myReports();return `<div class="mtitle">My reports</div>${mine.length?mine.map(mCard).join(''):'<div class="mcard muted">No reports yet.</div>'}`;}
 function mDetail(id){const t=TICKETS.find(x=>x.id===id);const mine=t.reporter===currentUserDisplayName();const canEdit=mine&&t.status==='Open';
-  document.querySelector('#mobile .mbody').innerHTML=`<a style="font-size:13px" onclick="renderMobile()">← Back</a><div class="mtitle" style="margin-top:8px">${ticketCardText(t)}</div><div class="mcard"><div class="mrow">${badge(t)}${ubadge(t.urgency)}</div><div class="muted" style="font-size:12.5px;margin-top:8px">${propById(t.prop).name}<br>Reported ${fdate(t.created)} · ${t.vendor?'Assigned to '+t.vendor:'Awaiting assignment'}</div></div>
+  document.querySelector('#mobile .mbody').innerHTML=`<a style="font-size:13px" onclick="renderMobile()">← Back</a><div class="mtitle" style="margin-top:8px">${ticketCardTitle(t)}</div><div class="mcard"><div class="mrow">${badge(t)}${ubadge(t.urgency)}</div><div class="muted" style="font-size:12.5px;margin-top:8px">${propById(t.prop).name}<br>Reported ${fdate(t.created)} · ${t.vendor?'Assigned to '+t.vendor:'Awaiting assignment'}</div></div>
   <div class="b" style="margin:14px 0 8px">Description</div>
   <div class="mcard" style="padding:12px">${canEdit?`<textarea id="mEditDesc_${t.id}" rows="3" style="width:100%;border:1.5px solid var(--border);border-radius:10px;padding:10px;font:inherit">${esc(t.desc)}</textarea><button class="opt" style="width:100%;margin-top:8px" onclick="saveOwnTicketDesc('${t.id}')">Save changes</button><div class="faint" style="font-size:11px;margin-top:6px">Editable until office/admin assigns a vendor or starts work.</div>`:`<div style="font-size:13px">${t.desc?esc(t.desc):'<span class="faint">—</span>'}</div>${mine&&t.status!=='Open'?'<div class="faint" style="font-size:11px;margin-top:6px">This has been picked up, so it can no longer be edited.</div>':''}`}</div>
   <div class="b" style="margin:14px 0 8px">Photos &amp; files</div><div class="mcard" style="padding:12px">${mTicketAttachmentsHtml(t,canEdit)}</div>
@@ -4591,10 +4645,19 @@ function mReport(){const s=MB.step,d=MB.draft;const prog=`<div class="progress" 
     if(SUPA_CONFIGURED&&!plist.length)return prog+`<div class="mstep">Step 1 of 4</div><div class="mtitle">Which property?</div><div class="muted" style="padding:20px 0">No properties set up yet — ask an admin to add one first (Supabase → Table Editor → properties).</div>`;
     return prog+`<div class="mstep">Step 1 of 4</div><div class="mtitle">Which property?</div><div class="optgrid">${plist.map(p=>`<div class="opt ${d.prop===p.id?'sel':''}" onclick="mSet('prop','${p.id}')"><span class="oi">🏠</span>${p.name}</div>`).join('')}</div>${navBtns(!!d.prop)}`;}
   if(s===1){const U=[['Emergency','🚨','Danger / flooding / no heat'],['Urgent','⚠️','Needs attention soon'],['Low','🌿','Whenever convenient']];return prog+`<div class="mstep">Step 2 of 4</div><div class="mtitle">How urgent?</div>${U.map(u=>`<div class="opt ${d.urgency===u[0]?'sel':''}" style="flex-direction:row;justify-content:flex-start;gap:12px;margin-bottom:10px" onclick="mSet('urgency','${u[0]}')"><span class="oi">${u[1]}</span><div style="text-align:left"><div>${u[0]}</div><div class="muted" style="font-size:11.5px;font-weight:500">${u[2]}</div></div></div>`).join('')}${navBtns(!!d.urgency)}`;}
-  if(s===2)return prog+`<div class="mstep">Step 3 of 4</div><div class="mtitle">Describe it</div><div class="mfield"><label>What's happening?</label><textarea id="mDesc" rows="4" placeholder="e.g. Water leaking under the kitchen sink…">${d.desc||''}</textarea></div><div class="mfield"><label>Photos / files (optional)</label><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px"><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📷 Take a photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="mAddFile(this,'photo')"></label><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📎 Attach a file<input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple style="display:none" onchange="mAddFile(this,'file')"></label></div>${(d.files&&d.files.length)?d.files.map((f,i)=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">${f.kind==='photo'?'📷':'📄'} ${esc(f.file.name)}</span><a onclick="mRemoveFile(${i})" style="color:var(--red);font-size:12px">Remove</a></div>`).join(''):''}</div>${navBtns(true,'mCapture')}`;
+  if(s===2)return prog+`<div class="mstep">Step 3 of 4</div><div class="mtitle">Describe it</div><div class="mfield"><label>What's happening?</label><textarea id="mDesc" rows="4" placeholder="e.g. Water leaking under the kitchen sink…" oninput="mDescInput(this.value)">${esc(d.desc||'')}</textarea></div><div class="mfield"><label>Photos / files (optional)</label><div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px"><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📷 Take a photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="mAddFile(this,'photo')"></label><label class="opt" style="flex:1;min-width:140px;cursor:pointer;flex-direction:row;gap:8px">📎 Attach a file<input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple style="display:none" onchange="mAddFile(this,'file')"></label></div>${(d.files&&d.files.length)?d.files.map((f,i)=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">${f.kind==='photo'?'📷':'📄'} ${esc(f.file.name)}</span><a onclick="mRemoveFile(${i})" style="color:var(--red);font-size:12px">Remove</a></div>`).join(''):''}</div>${navBtns(!!(d.desc&&d.desc.trim()),'mCapture','mDescContinueBtn')}`;
   const p=propById(d.prop);return prog+`<div class="mstep">Step 4 of 4</div><div class="mtitle">Review & submit</div><div class="mcard"><div class="kv" style="grid-template-columns:90px 1fr"><div class="k">Property</div><div class="b">${p.name}</div><div class="k">Urgency</div><div>${ubadge(d.urgency)}</div><div class="k">Details</div><div>${d.desc||'<span class="faint">—</span>'}</div><div class="k">Photos/files</div><div>${(d.files&&d.files.length)?d.files.length+' attached':'<span class="faint">—</span>'}</div></div></div>${d.urgency==='Emergency'?'<div class="mcard" style="border-color:var(--red);color:var(--red);font-size:12.5px"><b>🚨 Emergency:</b> an on-call admin is paged by text on submit.</div>':''}<button class="bigbtn" onclick="mSubmit()">Submit report ✓</button><button class="opt" style="width:100%;margin-top:10px" onclick="MB.step=2;renderMobile()">← Edit</button>`;}
-function navBtns(ok,capture){return `<div style="display:flex;gap:10px;margin-top:20px">${MB.step>0?`<button class="opt" style="flex:1" onclick="MB.step--;renderMobile()">← Back</button>`:''}<button class="bigbtn" style="flex:2;opacity:${ok?1:.5};pointer-events:${ok?'auto':'none'}" onclick="${capture||'mNext'}()">Continue →</button></div>`;}
+function navBtns(ok,capture,btnId){return `<div style="display:flex;gap:10px;margin-top:20px">${MB.step>0?`<button class="opt" style="flex:1" onclick="MB.step--;renderMobile()">← Back</button>`:''}<button class="bigbtn"${btnId?` id="${btnId}"`:''} style="flex:2;opacity:${ok?1:.5};pointer-events:${ok?'auto':'none'}" onclick="${capture||'mNext'}()">Continue →</button></div>`;}
 function mCapture(){const d=document.getElementById('mDesc');if(d)MB.draft.desc=d.value;mNext();}
+// Live-enables the Describe step's Continue button as text is typed, without doing a full
+// renderMobile() re-render on every keystroke (that would rebuild the textarea mid-type and
+// lose cursor position/focus). Keeps MB.draft.desc in sync the same way renderMobile()'s own
+// capture-on-rebuild does, just without the rebuild.
+function mDescInput(v){
+  MB.draft.desc=v;
+  const btn=document.getElementById('mDescContinueBtn');
+  if(btn){const ok=!!v.trim();btn.style.opacity=ok?1:.5;btn.style.pointerEvents=ok?'auto':'none';}
+}
 function mSet(k,v){MB.draft[k]=v;renderMobile();}
 function mAddFile(input,kind){
   const files=input.files;if(!files||!files.length)return;
@@ -4607,6 +4670,14 @@ function mRemoveFile(i){if(!MB.draft.files)return;MB.draft.files.splice(i,1);ren
 function mNext(){MB.step++;renderMobile();}
 async function mSubmit(){
   const d=MB.draft;
+  // Belt-and-suspenders: each step's Continue button is already gated on its own field, but
+  // check all three required fields again here too, since this is the actual point of no
+  // return before a row is written — enforced at every route in, not just the one the UI
+  // expects someone to take. Named per-field so whoever hits this actually knows what to fix,
+  // rather than a generic "something's missing."
+  if(!d.prop){toast('Please choose a property — go back and select one.','error');MB.step=0;renderMobile();return;}
+  if(!d.urgency){toast('Please choose how urgent this is — go back and select one.','error');MB.step=1;renderMobile();return;}
+  if(!d.desc||!d.desc.trim()){toast('A description is required — go back and describe the issue.','error');MB.step=2;renderMobile();return;}
   const p=propById(d.prop);
   function showSuccess(displayId){
     document.querySelector('#mobile .mbody').innerHTML=`<div style="text-align:center;padding:30px 10px"><div style="font-size:60px">✅</div><div class="mtitle" style="margin-top:10px">Report submitted!</div><div class="muted" style="margin-bottom:6px">Ticket <b>${displayId}</b> created${d.urgency==='Emergency'?' — flagged Emergency':''}.</div><div class="muted" style="font-size:12.5px">${d.urgency==='Emergency'?'Call your office/admin directly for anything urgent — automatic paging isn\'t built yet. ':''}Office staff will triage and assign a vendor.</div><button class="bigbtn" style="margin-top:22px" onclick="mGo('reports')">View my reports</button><button class="opt" style="width:100%;margin-top:10px" onclick="mGo('home')">Done</button></div>`;
@@ -4618,7 +4689,12 @@ async function mSubmit(){
   if(p&&p._backend==='supabase'){
     const payload={property_id:d.prop,title:d.desc?d.desc.slice(0,60):fallbackTitle,description:d.desc||'',service_category:null,service_type:null,urgency:d.urgency,status:'Open',reporter:currentUserDisplayName(),created_by_email:await currentUserEmail()};
     const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
-    if(error){toast('Could not submit report: '+error.message);return;}
+    // Was: toast('Could not submit report: '+error.message) — showed the raw Postgres error
+    // (constraint names, relation names) straight to a field worker on their phone. The raw
+    // message still goes where it's useful — console for whoever's debugging live, and
+    // error_log for a Senior Admin checking later — the toast just gets the plain-language
+    // version.
+    if(error){console.error('mSubmit insert failed',error);toast(friendlyDbError(error),'error');logError('Mobile report submit failed: '+error.message);return;}
     const detail='Submitted from mobile'+(d.desc?': '+d.desc:'');
     await dbLogActivity(data.id,'Reported',detail);
     const activity=[{action:'Reported',detail,created_at:new Date().toISOString()}];
