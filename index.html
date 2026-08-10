@@ -1591,6 +1591,13 @@ function updateInvoice(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;c
   if(t._backend==='supabase')dbUpdateTicket(id,{invoice_number:val}).then(ok=>{if(!ok){t.invoice=prev;refreshTickets();}});
   else saveState();
   toast('Invoice updated');refreshTickets();}
+// Description is editable from the ticket drawer — Senior Admin only (see the ROLE==='admin'
+// check around the textarea itself in openTicket()); Office Staff and Field Staff still see
+// the same text read-only, same as every other field on this drawer that isn't theirs to edit.
+function updateDescription(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const prev=t.desc;t.desc=val;
+  if(t._backend==='supabase')dbUpdateTicket(id,{description:val}).then(ok=>{if(!ok){t.desc=prev;refreshTickets();}});
+  else saveState();
+  toast('Description updated');refreshTickets();}
 /* ===== ticket-detail inline editors: Service category/type, Vendor, Priority — Office
    Staff and Senior Admin can edit category/type/vendor/cost/invoice/payment; Priority is
    Senior Admin only (Office Staff sees a read-only badge, same as before). ===== */
@@ -2457,7 +2464,7 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
       <div class="k">Reporter</div><div>${esc(t.reporter||'—')}${t.createdByEmail?`<div class="faint" style="font-size:10.5px;margin-top:2px">✓ Created by ${esc(t.createdByEmail)}</div>`:(t._backend==='supabase'?'<div class="faint" style="font-size:10.5px;margin-top:2px">No verified creator on file — entered before this was tracked, or via bulk import.</div>':'')}</div>
     </div></div></div>
-    <div class="sectitle">Description</div><div class="card"><div class="body">${t.desc||t.title}</div></div>
+    <div class="sectitle">Description</div><div class="card"><div class="body">${ROLE==='admin'?`<textarea style="width:100%;min-height:72px;font:inherit" onchange="updateDescription('${t.id}',this.value)" placeholder="Describe the issue…">${esc(t.desc||t.title)}</textarea>`:esc(t.desc||t.title)}</div></div>
     <div class="sectitle">Attachments</div>${ticketAttachmentsSectionHtml(t)}
     <div class="sectitle">Actions</div><div class="card"><div class="body" style="display:flex;gap:10px;flex-wrap:wrap">${ticketActions(t)}</div></div>
     <div class="sectitle">Activity</div><div class="card"><div class="body"><ul class="timeline">${t.log.map(l=>`<li><span class="tdot"></span><div class="tt">${l[0]}</div><div class="tm">${l[1]} · ${logAge(l)}</div></li>`).join('')}</ul></div></div>`);
