@@ -392,6 +392,27 @@
     .grid-props{gap:10px}
     table{font-size:12.5px}
     th,td{padding:9px 8px}
+
+    /* ===== Every table becomes cards on a phone — supersedes an earlier version of this
+       that only touched the Maintenance table. Same technique, one shared rule instead of a
+       per-screen rebuild: applies to every <table> in the content area except .no-cards (the
+       two paste-from-Excel bulk grids — pasting a spreadsheet isn't a phone workflow, and
+       20 rows × 13 empty inputs as cards would be strictly worse than the scrollable grid
+       already there). Columns already hidden at this width via hide-below-sm/md/lg stay
+       hidden — this only changes HOW the remaining visible cells lay out (row → labeled
+       card), not which columns survive down to phone width. Labels come from data-label
+       attributes stamped on each <td> by labelTableCellsForCards() (see script, near boot),
+       which reads the matching column's real <th> text automatically — so every table gets
+       this for free, including ones added later, with no changes to any render*() function. */
+    #view table:not(.no-cards){border-collapse:separate;border-spacing:0 10px;width:100%!important;min-width:0!important}
+    #view table:not(.no-cards) thead{display:none}
+    #view table:not(.no-cards) tbody tr{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:2px 12px;box-shadow:var(--shadow)}
+    #view table:not(.no-cards) tbody tr td{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 14px;text-align:right;padding:9px 0;border:0;border-bottom:1px solid var(--surface-sunken);min-width:0!important;max-width:none!important;white-space:normal}
+    #view table:not(.no-cards) tbody tr td:last-child{border-bottom:0}
+    #view table:not(.no-cards) tbody tr td[data-label]::before{content:attr(data-label);font-weight:700;font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-400);text-align:left;flex:0 0 auto}
+    #view table:not(.no-cards) tbody tr td input,
+    #view table:not(.no-cards) tbody tr td select,
+    #view table:not(.no-cards) tbody tr td textarea{max-width:100%;flex:1 1 auto;min-width:0}
     .page-header{margin-bottom:14px}
     .page-header .ph-title{font-size:19px}
     /* stack the Issued/Expires and Scheduled/Completed field pairs */
@@ -4292,7 +4313,7 @@ function bulkGridMarkup(){
   </div>`;
 }
 function bulkGridTable(){
-  return `<table style="border-collapse:collapse;min-width:1550px">
+  return `<table class="no-cards" style="border-collapse:collapse;min-width:1550px">
     <thead><tr>${BULK_TICKET_HEADERS.map(h=>`<th style="position:sticky;top:0;background:var(--panel2);border:1px solid var(--line);padding:6px 8px;font-size:11.5px;text-align:left;white-space:nowrap;z-index:1">${h}</th>`).join('')}</tr></thead>
     <tbody>${BULK_GRID.map((row,r)=>`<tr>${row.map((val,c)=>`<td style="border:1px solid var(--line);padding:0"><input value="${esc(val)}" oninput="setBulkCell(${r},${c},this.value)" onpaste="bulkGridPaste(event,${r},${c})" style="width:130px;border:0;padding:6px 8px;font-size:12.5px;background:transparent"></td>`).join('')}</tr>`).join('')}</tbody>
   </table>`;
@@ -4551,7 +4572,7 @@ function bulkVendorGridMarkup(){
   </div>`;
 }
 function bulkVendorGridTable(){
-  return `<table style="border-collapse:collapse;min-width:1550px">
+  return `<table class="no-cards" style="border-collapse:collapse;min-width:1550px">
     <thead><tr>${BULK_VENDOR_HEADERS.map(h=>`<th style="position:sticky;top:0;background:var(--panel2);border:1px solid var(--line);padding:6px 8px;font-size:11.5px;text-align:left;white-space:nowrap;z-index:1">${h}</th>`).join('')}</tr></thead>
     <tbody>${BULK_VENDOR_GRID.map((row,r)=>`<tr>${row.map((val,c)=>`<td style="border:1px solid var(--line);padding:0"><input value="${esc(val)}" oninput="setBulkVendorCell(${r},${c},this.value)" onpaste="bulkVendorGridPaste(event,${r},${c})" style="width:130px;border:0;padding:6px 8px;font-size:12.5px;background:transparent"></td>`).join('')}</tr>`).join('')}</tbody>
   </table>`;
@@ -4906,9 +4927,51 @@ async function obCreate(){
   }
   const p={id:'p'+Date.now(),name:d.name||'New Property',addr:d.addr||'',own:d.own,beds:parseInt(d.beds)||null,status:'New Transaction',health:'amber',compliance:null};if(d.own==='owned'){p.llc=d.llc||'—';p.value=parseInt(d.value)||null;p.rent=null;}else{p.landlord=d.landlord||'—';p.rent=parseInt(d.rent)||null;LEASES.push({id:p.id,prop:p.id,landlord:p.landlord,rent:p.rent,term:'12 mo',start:'—',end:'—',next:new Date(today),status:'New Transaction',escalated:false});}PROPS.push(p);saveState();closeDrawer();toast('Property created: '+p.name);navigate('properties');}
 
+/* ===== Every table becomes cards on a phone — see the @media(max-width:560px) block in
+   <style> for the actual visual transform. This just keeps each <td>'s data-label attribute
+   in sync with its column's real header text, for every table, automatically. Most column
+   headers in this app aren't plain text — they're the thSel()/thTitle() pattern, a wrapping
+   <div><span>Label</span><a>✕</a></div> next to a <select> filter — so this reads the <span>
+   specifically rather than the <th>'s full textContent, which would otherwise also pull in
+   every <option> inside that filter dropdown and produce a garbled label. Runs once at boot,
+   then again automatically on every re-render via MutationObserver — no per-table wiring, no
+   changes to any render*() function needed for a table to pick this up, including ones
+   added after this was written. */
+function labelTableCellsForCards(root){
+  root.querySelectorAll('table:not(.no-cards)').forEach(tbl=>{
+    const headRow=tbl.querySelector('thead tr');
+    if(!headRow)return;
+    const heads=Array.from(headRow.children).map(th=>{
+      const span=th.querySelector(':scope > div > span, :scope > span');
+      if(span)return span.textContent.trim();
+      let t='';th.childNodes.forEach(n=>{if(n.nodeType===3)t+=n.textContent;});
+      return t.trim();
+    });
+    tbl.querySelectorAll('tbody tr').forEach(tr=>{
+      Array.from(tr.children).forEach((td,i)=>{
+        if(td.hasAttribute('colspan'))return; // empty-state / full-width rows — no single column to label
+        if(heads[i])td.setAttribute('data-label',heads[i]);
+      });
+    });
+  });
+}
+let TABLE_CARD_OBSERVER=null;
+function startTableCardObserver(){
+  if(TABLE_CARD_OBSERVER)return;
+  const view=document.getElementById('view');
+  if(!view)return;
+  labelTableCellsForCards(view);
+  // Deliberately watches childList/subtree only, not attributes — setting data-label below
+  // doesn't itself re-trigger this, so there's no feedback loop; it only re-runs when a
+  // render*() function replaces #view's contents with fresh, unlabeled markup.
+  TABLE_CARD_OBSERVER=new MutationObserver(()=>labelTableCellsForCards(view));
+  TABLE_CARD_OBSERVER.observe(view,{childList:true,subtree:true});
+}
+
 /* ===== boot ===== */
 document.getElementById('switch').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setRole(b.dataset.role);});
 loadState();computeHealth();setRole('office');
+startTableCardObserver();
 if(sessionStorage.getItem('koda_idle_signout')){
   sessionStorage.removeItem('koda_idle_signout');
   setTimeout(()=>toast('Signed out due to inactivity — sign back in to continue'),300);
