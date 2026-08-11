@@ -148,9 +148,21 @@
   .nav.active{background:linear-gradient(90deg,rgba(14,154,163,.30),rgba(124,63,214,.18));color:var(--on-dark);box-shadow:inset 3px 0 0 var(--accent)}
   .side .foot{margin-top:auto;font-size:11px;color:var(--on-dark-3);padding:10px 8px 0;border-top:1px solid var(--ink-800)}
 
-  /* mobile nav drawer — hamburger + off-canvas .side, hidden on desktop by default */
-  .menubtn{display:none;background:transparent;border:0;color:var(--ink-900);font-size:20px;width:40px;height:40px;border-radius:9px;align-items:center;justify-content:center;flex:0 0 auto}
-  .menubtn:hover{background:var(--surface-sunken)}
+  /* mobile nav drawer — hamburger + off-canvas .side, hidden on desktop by default.
+     Was: color:var(--ink-900) — the same near-black used for .topbar's OWN background
+     (line ~107), so the ☰ character was invisible at rest: dark text on a dark bar. It only
+     ever became visible on :hover, because that state's light background (var(--surface-
+     sunken), meant for a LIGHT surface) happened to contrast against the still-dark glyph —
+     i.e. hover was accidentally the only state doing any contrast work. Fixed to the same
+     var(--on-dark) white used by every other label in this dark top bar (tb-page, tb-user-btn
+     etc.), with hover/focus now a subtle overlay on top of that white, not a swap away from
+     invisible. Also: sized 44×44 unconditionally (was 40×40 at rest, only bumped to 44 under
+     @media(pointer:coarse) — a fine-pointer laptop resized to mobile width fell through that
+     gap and got a sub-44px target) and given a visible keyboard-focus ring, since an
+     icon-only button had no way to show focus at all before this. */
+  .menubtn{display:none;background:transparent;border:0;color:var(--on-dark);font-size:20px;width:44px;height:44px;border-radius:9px;align-items:center;justify-content:center;flex:0 0 auto}
+  .menubtn:hover{background:rgba(255,255,255,.08)}
+  .menubtn:focus-visible{outline:2px solid var(--on-dark);outline-offset:2px;background:rgba(255,255,255,.08)}
   .navscrim{display:none;position:fixed;inset:0;background:rgba(11,18,32,.42);z-index:65}
   .navscrim.open{display:block}
 
@@ -492,7 +504,7 @@
 <body>
 
 <div class="topbar" id="topbar">
-  <button class="menubtn" id="navMenuBtn" onclick="toggleNavDrawer()" aria-label="Open menu">☰</button>
+  <button class="menubtn" id="navMenuBtn" onclick="toggleNavDrawer()" aria-label="Open menu" aria-expanded="false">☰</button>
   <div class="tb-brand"><span class="dot">K</span>KodaRE</div>
   <div class="tb-page" id="viewTitle">Dashboard</div>
   <div class="switch" id="switch">
@@ -2280,12 +2292,12 @@ function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';MY_UID='demo-'+r;do
   else{const s=STAFF[r];document.getElementById('sideName').textContent=s.name;document.getElementById('sideRole').textContent=s.role;const av=document.getElementById('sideAvatar');av.textContent=initials(s.name);av.style.background=s.color;navigate('dashboard');}}
 /* Mobile nav drawer (<=900px) — hamburger opens, tapping the scrim or a nav link closes it.
    Separate from drawer()/closeDrawer() above, which is the unrelated detail-panel slide-out. */
-function toggleNavDrawer(){document.getElementById('sideNav').classList.toggle('open');document.getElementById('navScrim').classList.toggle('open');}
+function toggleNavDrawer(){const open=document.getElementById('sideNav').classList.toggle('open');document.getElementById('navScrim').classList.toggle('open');document.getElementById('navMenuBtn').setAttribute('aria-expanded',open?'true':'false');}
 /* Top-bar account menu — sign-out lives here instead of its own always-visible button. */
 function toggleUserMenu(e){if(e)e.stopPropagation();const m=document.getElementById('userMenu');if(m)m.classList.toggle('hidden');}
 function closeUserMenu(){const m=document.getElementById('userMenu');if(m)m.classList.add('hidden');}
 document.addEventListener('click',e=>{if(!e.target.closest('#liveRoleBadge'))closeUserMenu();});
-function closeNavDrawer(){document.getElementById('sideNav').classList.remove('open');document.getElementById('navScrim').classList.remove('open');}
+function closeNavDrawer(){document.getElementById('sideNav').classList.remove('open');document.getElementById('navScrim').classList.remove('open');document.getElementById('navMenuBtn').setAttribute('aria-expanded','false');}
 function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});items.splice(aix+3,0,{id:'errorlog',ic:'🛠️',label:'Error Log',count:()=>ERROR_LOG.filter(e=>!e.resolvedAt).length});items.splice(aix+4,0,{id:'auditlog',ic:'📜',label:'Audit Log'});}
   nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
 function navigate(v){closeNavDrawer();closeUserMenu();if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
@@ -4256,7 +4268,7 @@ async function submitNewTicket(){
 }
 
 /* ===== bulk ticket entry: in-app paste grid ===== */
-const BULK_TICKET_HEADERS=['Property','Status','Created','Description','Priority','Service Category','Service Type','Vendor','Cost','Invoice','Payment','Reporter','Notes'];
+const BULK_TICKET_HEADERS=['Property','Status','Created','Description','Priority','Service Category','Service Type','Vendor','Cost','Invoice','Payment','Reporter','Comments'];
 let BULK_GRID=[];
 function openBulkGrid(){
   BULK_GRID=Array.from({length:20},()=>BULK_TICKET_HEADERS.map(()=>''));
@@ -4315,7 +4327,7 @@ function importBulkGrid(){
   closeDrawer();
   processBulkTicketRows(rows);
 }
-const TICKET_UPLOAD_FIELD_MAP={property:'prop',propertyname:'prop',status:'status',created:'created',createddate:'created',datecreated:'created',date:'created',description:'desc',title:'desc',issue:'desc',priority:'urgency',urgency:'urgency',servicecategory:'svc',category:'svc',servicetype:'svctype',type:'svctype',vendor:'vendor',cost:'cost',estimatedcost:'cost',invoice:'invoice',invoicenumber:'invoice',payment:'payment',paymentstatus:'payment',reporter:'reporter',notes:'notes'};
+const TICKET_UPLOAD_FIELD_MAP={property:'prop',propertyname:'prop',status:'status',created:'created',createddate:'created',datecreated:'created',date:'created',description:'desc',title:'desc',issue:'desc',priority:'urgency',urgency:'urgency',servicecategory:'svc',category:'svc',servicetype:'svctype',type:'svctype',vendor:'vendor',cost:'cost',estimatedcost:'cost',invoice:'invoice',invoicenumber:'invoice',payment:'payment',paymentstatus:'payment',reporter:'reporter',notes:'notes',comments:'notes'};
 function normHeaderKey(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
 function handleBulkUploadFile(input){
   const file=input.files&&input.files[0];
