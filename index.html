@@ -929,6 +929,54 @@ async function uploadTicketAttachment(ticketId,file,kind){
   return true;
 }
 function ticketAttachmentsList(ticketId){return TICKET_ATTACHMENTS.filter(a=>String(a.ticket)===String(ticketId)).sort((a,b)=>new Date(b.uploaded)-new Date(a.uploaded));}
+/* ===== Ticket private notes — real Supabase table (Phase 36) =====
+   Distinct from the ticket drawer's "Comments" field (t.notes, shared/visible to everyone —
+   same field that used to be labelled "Notes"). This is a genuinely separate concept: each
+   signed-in person gets their own private note per ticket, backed by ticket_user_notes with
+   row-level security scoping select to (own row OR admin), and insert/update/delete to own
+   row only — so even Senior Admin's oversight view (otherTicketNotes below) can only ever
+   read other people's notes, never edit them. */
+function rowToTicketUserNote(row){
+  return {id:row.id,_backend:'supabase',ticket:row.ticket_id,userId:row.user_id,note:row.note||'',updatedAt:new Date(row.updated_at)};
+}
+async function loadRealTicketUserNotes(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('ticket_user_notes').select('*');
+  if(error){toast('Could not load your ticket notes: '+error.message);return;}
+  TICKET_USER_NOTES.length=0;(data||[]).forEach(row=>TICKET_USER_NOTES.push(rowToTicketUserNote(row)));
+}
+// The signed-in person's own note on a ticket — every user only ever has at most one (unique
+// ticket_id+user_id), so this is a find, not a filter.
+function myTicketNote(ticketId){
+  const row=TICKET_USER_NOTES.find(n=>String(n.ticket)===String(ticketId)&&n.userId===MY_UID);
+  return row?row.note:'';
+}
+// Admin-oversight only: every OTHER person's note on this ticket. For a non-admin this is
+// always empty in practice — RLS never returns anyone else's row to them in the first place —
+// but filtering here too means the UI can't accidentally show someone their own note twice
+// under a future refactor.
+function otherTicketNotes(ticketId){
+  return TICKET_USER_NOTES.filter(n=>String(n.ticket)===String(ticketId)&&n.userId!==MY_UID).sort((a,b)=>b.updatedAt-a.updatedAt);
+}
+async function saveMyTicketNote(ticketId,val){
+  if(!MY_UID){toast("Could not save your note — no signed-in user found.",'error');return;}
+  const existing=TICKET_USER_NOTES.find(n=>String(n.ticket)===String(ticketId)&&n.userId===MY_UID);
+  const prev=existing?existing.note:null;
+  if(existing)existing.note=val;else TICKET_USER_NOTES.push({id:'pending',ticket:ticketId,userId:MY_UID,note:val,updatedAt:new Date()});
+  if(SUPA_CONFIGURED){
+    const {data,error}=await sb.from('ticket_user_notes').upsert({ticket_id:ticketId,user_id:MY_UID,note:val},{onConflict:'ticket_id,user_id'}).select().single();
+    if(error){
+      console.error('saveMyTicketNote failed',error);
+      if(existing)existing.note=prev;else{const ix=TICKET_USER_NOTES.findIndex(n=>String(n.ticket)===String(ticketId)&&n.userId===MY_UID);if(ix>-1)TICKET_USER_NOTES.splice(ix,1);}
+      toast(friendlyDbError(error),'error');logError('Save ticket user note failed: '+error.message);
+      return;
+    }
+    const row=rowToTicketUserNote(data);
+    const ix=TICKET_USER_NOTES.findIndex(n=>n.userId===MY_UID&&String(n.ticket)===String(ticketId));
+    if(ix>-1)TICKET_USER_NOTES[ix]=row;else TICKET_USER_NOTES.push(row);
+  } else saveState();
+  toast('Your note was saved');
+}
 /* ===== Team Notes — real Supabase table (Phase 17) ===== */
 function rowToNote(row){
   return {id:row.id, _backend:'supabase', tag:row.tag, pinned:row.pinned, text:row.text};
@@ -1238,6 +1286,7 @@ async function enterLiveApp(){
   if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases, Compliance, Acquisition, Disposition, Licensing Checklists, Reference Lists, Documents & Notes are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
   const me=await dbResolveMyRole();
   applyLiveRole(me.role,resolveDisplayName(me.name,me.email));
+  MY_UID=me.userId;
   maybeShowNameGate(me);
   await loadRealProperties();
   await loadRealTickets();
@@ -1250,6 +1299,7 @@ async function enterLiveApp(){
   await loadRealReferenceLists();
   await loadRealDocuments();
   await loadRealTicketAttachments();
+  await loadRealTicketUserNotes();
   await loadRealNotes();
   await loadRealTrash();
   if(ROLE==='admin'){await loadRealUserRoles();await loadRealPropertyAssignments();await loadErrorLog();await loadAuditLog();}
@@ -2076,6 +2126,7 @@ let DOC_ID=100;
 let DOCS=[];
 // Real ticket photo/file attachments load from Supabase via loadRealTicketAttachments() (Phase 19).
 let TICKET_ATTACHMENTS=[];
+let TICKET_USER_NOTES=[];
 function fmtISO(d){const dt=new Date(d);const m=(dt.getMonth()+1+'').padStart(2,'0');const day=(dt.getDate()+'').padStart(2,'0');return dt.getFullYear()+'-'+m+'-'+day;}
 function addYears(d,n){const dt=new Date(d);dt.setFullYear(dt.getFullYear()+n);return dt;}
 // NOTE: the old extractIntoProperty() function that lived here has been removed (Phase 17).
@@ -2170,6 +2221,12 @@ let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all'
 // placeholder "Alex Rivera" for every Field Staff account. Set in applyLiveRole() once
 // connected to Supabase, or setRole() in offline demo mode.
 let MY_NAME='';
+// The signed-in person's own auth id (Phase 36) — set alongside MY_NAME wherever that's set,
+// used to scope private per-ticket notes (ticket_user_notes) to "my own row" client-side, as a
+// second line of defense on top of the database's row-level security. In demo mode (no real
+// Supabase session) this is a stable per-persona id derived from the role switcher, so demo
+// notes still separate cleanly by which demo person is "signed in".
+let MY_UID=null;
 let SELECTED=new Set();
 let TRASH=[];
 let PFILTER={metro:'all'};
@@ -2217,7 +2274,7 @@ function pageHeader(v,actionsHtml){
     ${actionsHtml?`<div class="ph-actions">${actionsHtml}</div>`:''}
   </div>`;
 }
-function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
+function setRole(r){ROLE=r;MY_NAME=STAFF[r]?STAFF[r].name:'';MY_UID='demo-'+r;document.querySelectorAll('#switch button').forEach(b=>b.classList.toggle('active',b.dataset.role===r));
   const mobile=r==='caregiver';document.getElementById('desktop').classList.toggle('hidden',mobile);document.getElementById('mobile').classList.toggle('hidden',!mobile);closeDrawer();
   if(mobile){MB={tab:'home',step:0,draft:{}};renderMobile();}
   else{const s=STAFF[r];document.getElementById('sideName').textContent=s.name;document.getElementById('sideRole').textContent=s.role;const av=document.getElementById('sideAvatar');av.textContent=initials(s.name);av.style.background=s.color;navigate('dashboard');}}
@@ -2474,8 +2531,8 @@ function renderTickets(el){
     ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))],'hide-below-lg')}
     ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}],'hide-below-md')}
     <th class="hide-below-lg" style="text-align:left;min-width:130px;vertical-align:top">
-      ${thTitle(`<span>Notes</span>${clearX('notesQuery','Notes')}`)}
-      <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by notes text" style="${fSel};width:100%;text-transform:none;font-weight:400">
+      ${thTitle(`<span>Comments</span>${clearX('notesQuery','Comments')}`)}
+      <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by comments text" style="${fSel};width:100%;text-transform:none;font-weight:400">
     </th>
   </tr></thead><tbody id="tbody"></tbody></table></div>`;
   drawTickets();
@@ -2525,7 +2582,7 @@ function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="ope
   <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
   <td class="hide-below-lg" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
   <td class="hide-below-md" onclick="event.stopPropagation()">${paySelect(t)}</td>
-  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add note…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add comment…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
 function drawTickets(){
   const rows=filtered();
   document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
@@ -2572,10 +2629,15 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Year / Month completed</div><div>${actualCompletionDate(t)?actualCompletionDate(t).toLocaleDateString('en-US',{year:'numeric',month:'long'}):'<span class="faint">—</span>'}</div>
       <div class="k">Finance recon</div><div><span class="badge ${ticketRecon(t).cls}"><span class="dot"></span>${ticketRecon(t).label}</span></div>
       <div class="k">Payment</div><div>${paySelect(t)}</div>
-      <div class="k">Notes</div><div><textarea style="width:100%;min-height:56px" placeholder="add / update notes…" onchange="updateNote('${t.id}',this.value)">${esc(t.notes)}</textarea></div>
+      <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:56px" placeholder="add / update comments…" onchange="updateNote('${t.id}',this.value)">${esc(t.notes)}</textarea></div>
       <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
       <div class="k">Reporter</div><div>${esc(t.reporter||'—')}${t.createdByEmail?`<div class="faint" style="font-size:10.5px;margin-top:2px">✓ Created by ${esc(t.createdByEmail)}</div>`:(t._backend==='supabase'?'<div class="faint" style="font-size:10.5px;margin-top:2px">No verified creator on file — entered before this was tracked, or via bulk import.</div>':'')}</div>
     </div></div></div>
+    <div class="sectitle">Your Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></div>
+    <div class="card"><div class="body">
+      <textarea style="width:100%;min-height:56px" placeholder="add / update your private notes…" onchange="saveMyTicketNote('${t.id}',this.value)">${esc(myTicketNote(t.id))}</textarea>
+      ${ROLE==='admin'?adminTicketNotesOversightHtml(t.id):''}
+    </div></div>
     <div class="sectitle">Description</div><div class="card"><div class="body">${ROLE==='admin'?`<textarea style="width:100%;min-height:72px;font:inherit" onchange="updateDescription('${t.id}',this.value)" placeholder="Describe the issue…">${esc(t.desc||'')}</textarea>`:(t.desc?esc(t.desc):'<span class="faint">No description</span>')}</div></div>
     <div class="sectitle">Attachments</div>${ticketAttachmentsSectionHtml(t)}
     <div class="sectitle">Actions</div><div class="card"><div class="body" style="display:flex;gap:10px;flex-wrap:wrap">${ticketActions(t)}</div></div>
@@ -3189,6 +3251,19 @@ async function deleteDoc(id){
 }
 
 /* ===== Ticket attachments UI (desktop drawer + mobile) — Phase 19 ===== */
+// Senior Admin-only oversight list on a ticket's own private-notes section — read-only by
+// design (see schema_phase36.sql: admin has SELECT on every row but no UPDATE/DELETE except
+// their own), so this never renders an editable field for anyone else's note.
+function adminTicketNotesOversightHtml(ticketId){
+  const others=otherTicketNotes(ticketId);
+  if(!others.length)return '<div class="faint" style="font-size:11px;margin-top:10px">No other private notes on this ticket yet.</div>';
+  return `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+    <div class="faint" style="font-size:10.5px;margin-bottom:8px">👁️ Admin oversight — other users' private notes (view-only)</div>
+    ${others.map(n=>{const u=USER_ROLES.find(r=>r.user_id===n.userId);const who=u?resolveDisplayName(u.name,u.email):'Unknown user';
+      return `<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div class="b" style="font-size:12.5px">${esc(who)}</div><div style="font-size:13px;margin-top:2px">${n.note?esc(n.note):'<span class="faint">(empty)</span>'}</div><div class="faint" style="font-size:10.5px;margin-top:2px">Updated ${fdate(n.updatedAt)}</div></div>`;
+    }).join('')}
+  </div>`;
+}
 function ticketAttachmentsSectionHtml(t){
   const atts=ticketAttachmentsList(t.id);
   const canDelete=(ROLE==='admin'||ROLE==='office');
@@ -4718,7 +4793,7 @@ async function mSubmit(){
 
 /* ===== persistence ===== */
 const LSKEY='kodare_proto_v03_r1';
-function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
+function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
 function mergeById(defaults,saved,idKey){const map={};defaults.forEach(d=>map[d[idKey]]=Object.assign({},d));
   saved.forEach(s=>{const k=s[idKey];if(map[k])Object.assign(map[k],s);else map[k]=s;});
   return Object.values(map);}
@@ -4730,6 +4805,7 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
     const savedTickets=(s.TICKETS||[]).map(t=>Object.assign({},t,{created:new Date(t.created)}));
     const mergedTickets=mergeById(TICKETS,savedTickets,'id');TICKETS.length=0;mergedTickets.forEach(t=>TICKETS.push(t));
     TRASH.length=0;(s.TRASH||[]).forEach(x=>TRASH.push(x));
+    TICKET_USER_NOTES.length=0;(s.TICKET_USER_NOTES||[]).forEach(n=>TICKET_USER_NOTES.push(Object.assign({},n,{updatedAt:n.updatedAt?new Date(n.updatedAt):new Date()})));
   }
   const mergedProps=mergeById(PROPS,s.PROPS||[],'id');PROPS.length=0;mergedProps.forEach(p=>PROPS.push(p));
   const mergedVendors=mergeById(VENDORS,s.VENDORS||[],'name');VENDORS.length=0;mergedVendors.forEach(v=>VENDORS.push(v));
