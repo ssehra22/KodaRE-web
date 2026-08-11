@@ -340,90 +340,6 @@
     .mbody{padding-bottom:16px}
   }
   .mcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(20,40,70,.05)}
-
-  /* ===== Responsive list component (Aug 2026) — one shared pattern for every record list,
-     replacing the earlier generic "every table becomes cards" pass (which cardified table
-     rows blindly, cells and all — including desktop-sized inline edit controls, which is
-     exactly the "single column fills the whole screen" bug this supersedes). Above tablet
-     width (900px — the same line the shell already switches nav/layout at) the existing
-     <table> renders unchanged, wrapped in .rlist-table-wrap. Below it, .rlist-cards-wrap — a
-     parallel stack of cards built by recordCard() (see script) — is shown instead. Both are
-     always in the DOM; this pure-CSS toggle means no resize-listener or measured-width JS
-     anywhere. Each list supplies its own title/subtitle/badge mapping (every list's fields
-     differ); what's shared is the card anatomy and the table<->card switch itself. */
-  .rlist-cards-wrap{display:none}
-  @media(max-width:899px){
-    .rlist-table-wrap{display:none}
-    .rlist-cards-wrap{display:block}
-  }
-  .rlist-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 2px rgba(20,40,70,.05)}
-  .rlist-card.tappable{cursor:pointer}
-  .rlist-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-  .rlist-title{font-weight:700;font-size:13.5px;line-height:1.35;flex:1;min-width:0}
-  .rlist-badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:0 0 auto}
-  .rlist-sub{color:var(--ink-400);font-size:12px;margin-top:5px;line-height:1.4}
-  .rlist-sub .mdot{margin:0 5px;color:var(--ink-300)}
-  .rlist-extra{margin-top:9px;padding-top:9px;border-top:1px solid var(--surface-sunken);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  /* Read-only lists (Audit Log, Error Log) — no pointer cursor, no tap affordance, since
-     there's genuinely no detail view behind the card. */
-  .rlist-card.readonly{cursor:default}
-  /* Reconciliation's side-by-side platform-vs-ledger comparison — its own layout, not the
-     title/subtitle/badge anatomy above, because the entire point of that screen is a number
-     comparison, which stacking vertically would destroy. */
-  .rlist-compare{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:9px;padding-top:9px;border-top:1px solid var(--surface-sunken);text-align:center}
-  .rlist-compare .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-400);margin-bottom:2px}
-  .rlist-compare .val{font-weight:700;font-size:13.5px}
-  /* Reports fallback — generic label-above-value stack, since no fixed card design works
-     across 23 differently-shaped reports. Deliberately stacked (label above value), not the
-     label-left/value-right layout recordCard() uses elsewhere, because report rows can carry
-     many columns at once (7+ in some cases) where a side-by-side layout wraps badly. */
-  .rlist-report-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:8px}
-  .rlist-report-card .fld{padding:5px 0;border-bottom:1px solid var(--surface-sunken)}
-  .rlist-report-card .fld:last-child{border-bottom:0}
-  .rlist-report-card .fld .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-400)}
-  .rlist-report-card .fld .val{font-size:13px;margin-top:2px}
-  /* Filter sheet — the per-column filter controls a list already has, collapsed behind one
-     Filter button below tablet width instead of a header row that can't fit. Reuses .scrim
-     (same dim backdrop as the record drawer) so it looks native to the rest of the app rather
-     than like a bolted-on pattern. */
-  .filter-sheet{background:var(--bg);width:100%;max-height:82vh;border-radius:16px 16px 0 0;overflow-y:auto;box-shadow:0 -10px 40px rgba(0,0,0,.25);align-self:flex-end}
-  .filter-sheet .fs-head{position:sticky;top:0;background:var(--panel);padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;z-index:1}
-  .filter-sheet .fs-body{padding:14px 18px 26px}
-  .filter-sheet .fs-field{margin-bottom:14px}
-  .filter-sheet .fs-field label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:6px}
-  .filter-sheet .fs-field input,.filter-sheet .fs-field select{width:100%;font-size:14px}
-  .filter-btn{position:relative;display:none}
-  .filter-btn .cnt{position:absolute;top:-7px;right:-7px;background:var(--accent);color:#fff;font-size:10px;font-weight:800;min-width:17px;height:17px;border-radius:999px;display:flex;align-items:center;justify-content:center;padding:0 4px}
-  /* Bulk-selection controls and any drag-drop target (the invoice drop zone) are desktop-only
-     affordances — dragging a file has no meaning on a touch device, and a checkbox-based bulk
-     toolbar just eats space it can't use below tablet. Hidden outright, not stacked. */
-  @media(max-width:899px){
-    .bulk-toolbar,.dnd-zone,.filter-row-desktop{display:none!important}
-    .filter-btn{display:inline-flex!important}
-  }
-  /* ===== Generic table-to-card fallback, same breakpoint as the responsive-list component
-     above (899px) so every table in the app switches at the same width, whether it's one of
-     the purpose-built lists (recordCard()) or a table nobody's hand-converted yet. Applies to
-     any <table> in the content area except .no-cards (the two paste-from-Excel bulk grids).
-     Labels come from data-label attributes stamped on each <td> by labelTableCellsForCards()
-     (see script, near boot), which reads the matching column's real <th> text automatically —
-     covers every table, including ones added later, with zero per-table changes. */
-  @media(max-width:899px){
-    #view table:not(.no-cards){border-collapse:separate;border-spacing:0 10px;width:100%!important;min-width:0!important}
-    #view table:not(.no-cards) thead{display:none}
-    #view table:not(.no-cards) tbody tr{display:block;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:2px 12px;box-shadow:var(--shadow)}
-    #view table:not(.no-cards) tbody tr td{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:4px 14px;text-align:right;padding:9px 0;border:0;border-bottom:1px solid var(--surface-sunken);min-width:0!important;max-width:none!important;white-space:normal}
-    #view table:not(.no-cards) tbody tr td:last-child{border-bottom:0}
-    #view table:not(.no-cards) tbody tr td[data-label]::before{content:attr(data-label);font-weight:700;font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-400);text-align:left;flex:0 0 auto}
-    #view table:not(.no-cards) tbody tr td input,
-    #view table:not(.no-cards) tbody tr td select,
-    #view table:not(.no-cards) tbody tr td textarea{max-width:100%;flex:1 1 auto;min-width:0}
-    /* Reports fallback specifically: label ABOVE value, not left/right — report rows can
-       carry 7+ columns at once, where a side-by-side layout wraps badly. Every report gets
-       this automatically; nothing per-report to configure. */
-    #repBody table:not(.no-cards) tbody tr td{display:block;text-align:left;padding:6px 0}
-    #repBody table:not(.no-cards) tbody tr td[data-label]::before{content:attr(data-label);display:block;text-align:left;margin-bottom:2px}
-  }
   .bigbtn{width:100%;background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:var(--on-dark);border:0;border-radius:16px;padding:18px;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 8px 22px rgba(14,154,163,.35)}
   .optgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .opt{border:1.5px solid var(--border);background:var(--surface);border-radius:14px;padding:14px 10px;font-weight:700;font-size:13px;text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center;color:var(--ink-900)}
@@ -694,41 +610,6 @@ function ticketRef(t){return t._backend==='supabase'&&t.ticketNo!=null?'MT-'+t.t
 // outstanding thing to chase down, never silently replaced by the ticket number (that would
 // hide exactly the gap someone triaging needs to notice).
 function ticketDescCell(t){const d=(t.desc||'').trim();return d?esc(d):'<span class="faint">No description</span>';}
-/* ===== Responsive list component (shared) =====
-   One card anatomy for every record list: title, subtitle (muted, middot-separated, empty
-   parts dropped), badges, tap-to-open. Editing never happens here — cfg.onOpen just opens
-   the same detail view the desktop row already opens; any field that's editable inline in
-   the desktop table is left out of the card entirely; it's already editable in that detail
-   view. cfg.extra is for the rare single-tap action a card legitimately keeps (e.g.
-   "Acknowledge", "Mark rent paid") — those aren't the "control beside a value" problem this
-   is fixing, they're just a button, and work fine at any width. */
-function recordCard(cfg){
-  const subParts=(cfg.subtitle||[]).filter(s=>s!=null&&String(s).trim()!=='');
-  const badges=(cfg.badges||[]).filter(b=>b!=null&&String(b).trim()!=='');
-  const tappable=!cfg.readonly&&cfg.onOpen;
-  return `<div class="rlist-card${tappable?' tappable':' readonly'}"${tappable?` onclick="${cfg.onOpen}"`:''}>
-    <div class="rlist-top"><div class="rlist-title">${cfg.title}</div>${badges.length?`<div class="rlist-badges">${badges.join('')}</div>`:''}</div>
-    ${subParts.length?`<div class="rlist-sub">${subParts.join('<span class="mdot">·</span>')}</div>`:''}
-    ${cfg.compare||''}
-    ${cfg.extra?`<div class="rlist-extra" onclick="event.stopPropagation()">${cfg.extra}</div>`:''}
-  </div>`;
-}
-// Wraps a list's existing table HTML (unchanged, shown >=900px) alongside a parallel card
-// stack (shown <900px) — see the .rlist-table-wrap/.rlist-cards-wrap CSS toggle. cardsId lets
-// a list's live-filter code (e.g. drawTickets()) target and refresh just the cards half the
-// same way it already targets a <tbody id="...">.
-function rlist(tableHtml,cardsHtml,cardsId){
-  return `<div class="rlist-table-wrap">${tableHtml}</div><div class="rlist-cards-wrap"${cardsId?` id="${cardsId}"`:''}>${cardsHtml}</div>`;
-}
-// Shared filter-sheet shell — the same drawerRoot/.scrim mechanism the record drawer already
-// uses, just anchored to the bottom of the screen instead of the side, and holding whatever
-// filter fields the calling list passes in (its own FILTER state, its own onchange handlers —
-// unchanged from the desktop column-header filters, just laid out for a sheet instead of a
-// <th>). Closes via the existing closeDrawer(), so there's only ever one of these mechanisms.
-function openFilterSheet(title,bodyHtml,onClearAttr){
-  document.getElementById('drawerRoot').innerHTML=`<div class="scrim" style="align-items:flex-end;justify-content:center" onclick="if(event.target===this)closeDrawer()"><div class="filter-sheet"><div class="fs-head"><div class="b" style="flex:1">${esc(title)}</div><a onclick="${onClearAttr}" style="font-size:12.5px;font-weight:700;white-space:nowrap">Clear all</a><button class="x" onclick="closeDrawer()">✕</button></div><div class="fs-body">${bodyHtml}</div></div></div>`;
-}
-function fsField(label,inner){return `<div class="fs-field"><label>${esc(label)}</label>${inner}</div>`;}
 // ticketCardTitle is for places that need to render SOME title (a card, a detail heading) —
 // a blank title reads as broken, not as missing data. The ticket number is a defensible last
 // resort there, but shown muted with an explicit "No description" alongside it, so it reads
@@ -1638,24 +1519,13 @@ function renderTrash(el){
       <button class="btn sec sm" style="border-color:var(--red);color:var(--red);margin-left:6px" onclick="permanentlyDeleteTrashItem('${r.type}','${r.id}')">🗑️ Delete permanently</button>
     </td></tr>`).join('')}</tbody></table>`:'<div class="muted" style="text-align:center;padding:26px">Trash is empty.</div>'}</div></div>`;
 }
-function userCard(u){
-  const roleOpts=[['admin','Senior Admin'],['office','Office Staff'],['caregiver','Field Staff']];
-  const mine=PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===u.user_id);
-  const names=mine.map(a=>{const p=PROPS.find(x=>x.id===a.property_id);return p?p.name:null;}).filter(Boolean);
-  return recordCard({
-    title:`<input type="text" value="${esc(u.name||'')}" placeholder="No name on file" style="width:100%;border:1px solid var(--line);border-radius:7px;padding:5px 7px;font:inherit;font-weight:700" onchange="setUserName('${u.user_id}',this.value,'${esc(u.email)}')" title="Set this person's name">`,
-    subtitle:[u.email],
-    badges:[`<select class="uroles-rolepill r-${u.role}" onchange="this.className='uroles-rolepill r-'+this.value;setUserRole('${u.user_id}',this.value,'${esc(u.email)}')">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select>`],
-    extra:u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}" style="font-size:12px">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit access</a>`:`<span class="uroles-access-all" style="font-size:12px">All properties</span>`
-  });
-}
 function renderUserManagement(el){
   if(ROLE!=='admin'){el.innerHTML=pageHeader('users')+'<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view User Management.</div>';return;}
   const roleOpts=[['admin','Senior Admin'],['office','Office Staff'],['caregiver','Field Staff']];
   el.innerHTML=`${pageHeader('users')}<div class="uroles-head">
     <div class="uroles-headtext">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</div>
     <button class="uroles-refresh" onclick="refreshUserRoles()">🔄 Refresh</button></div>
-  <div class="card uroles-card" style="overflow-x:auto"><div class="body" style="padding:0">${USER_ROLES.length?rlist(`<table class="uroles-table no-cards"><thead><tr>
+  <div class="card uroles-card" style="overflow-x:auto"><div class="body" style="padding:0">${USER_ROLES.length?`<table class="uroles-table"><thead><tr>
     <th>Name</th><th class="hide-below-md">Email</th><th>Role</th><th class="hide-below-lg">Property access</th><th class="hide-below-md">Since</th>
   </tr></thead><tbody>${USER_ROLES.map(u=>{
     const mine=PROPERTY_ASSIGNMENTS.filter(a=>a.user_id===u.user_id);
@@ -1666,7 +1536,7 @@ function renderUserManagement(el){
     <td><select class="uroles-rolepill r-${u.role}" onchange="this.className='uroles-rolepill r-'+this.value;setUserRole('${u.user_id}',this.value,'${esc(u.email)}')">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
     <td class="hide-below-lg">${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
     <td class="hide-below-md muted mono" style="white-space:nowrap;font-size:12px">${fdate(new Date(u.created_at))}</td>
-  </tr>`;}).join('')}</tbody></table>`,USER_ROLES.map(userCard).join('')):`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
+  </tr>`;}).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
   <div class="uroles-foot">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>
   ${permissionsMatrixHtml()}
   ${dangerZoneHtml()}`;
@@ -2506,18 +2376,10 @@ function renderErrorLog(el){
   const resolved=ERROR_LOG.filter(e=>e.resolvedAt);
   el.innerHTML=`${pageHeader('errorlog')}<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">Every " failed" message anyone sees in the app — a save, delete, restore, or upload that didn't go through — is written here automatically the moment it happens, so a background failure nobody mentioned doesn't just disappear. Most recent 200 shown, newest first.</div>
   <div class="sectitle">Open (${open.length})</div>
-  ${rlist(`<div class="card" style="overflow-x:auto"><table class="no-cards"><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-md">Screen</th><th class="hide-below-lg">Who</th><th>Message</th><th></th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-md">Screen</th><th class="hide-below-lg">Who</th><th>Message</th><th></th></tr></thead><tbody>
   ${open.length?open.map(errRow).join(''):'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open errors — nothing has failed since this started logging.</td></tr>'}
-  </tbody></table></div>`,open.length?open.map(errorLogCard).join(''):'<div class="muted" style="text-align:center;padding:20px">No open errors — nothing has failed since this started logging.</div>')}
-  ${resolved.length?`<div class="sectitle" style="margin-top:18px">Resolved (${resolved.length})</div>${rlist(`<div class="card" style="overflow-x:auto"><table class="no-cards"><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-md">Screen</th><th class="hide-below-lg">Who</th><th>Message</th><th></th></tr></thead><tbody>${resolved.map(errRow).join('')}</tbody></table></div>`,resolved.map(errorLogCard).join(''))}`:''}`;
-}
-function errorLogCard(e){
-  return recordCard({
-    title:`<span class="trunc2">${esc(e.message)}</span>`,
-    subtitle:[e.path||'—',e.resolvedAt?'✓ resolved':'Open'],
-    readonly:true,
-    extra:`<details style="width:100%"><summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--accent-dark)">Details</summary><div style="margin-top:8px;font-size:12px;color:var(--ink-500)"><div>When: ${errLogTime(e.at)}</div><div>Who: ${esc(e.userEmail||'—')}${e.userRole?' ('+esc(e.userRole)+')':''}</div></div></details>${e.resolvedAt?'':`<button class="btn sec sm" onclick="resolveErrorLogEntry('${e.id}')">Mark resolved</button>`}`
-  });
+  </tbody></table></div>
+  ${resolved.length?`<div class="sectitle" style="margin-top:18px">Resolved (${resolved.length})</div><div class="card" style="overflow-x:auto"><table><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-md">Screen</th><th class="hide-below-lg">Who</th><th>Message</th><th></th></tr></thead><tbody>${resolved.map(errRow).join('')}</tbody></table></div>`:''}`;
 }
 async function resolveErrorLogEntry(id){
   const {data:{user}}=await sb.auth.getUser();
@@ -2572,21 +2434,9 @@ function auditRow(e){
 }
 function renderAuditLog(el){
   el.innerHTML=`${pageHeader('auditlog')}<div class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.55">An immutable record of sensitive changes — Senior-Admin-locked property/loan fields, role changes, property assignments, and permanent deletions. Nothing here can be edited or removed, by anyone, through the app. Most recent 300 shown, newest first. Scope §5.2/§5.5.</div>
-  ${rlist(`<div class="card" style="overflow-x:auto"><table class="no-cards"><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-lg">Who</th><th>Action</th><th>Record</th><th class="hide-below-md">Field</th><th>Change</th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th class="hide-below-sm">When</th><th class="hide-below-lg">Who</th><th>Action</th><th>Record</th><th class="hide-below-md">Field</th><th>Change</th></tr></thead><tbody>
   ${AUDIT_LOG.length?AUDIT_LOG.map(auditRow).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No audited changes yet.</td></tr>'}
-  </tbody></table></div>`,AUDIT_LOG.length?AUDIT_LOG.map(auditLogCard).join(''):'<div class="muted" style="text-align:center;padding:20px">No audited changes yet.</div>')}`;
-}
-function auditLogCard(e){
-  const change=e.old_value!=null&&e.new_value!=null?esc(e.old_value)+' → '+esc(e.new_value)
-    :e.new_value!=null?esc(e.new_value)
-    :e.old_value!=null?'(cleared — was '+esc(e.old_value)+')'
-    :'';
-  return recordCard({
-    title:esc(e.action),
-    subtitle:[e.actor_email?esc(e.actor_email)+(e.actor_role?' ('+esc(e.actor_role)+')':''):null,errLogTime(e.at)],
-    readonly:true,
-    extra:[e.object_type?esc(e.object_type)+(e.object_ref?': '+esc(e.object_ref):''):null,e.field?'Field: '+esc(e.field):null,change?'Change: '+change:null].filter(Boolean).map(x=>`<div style="font-size:12px">${x}</div>`).join('')
-  });
+  </tbody></table></div>`;
 }
 function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};return (U[a.urgency]-U[b.urgency])||(new Date(b.created)-new Date(a.created));}
 
@@ -2638,7 +2488,8 @@ function renderTickets(el){
     <select onchange="setF('${key}',this.value)" style="${fSel};width:100%" title="Filter by ${label}"><option value="all"${FILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>
   </th>`;
   const metroOpts=REF_LISTS.metro.values.slice();
-  const activeFilterCount=ticketActiveFilterCount();
+  const activeFilterCount=['status','urgency','prop','svc','vendor','payment','invoice','metro'].filter(k=>FILTER[k]!=='all').length
+    + ['createdFrom','createdTo','descQuery','notesQuery','costMin','costMax'].filter(k=>FILTER[k]).length;
   const metroBar=`<div class="toolbar" style="flex-wrap:wrap;row-gap:8px"><span class="b" style="margin-right:2px">📍 Metro:</span>
     <span class="chip ${FILTER.metro==='all'?'active':''}" onclick="setF('metro','all')">All</span>
     ${metroOpts.map(m=>`<span class="chip ${FILTER.metro===m?'active':''}" onclick="setF('metro','${esc(m)}')">${esc(m)}</span>`).join('')}
@@ -2650,23 +2501,22 @@ function renderTickets(el){
     <button class="btn sec sm" onclick="document.getElementById('bulkTicketFile').click()">⬆ Upload spreadsheet</button>
     <input type="file" id="bulkTicketFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkUploadFile(this)">
     ${ROLE!=='caregiver'&&SUPA_CONFIGURED?`<button class="btn sec sm" onclick="openInvoiceUploadModal()">🤖 Upload vendor invoice</button>`:''}
-    <button class="btn sec sm filter-btn" onclick="openTicketFilterSheet()">🔎 Filter${activeFilterCount?`<span class="cnt">${activeFilterCount}</span>`:''}</button>
     <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
       ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
       <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
     </span></div>
-  <div class="toolbar bulk-toolbar"><span class="b">Selection:</span>
+  <div class="toolbar"><span class="b">Selection:</span>
     <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
     <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
     ${ROLE==='admin'?`<button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
-    <div class="dnd-zone" ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" style="border:2px dashed var(--line);border-radius:9px;padding:6px 12px;font-size:12px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:8px">
+    <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" style="border:2px dashed var(--line);border-radius:9px;padding:6px 12px;font-size:12px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:8px">
       <span>📎 ${SELECTED.size?`Drop an invoice here to apply to ${SELECTED.size} selected`:'Select tickets, then drop an invoice here'}</span>
       <input type="file" id="bulkInvFile" style="display:none" onchange="pickInvoiceForSelected(this)">
       <a onclick="document.getElementById('bulkInvFile').click()">or choose file</a>
     </div></div>
   ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
-  ${rlist(`<div class="card" style="overflow-x:auto"><table style="min-width:1500px" class="no-cards"><thead><tr>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1500px"><thead><tr>
     <th class="hide-below-md" style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
     ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})),'hide-below-sm col-frozen')}
     ${thSel('status','Status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))}
@@ -2696,44 +2546,9 @@ function renderTickets(el){
       ${thTitle(`<span>Comments</span>${clearX('notesQuery','Comments')}`)}
       <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by comments text" style="${fSel};width:100%;text-transform:none;font-weight:400">
     </th>
-  </tr></thead><tbody id="tbody"></tbody></table></div>`,filtered().map(ticketCard).join('')||'<div class="muted" style="text-align:center;padding:26px">No items match these filters.</div>','tcards')}`;
+  </tr></thead><tbody id="tbody"></tbody></table></div>`;
   drawTickets();
 }
-function ticketActiveFilterCount(){
-  return ['status','urgency','prop','svc','vendor','payment','invoice','metro'].filter(k=>FILTER[k]!=='all').length
-    + ['createdFrom','createdTo','descQuery','notesQuery','costMin','costMax'].filter(k=>FILTER[k]).length;
-}
-function ticketCard(t){
-  const nAtt=ticketAttachmentsList(t.id).length;
-  return recordCard({
-    title:ticketCardTitle(t),
-    subtitle:[propById(t.prop).name,fdate(t.created),nAtt?'📎 '+nAtt:null],
-    badges:[ubadge(t.urgency),badge(t)],
-    onOpen:`openTicket('${t.id}')`
-  });
-}
-function ticketFilterSheetBody(){
-  const svcOpts=Object.keys(CAT).filter(c=>TICKETS.some(t=>t.svc===c));
-  const vendorOpts=[...new Set(TICKETS.map(t=>t.vendor).filter(Boolean))].sort();
-  const invOpts=[...new Set(TICKETS.map(t=>t.invoice).filter(Boolean))].sort();
-  const selHtml=(key,opts)=>`<select onchange="setF('${key}',this.value)"><option value="all"${FILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>`;
-  return [
-    fsField('Property',selHtml('prop',PROPS.map(p=>({v:p.id,l:p.name})))),
-    fsField('Status',selHtml('status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))),
-    fsField('Priority',selHtml('urgency',['Emergency','Urgent','Low'].map(u=>({v:u,l:u})))),
-    fsField('Service Category',selHtml('svc',svcOpts.map(s=>({v:s,l:s})))),
-    fsField('Vendor',selHtml('vendor',vendorOpts.map(v=>({v:v,l:v})))),
-    fsField('Invoice',selHtml('invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))])),
-    fsField('Payment',selHtml('payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}])),
-    fsField('Created from',`<input type="text" inputmode="numeric" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="MM/DD/YY">`),
-    fsField('Created to',`<input type="text" inputmode="numeric" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="MM/DD/YY">`),
-    fsField('Description contains',`<input type="text" value="${esc(FILTER.descQuery)}" oninput="setFLive('descQuery',this.value)" placeholder="Search...">`),
-    fsField('Comments contain',`<input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search...">`),
-    fsField('Cost min',`<input type="number" value="${FILTER.costMin}" oninput="setFLive('costMin',this.value)" placeholder="Min">`),
-    fsField('Cost max',`<input type="number" value="${FILTER.costMax}" oninput="setFLive('costMax',this.value)" placeholder="Max">`)
-  ].join('');
-}
-function openTicketFilterSheet(){openFilterSheet('Filter tickets',ticketFilterSheetBody(),'clearAllFilters();closeDrawer();');}
 function setF(k,v){FILTER[k]=v;if(VIEW==='tickets')renderTickets(document.getElementById('view'));}
 function toggleSelectedOnly(){FILTER.selectedOnly=!FILTER.selectedOnly;renderTickets(document.getElementById('view'));}
 function toggleSelect(id,checked){if(checked)SELECTED.add(id);else SELECTED.delete(id);
@@ -2776,15 +2591,13 @@ function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="ope
   <td>${ubadge(t.urgency)}</td>
   <td class="hide-below-lg muted">${svcLabel(t)}</td>
   <td class="hide-below-lg">${t.vendor||'<span class="faint">—</span>'}</td>
-  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:100%;min-width:60px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
-  <td class="hide-below-lg" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px;min-width:0"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="flex:1 1 auto;min-width:56px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
   <td class="hide-below-md" onclick="event.stopPropagation()">${paySelect(t)}</td>
-  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add comment…" style="width:100%;min-width:100px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add comment…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
 function drawTickets(){
   const rows=filtered();
   document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
-  const cardsWrap=document.getElementById('tcards');
-  if(cardsWrap)cardsWrap.innerHTML=rows.length?rows.map(ticketCard).join(''):'<div class="muted" style="text-align:center;padding:26px">No items match these filters.</div>';
   const totalCost=rows.reduce((s,t)=>s+(t.cost||0),0);
   const costedCount=rows.filter(t=>t.cost!=null).length;
   const cd=document.getElementById('costTotalDisplay');
@@ -2921,7 +2734,7 @@ function renderProperties(el){
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" id="propsRefreshBtn" onclick="refreshPropertiesFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
     ${ROLE==='admin'?'<button class="btn sec sm" onclick="startOnboard()">+ New property</button>':''}</div>
-  ${rlist(`<div class="card" style="overflow-x:auto"><table class="no-cards"><thead><tr><th>Property</th><th class="hide-below-sm">Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th class="hide-below-md" title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="hide-below-md">Stage</th><th class="hide-below-sm">Open</th><th class="hide-below-lg">Total items</th><th class="hide-below-lg right">YTD Spend</th><th class="hide-below-lg" style="text-align:left;min-width:130px">Metro
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-sm">Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th class="hide-below-md" title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="hide-below-md">Stage</th><th class="hide-below-sm">Open</th><th class="hide-below-lg">Total items</th><th class="hide-below-lg right">YTD Spend</th><th class="hide-below-lg" style="text-align:left;min-width:130px">Metro
     <select onchange="setPF('metro',this.value)" style="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer;margin-top:4px" title="Filter by Metro"><option value="all"${PFILTER.metro==='all'?' selected':''}>All</option>${metroOpts.map(m=>`<option value="${esc(m)}"${PFILTER.metro===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
   </th></tr></thead><tbody>
   ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');return `<tr class="clickable" onclick="openProperty('${p.id}')">
@@ -2934,16 +2747,7 @@ function renderProperties(el){
     <td class="hide-below-lg mono">${total}</td>
     <td class="hide-below-lg right mono">${money(propertySpendStats(p.id).ytd)}</td>
     <td class="hide-below-lg muted">${p.metro||'<span class="faint">—</span>'}</td></tr>`;}).join('')}
-  </tbody></table></div>`,list.map(propertyCard).join('')||'<div class="muted" style="text-align:center;padding:26px">No properties match this filter.</div>')}`;
-}
-function propertyCard(p){
-  const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');
-  return recordCard({
-    title:`<span class="dotc" style="background:var(--${col})"></span> ${esc(p.name)}`,
-    subtitle:[p.metro||p.addr,p.own==='owned'?'Owned':'Leased'],
-    badges:[`<span class="pill" style="border-color:var(--${col});color:var(--${col})">${p.status}</span>`,readinessPill(p)],
-    onOpen:`openProperty('${p.id}')`
-  });
+  </tbody></table></div>`;
 }
 function openProperty(id){const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
   const tabList=p.own==='owned'?['Overview','Details','Acquisition','Disposition','Compliance','Licensing','Loan','Components','Documents','Maintenance']:['Overview','Details','Acquisition','Compliance','Licensing','Components','Documents','Maintenance'];const tabsHtml=tabList.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="propTab(this,'${id}','${t}')">${t}</button>`).join('');
@@ -3727,20 +3531,10 @@ async function approvePropertyDocExtraction(propId,kind){
 
 /* ===== leases ===== */
 function renderLeases(el){el.innerHTML=`${pageHeader('leases')}<div class="sectitle">Leased properties</div>
-  ${rlist(`<div class="card" style="overflow-x:auto"><table class="no-cards"><thead><tr><th>Property</th><th class="hide-below-lg">Landlord</th><th class="hide-below-sm">Rent</th><th class="hide-below-lg">Term</th><th class="hide-below-md">Next payment</th><th>Status</th><th></th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-lg">Landlord</th><th class="hide-below-sm">Rent</th><th class="hide-below-lg">Term</th><th class="hide-below-md">Next payment</th><th>Status</th><th></th></tr></thead><tbody>
     ${LEASES.map(l=>{const p=propById(l.prop);return `<tr class="clickable" onclick="openProperty('${l.prop}')"><td class="b trunc" style="max-width:130px">${p.name}</td><td class="hide-below-lg">${l.landlord||'—'}</td><td class="hide-below-sm mono">${l.rent!=null?money(l.rent)+'/mo':'—'}</td><td class="hide-below-lg muted">${l.term||'—'}</td><td class="hide-below-md mono">${l.next?fdate(l.next):'—'}</td><td><span class="badge ${l.escalated?'b-red':'b-assigned'}"><span class="dot"></span>${l.status}</span></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button> <button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button></td></tr>`;}).join('')||'<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No leased properties.</td></tr>'}
-  </tbody></table></div>`,LEASES.map(leaseCard).join('')||'<div class="muted" style="text-align:center;padding:20px">No leased properties.</div>')}
+  </tbody></table></div>
   <div class="sectitle">Rent reminder ladder</div><div class="card"><div class="body row"><span class="pill">7 days — reminder</span><span class="pill">Due date — scheduled</span><span class="pill" style="border-color:var(--amber);color:var(--amber)">Renewal window</span><span class="pill" style="border-color:var(--red);color:var(--red)">Missed — auto-escalate → Senior Admin</span></div></div>`;}
-function leaseCard(l){
-  const p=propById(l.prop);
-  return recordCard({
-    title:esc(p.name),
-    subtitle:[l.landlord,l.rent!=null?money(l.rent)+'/mo':null],
-    badges:[`<span class="badge ${l.escalated?'b-red':'b-assigned'}"><span class="dot"></span>${l.status}</span>`],
-    onOpen:`openProperty('${l.prop}')`,
-    extra:`<button class="btn sec sm" onclick="openLease('${l.id}')">View lease</button><button class="btn green sm" onclick="payRent('${l.id}')">Mark rent paid</button>`
-  });
-}
 function payRent(id){
   const l=LEASES.find(x=>x.id===id);if(!l)return;
   const prevStatus=l.status,prevEsc=l.escalated;
@@ -3844,38 +3638,7 @@ function drawVendors(){
   const rows=vendorsFiltered();
   const tb=document.getElementById('vtbody');
   if(tb)tb.innerHTML=rows.length?rows.map(vrow).join(''):'<tr><td colspan="7" class="muted" style="text-align:center;padding:26px">No vendors match these filters.</td></tr>';
-  const cardsWrap=document.getElementById('vcards');
-  if(cardsWrap)cardsWrap.innerHTML=rows.length?rows.map(vendorCard).join(''):'<div class="muted" style="text-align:center;padding:26px">No vendors match these filters.</div>';
 }
-function vendorCard(v){
-  return recordCard({
-    title:esc(v.name),
-    subtitle:[v.trade?(CAT[v.trade]||'')+' '+v.trade:null,(v.metro&&v.metro.length)?v.metro.join(', '):null],
-    badges:[v.approved?'<span class="pill" style="border-color:var(--green);color:var(--green)">✓ Approved</span>':'<span class="pill" style="border-color:var(--amber);color:var(--amber)">Not approved</span>'],
-    onOpen:`openVendor('${v.id}')`
-  });
-}
-function vendorActiveFilterCount(){
-  return ['trade','primary','metro'].filter(k=>VFILTER[k]!=='all').length
-    + ['nameQuery','contactQuery','emailQuery','phoneQuery'].filter(k=>VFILTER[k]).length;
-}
-function vendorFilterSheetBody(){
-  const tradeOpts=Object.keys(CAT).filter(c=>VENDORS.some(v=>v.trade===c));
-  const primaryOpts=REF_LISTS.vendorPrimarySecondary.values.slice();
-  const metroOpts=REF_LISTS.metro.values.slice();
-  const selHtml=(key,opts)=>`<select onchange="setVF('${key}',this.value)"><option value="all"${VFILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${VFILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>`;
-  const txtHtml=(key,ph)=>`<input type="text" value="${esc(VFILTER[key])}" oninput="setVFLive('${key}',this.value)" placeholder="${ph}">`;
-  return [
-    fsField('Vendor name contains',txtHtml('nameQuery','Search...')),
-    fsField('Service Category',selHtml('trade',tradeOpts.map(t=>({v:t,l:t})))),
-    fsField('Primary/Secondary',selHtml('primary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))])),
-    fsField('Metro',selHtml('metro',metroOpts.map(m=>({v:m,l:m})))),
-    fsField('Contact name contains',txtHtml('contactQuery','Search...')),
-    fsField('Email contains',txtHtml('emailQuery','Search...')),
-    fsField('Phone contains',txtHtml('phoneQuery','Search...'))
-  ].join('');
-}
-function openVendorFilterSheet(){openFilterSheet('Filter vendors',vendorFilterSheetBody(),'clearAllVFilters();closeDrawer();');}
 function setVF(k,v){VFILTER[k]=v;if(VIEW==='vendors')renderVendors(document.getElementById('view'));}
 function setVFLive(k,v){VFILTER[k]=v;drawVendors();}
 function clearVFilter(key){
@@ -3904,7 +3667,8 @@ function renderVendors(el){
     ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
     <input type="text" value="${esc(VFILTER[key])}" oninput="setVFLive('${key}',this.value)" placeholder="Search..." title="Filter by ${label}" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
   </th>`;
-  const activeFilterCount=vendorActiveFilterCount();
+  const activeFilterCount=['trade','primary','metro'].filter(k=>VFILTER[k]!=='all').length
+    + ['nameQuery','contactQuery','emailQuery','phoneQuery'].filter(k=>VFILTER[k]).length;
   const metroBar=`<div class="toolbar" style="flex-wrap:wrap;row-gap:8px"><span class="b" style="margin-right:2px">📍 Metro:</span>
     <span class="chip ${VFILTER.metro==='all'?'active':''}" onclick="setVF('metro','all')">All</span>
     ${metroOpts.map(m=>`<span class="chip ${VFILTER.metro===m?'active':''}" onclick="setVF('metro','${esc(m)}')">${esc(m)}</span>`).join('')}
@@ -3914,13 +3678,12 @@ function renderVendors(el){
     <button class="btn sec sm" onclick="openBulkVendorGrid()">📋 Bulk add vendors</button>
     <button class="btn sec sm" onclick="document.getElementById('bulkVendorFile').click()">⬆ Upload spreadsheet</button>
     <input type="file" id="bulkVendorFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkVendorUploadFile(this)">
-    <button class="btn sec sm filter-btn" onclick="openVendorFilterSheet()">🔎 Filter${activeFilterCount?`<span class="cnt">${activeFilterCount}</span>`:''}</button>
     <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
       ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
       <button class="btn sec sm" onclick="clearAllVFilters()">Clear all filters</button>
     </span></div>
   <div class="toolbar"><span class="b">${vendorsFiltered().length} of ${VENDORS.length} vendors</span>${vendorsExpiringCount()?`<span class="pill" style="border-color:var(--red);color:var(--red);margin-left:10px">⚠ ${vendorsExpiringCount()} vendor${vendorsExpiringCount()===1?'':'s'} with insurance/license expired or expiring within ${ASSUMPTIONS.complianceExpiringDays}d</span>`:''}</div>
-  ${rlist(`<div class="card" style="overflow-x:auto"><table class="no-cards" style="min-width:1100px"><thead><tr>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr>
     ${thText('nameQuery','Vendor')}
     ${thSel('trade','Service Category',tradeOpts.map(t=>({v:t,l:t})),'hide-below-sm')}
     ${thSel('primary','Primary/Secondary',[{v:'__blank__',l:'— none —'},...primaryOpts.map(p=>({v:p,l:p}))],'hide-below-md')}
@@ -3928,7 +3691,7 @@ function renderVendors(el){
     ${thText('emailQuery','Email','hide-below-lg')}
     ${thText('phoneQuery','Phone Number','hide-below-sm')}
     <th style="text-align:left;min-width:150px;vertical-align:top">${thTitle('<span>Insurance/License</span>')}</th>
-  </tr></thead><tbody id="vtbody"></tbody></table></div>`,vendorsFiltered().map(vendorCard).join('')||'<div class="muted" style="text-align:center;padding:26px">No vendors match these filters.</div>','vcards')}
+  </tr></thead><tbody id="vtbody"></tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Fields map to Scope §4.9 Maintenance Vendor Directory · click a vendor for full details.</div>`;
   drawVendors();
 }
@@ -4036,31 +3799,15 @@ function renderCompliance(el){
     <div class="kpi"><div class="lab">Inspections scheduled</div><div class="val">${upcoming.length}</div></div>
   </div>
   <div class="sectitle">Certificates &amp; licenses — all properties</div>
-  ${rlist(`<div class="card" style="overflow-x:auto"><table class="no-cards" style="min-width:1100px"><thead><tr><th class="hide-below-sm">Property</th><th>Type</th><th class="hide-below-lg">Authority</th><th class="hide-below-lg">Cert #</th><th class="hide-below-md">Issued</th><th class="hide-below-md">Expires</th><th class="hide-below-lg">Cadence</th><th>Status</th><th class="hide-below-lg">Responsible</th><th></th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table style="min-width:1100px"><thead><tr><th class="hide-below-sm">Property</th><th>Type</th><th class="hide-below-lg">Authority</th><th class="hide-below-lg">Cert #</th><th class="hide-below-md">Issued</th><th class="hide-below-md">Expires</th><th class="hide-below-lg">Cadence</th><th>Status</th><th class="hide-below-lg">Responsible</th><th></th></tr></thead><tbody>
   ${CERTS.slice().sort((a,b)=>(daysTo(a.exp)??9999)-(daysTo(b.exp)??9999)).map(c=>`<tr><td class="b trunc hide-below-sm" style="max-width:130px">${propById(c.prop).name}</td><td>${c.type}<div class="show-below-sm faint" style="font-size:11px">${propById(c.prop).name}</div></td><td class="hide-below-lg muted">${c.authority}</td><td class="hide-below-lg muted">${c.certNo}</td><td class="hide-below-md mono">${dstr(c.issue)}</td><td class="hide-below-md mono">${c.exp?dstr(c.exp):'—'}</td><td class="hide-below-lg muted">${c.cadence}</td><td>${certBadge(c)}</td><td class="hide-below-lg muted">${c.resp}</td><td><button class="btn sec sm" onclick="navigate('properties');setTimeout(()=>openProperty('${c.prop}'),60)">View</button></td></tr>`).join('')}
-  </tbody></table></div>`,CERTS.slice().sort((a,b)=>(daysTo(a.exp)??9999)-(daysTo(b.exp)??9999)).map(certCard).join('')||'<div class="muted" style="text-align:center;padding:20px">No certificates tracked.</div>')}
+  </tbody></table></div>
   <div class="sectitle">Inspections — all properties</div>
-  ${rlist(`<div class="card" style="overflow-x:auto"><table class="no-cards" style="min-width:900px"><thead><tr><th class="hide-below-sm">Property</th><th>Type</th><th class="hide-below-lg">Inspector</th><th class="hide-below-md">Scheduled</th><th class="hide-below-md">Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table style="min-width:900px"><thead><tr><th class="hide-below-sm">Property</th><th>Type</th><th class="hide-below-lg">Inspector</th><th class="hide-below-md">Scheduled</th><th class="hide-below-md">Completed</th><th>Result</th><th>Next due</th></tr></thead><tbody>
   ${INSPECTIONS.map(i=>`<tr><td class="b trunc hide-below-sm" style="max-width:130px">${propById(i.prop).name}</td><td>${i.type}<div class="show-below-sm faint" style="font-size:11px">${propById(i.prop).name}</div></td><td class="hide-below-lg muted">${i.inspector}</td><td class="hide-below-md mono">${dstr(i.scheduled)}</td><td class="hide-below-md mono">${i.completed?dstr(i.completed):'—'}</td><td>${i.result}</td><td class="mono">${dstr(i.nextDue)}</td></tr>`).join('')}
-  </tbody></table></div>`,INSPECTIONS.map(inspectionCard).join('')||'<div class="muted" style="text-align:center;padding:20px">No inspections tracked.</div>')}
+  </tbody></table></div>
   <div class="card" style="margin-top:14px"><div class="body row" style="justify-content:space-between;align-items:center"><div class="muted" style="font-size:12.5px">One-click PDF compilation of current CO, current licenses, last 12 months of inspections, and open corrective actions per property.</div><button class="btn sec sm" onclick="toast('Audit pack generated (PDF) — prototype stub')">📦 Generate portfolio audit pack</button></div></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Maps to Scope §4.2 Compliance, Certificate of Occupancy &amp; Inspections (cadence &amp; reminders, compliance dashboard, audit-pack generation).</div>`;
-}
-function certCard(c){
-  return recordCard({
-    title:esc(c.type),
-    subtitle:[propById(c.prop).name,c.authority],
-    badges:[certBadge(c)],
-    onOpen:`navigate('properties');setTimeout(()=>openProperty('${c.prop}'),60)`
-  });
-}
-function inspectionCard(i){
-  return recordCard({
-    title:esc(i.type),
-    subtitle:[propById(i.prop).name,i.inspector],
-    badges:[i.result?`<span class="pill">${esc(i.result)}</span>`:null],
-    onOpen:`navigate('properties');setTimeout(()=>openProperty('${i.prop}'),60)`
-  });
 }
 
 /* ===== client expenses (Phase 2 placeholder) ===== */
@@ -4369,39 +4116,19 @@ function renderMaintSpendCharts(){
 
 /* ===== reconciliation ===== */
 let RTAB='weekly';
-function compareBlock(aLab,aVal,bLab,bVal,diff){
-  return `<div class="rlist-compare"><div><div class="lab">${esc(aLab)}</div><div class="val mono">${money(aVal)}</div></div><div><div class="lab">${esc(bLab)}</div><div class="val mono">${money(bVal)}</div></div><div><div class="lab">Diff</div><div class="val mono" style="color:${diff===0?'var(--ink-400)':'var(--red,#c0392b)'}">${diff===0?'—':(diff>0?'+':'')+money(diff)}</div></div></div>`;
-}
-function reconGroupCard(g,i){
-  return recordCard({
-    title:esc(g.vendor),
-    subtitle:[g.prop,g.tickets.length?g.tickets.join(', '):null],
-    badges:[g.status==='auto'?'<span class="badge b-resolved"><span class="dot"></span>⚡ Auto-clear</span>':'<span class="badge b-progress"><span class="dot"></span>👀 Review</span>'],
-    compare:compareBlock('KodaRE',g.koda,'Ledger',g.ledger,g.koda-g.ledger),
-    extra:g.status==='review'?`<button class="btn sm" onclick="confirmGroup(${i})">Confirm</button>`:''
-  });
-}
-function reconExcCard(e,i){
-  return recordCard({
-    title:esc(e.vendor),
-    subtitle:[e.reason],
-    compare:compareBlock('Ledger',e.ledger,'KodaRE',e.koda,e.ledger-e.koda),
-    extra:`<button class="btn amber sm" onclick="resolveExc(${i})">Resolve</button>`
-  });
-}
 function renderRecon(el){const R=RECON[RTAB];el.innerHTML=`${pageHeader('recon')}
   <div class="tabs"><button class="tab ${RTAB==='weekly'?'active':''}" onclick="RTAB='weekly';renderRecon(document.getElementById('view'))">📊 Weekly · preliminary</button><button class="tab ${RTAB==='monthly'?'active':''}" onclick="RTAB='monthly';renderRecon(document.getElementById('view'))">📒 Monthly · final</button></div>
   <div class="card"><div class="body mrow"><div><div class="b">${RTAB==='weekly'?'Weekly preliminary reconciliation':'Monthly final reconciliation'}</div><div class="muted" style="font-size:12.5px">Input: ${RTAB==='weekly'?'Finance preliminary ledger (weekly)':'Finance final ledger at month-end close'} · matching engine S1</div></div><div>${R.signed?`<span class="badge b-resolved"><span class="dot"></span>✓ Signed off</span>`:`<button class="btn ${R.exceptions.length?'sec':'green'}" ${R.exceptions.length?'disabled title="Clear exceptions first" style="opacity:.5;cursor:not-allowed"':''} onclick="signRecon()">Sign off ${RTAB==='weekly'?'(preliminary)':'& lock month'}</button>`}</div></div></div>
   <div class="sectitle">Matched groups <span class="faint">— KodaRE items ↔ Finance ledger</span></div>
-  <div class="card" style="overflow-x:auto">${rlist(`<table class="no-cards"><thead><tr>
+  <div class="card" style="overflow-x:auto"><table><thead><tr>
     <th>Vendor</th><th class="hide-below-md">Property</th><th class="hide-below-md">Items</th><th class="hide-below-md right">KodaRE</th><th class="hide-below-md right">Ledger</th><th>Match</th><th></th>
   </tr></thead><tbody>
     ${R.groups.map((g,i)=>`<tr><td class="b trunc" style="max-width:170px">${esc(g.vendor)}<span class="subline show-below-md">${esc(g.prop)}${g.tickets.length?' · '+esc(g.tickets.join(', ')):''}</span><span class="subline show-below-md">KodaRE ${money(g.koda)} · Ledger ${money(g.ledger)}</span></td><td class="hide-below-md muted trunc" style="max-width:150px">${esc(g.prop)}</td><td class="hide-below-md faint trunc" style="max-width:170px">${esc(g.tickets.join(', '))}</td><td class="hide-below-md right mono">${money(g.koda)}</td><td class="hide-below-md right mono">${money(g.ledger)}</td><td>${g.status==='auto'?'<span class="badge b-resolved"><span class="dot"></span>⚡ Auto-clear</span>':'<span class="badge b-progress"><span class="dot"></span>👀 Review</span>'}</td><td>${g.status==='review'?`<button class="btn sm" onclick="confirmGroup(${i})">Confirm</button>`:'<span class="faint">✓</span>'}</td></tr>`).join('')}
-  </tbody></table>`,R.groups.map(reconGroupCard).join(''))}</div>
+  </tbody></table></div>
   <div class="sectitle">Exception worklist</div>
-  <div class="card" style="overflow-x:auto">${R.exceptions.length?rlist(`<table class="no-cards"><thead><tr>
+  <div class="card" style="overflow-x:auto">${R.exceptions.length?`<table><thead><tr>
     <th>Vendor</th><th class="hide-below-md">Issue</th><th class="hide-below-md right">Ledger</th><th class="hide-below-md right">KodaRE</th><th></th>
-  </tr></thead><tbody>${R.exceptions.map((e,i)=>`<tr><td class="b trunc" style="max-width:170px">${esc(e.vendor)}<span class="subline show-below-md">${esc(e.reason)}</span><span class="subline show-below-md">Ledger ${money(e.ledger)} · KodaRE ${money(e.koda)}</span></td><td class="hide-below-md muted trunc" style="max-width:220px">${esc(e.reason)}</td><td class="hide-below-md right mono">${money(e.ledger)}</td><td class="hide-below-md right mono">${money(e.koda)}</td><td><button class="btn amber sm" onclick="resolveExc(${i})">Resolve</button></td></tr>`).join('')}</tbody></table>`,R.exceptions.map(reconExcCard).join('')):'<div class="body muted">✓ No open exceptions — ready for sign-off.</div>'}</div>
+  </tr></thead><tbody>${R.exceptions.map((e,i)=>`<tr><td class="b trunc" style="max-width:170px">${esc(e.vendor)}<span class="subline show-below-md">${esc(e.reason)}</span><span class="subline show-below-md">Ledger ${money(e.ledger)} · KodaRE ${money(e.koda)}</span></td><td class="hide-below-md muted trunc" style="max-width:220px">${esc(e.reason)}</td><td class="hide-below-md right mono">${money(e.ledger)}</td><td class="hide-below-md right mono">${money(e.koda)}</td><td><button class="btn amber sm" onclick="resolveExc(${i})">Resolve</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ No open exceptions — ready for sign-off.</div>'}</div>
   <div class="card" style="margin-top:16px"><div class="body"><div class="b">Principles</div><div class="muted" style="font-size:12.5px;margin-top:4px">Finance ledger is the system of record for dollar amounts; KodaRE never overrides ledger totals. KodaRE adds category, property & component detail for spend-by-area reporting. Unresolved exceptions escalate to Senior Admin.</div></div></div>`;}
 function confirmGroup(i){RECON[RTAB].groups[i].status='auto';RECON[RTAB].groups[i].ledger=RECON[RTAB].groups[i].koda;saveState();toast('Group confirmed & matched');renderRecon(document.getElementById('view'));}
 function resolveExc(i){RECON[RTAB].exceptions.splice(i,1);saveState();toast('Exception resolved');buildNav();renderRecon(document.getElementById('view'));}
@@ -4412,17 +4139,8 @@ function approvalItems(){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&is
 function renderApprovals(el){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));el.innerHTML=`${pageHeader('approvals')}
   <div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi red"><div class="lab">Open emergencies</div><div class="val">${esc.length}</div></div><div class="kpi amber"><div class="lab">Recon awaiting sign-off</div><div class="val">${(RECON.weekly.signed?0:1)+(RECON.monthly.signed?0:1)}</div></div><div class="kpi green"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div></div>
   <div class="sectitle">Open emergencies</div>
-  ${esc.length?rlist(`<div class="card"><table class="no-cards"><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table></div>`,esc.map(approvalCard).join('')):'<div class="card"><div class="body muted">✓ Nothing open.</div></div>'}
+  <div class="card">${esc.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
   <div class="sectitle">Reconciliation sign-off</div><div class="card"><div class="body row"><button class="btn ${RECON.weekly.signed?'sec':'green'}" onclick="RTAB='weekly';navigate('recon')">${RECON.weekly.signed?'Weekly ✓ signed':'Review weekly →'}</button><button class="btn ${RECON.monthly.signed?'sec':'green'}" onclick="RTAB='monthly';navigate('recon')">${RECON.monthly.signed?'Monthly ✓ locked':'Review monthly →'}</button></div></div>`;}
-function approvalCard(t){
-  return recordCard({
-    title:ticketDescCell(t),
-    subtitle:[t.reporter,fdate(t.created)],
-    badges:[ubadge(t.urgency)],
-    onOpen:`openTicket('${t.id}')`,
-    extra:`<button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button>`
-  });
-}
 
 /* ===== search ===== */
 function globalSearch(q){q=q.trim().toLowerCase();if(!q){navigate(VIEW);return;}if(VIEW!=='tickets')navigate('tickets');
@@ -4574,7 +4292,7 @@ function bulkGridMarkup(){
   </div>`;
 }
 function bulkGridTable(){
-  return `<table class="no-cards" style="border-collapse:collapse;min-width:1550px">
+  return `<table style="border-collapse:collapse;min-width:1550px">
     <thead><tr>${BULK_TICKET_HEADERS.map(h=>`<th style="position:sticky;top:0;background:var(--panel2);border:1px solid var(--line);padding:6px 8px;font-size:11.5px;text-align:left;white-space:nowrap;z-index:1">${h}</th>`).join('')}</tr></thead>
     <tbody>${BULK_GRID.map((row,r)=>`<tr>${row.map((val,c)=>`<td style="border:1px solid var(--line);padding:0"><input value="${esc(val)}" oninput="setBulkCell(${r},${c},this.value)" onpaste="bulkGridPaste(event,${r},${c})" style="width:130px;border:0;padding:6px 8px;font-size:12.5px;background:transparent"></td>`).join('')}</tr>`).join('')}</tbody>
   </table>`;
@@ -4833,7 +4551,7 @@ function bulkVendorGridMarkup(){
   </div>`;
 }
 function bulkVendorGridTable(){
-  return `<table class="no-cards" style="border-collapse:collapse;min-width:1550px">
+  return `<table style="border-collapse:collapse;min-width:1550px">
     <thead><tr>${BULK_VENDOR_HEADERS.map(h=>`<th style="position:sticky;top:0;background:var(--panel2);border:1px solid var(--line);padding:6px 8px;font-size:11.5px;text-align:left;white-space:nowrap;z-index:1">${h}</th>`).join('')}</tr></thead>
     <tbody>${BULK_VENDOR_GRID.map((row,r)=>`<tr>${row.map((val,c)=>`<td style="border:1px solid var(--line);padding:0"><input value="${esc(val)}" oninput="setBulkVendorCell(${r},${c},this.value)" onpaste="bulkVendorGridPaste(event,${r},${c})" style="width:130px;border:0;padding:6px 8px;font-size:12.5px;background:transparent"></td>`).join('')}</tr>`).join('')}</tbody>
   </table>`;
@@ -5188,54 +4906,9 @@ async function obCreate(){
   }
   const p={id:'p'+Date.now(),name:d.name||'New Property',addr:d.addr||'',own:d.own,beds:parseInt(d.beds)||null,status:'New Transaction',health:'amber',compliance:null};if(d.own==='owned'){p.llc=d.llc||'—';p.value=parseInt(d.value)||null;p.rent=null;}else{p.landlord=d.landlord||'—';p.rent=parseInt(d.rent)||null;LEASES.push({id:p.id,prop:p.id,landlord:p.landlord,rent:p.rent,term:'12 mo',start:'—',end:'—',next:new Date(today),status:'New Transaction',escalated:false});}PROPS.push(p);saveState();closeDrawer();toast('Property created: '+p.name);navigate('properties');}
 
-/* ===== Every table becomes cards on a phone — see the @media(max-width:899px) block in
-   <style> for the actual visual transform (this generic fallback now only applies to tables
-   not covered by the rlist() responsive-list component, e.g. Reports' per-report tables and
-   the bulk-add paste grids, which opt out via the .no-cards class). This just keeps each
-   <td>'s data-label attribute
-   in sync with its column's real header text, for every table, automatically. Most column
-   headers in this app aren't plain text — they're the thSel()/thTitle() pattern, a wrapping
-   <div><span>Label</span><a>✕</a></div> next to a <select> filter — so this reads the <span>
-   specifically rather than the <th>'s full textContent, which would otherwise also pull in
-   every <option> inside that filter dropdown and produce a garbled label. Runs once at boot,
-   then again automatically on every re-render via MutationObserver — no per-table wiring, no
-   changes to any render*() function needed for a table to pick this up, including ones
-   added after this was written. */
-function labelTableCellsForCards(root){
-  root.querySelectorAll('table:not(.no-cards)').forEach(tbl=>{
-    const headRow=tbl.querySelector('thead tr');
-    if(!headRow)return;
-    const heads=Array.from(headRow.children).map(th=>{
-      const span=th.querySelector(':scope > div > span, :scope > span');
-      if(span)return span.textContent.trim();
-      let t='';th.childNodes.forEach(n=>{if(n.nodeType===3)t+=n.textContent;});
-      return t.trim();
-    });
-    tbl.querySelectorAll('tbody tr').forEach(tr=>{
-      Array.from(tr.children).forEach((td,i)=>{
-        if(td.hasAttribute('colspan'))return; // empty-state / full-width rows — no single column to label
-        if(heads[i])td.setAttribute('data-label',heads[i]);
-      });
-    });
-  });
-}
-let TABLE_CARD_OBSERVER=null;
-function startTableCardObserver(){
-  if(TABLE_CARD_OBSERVER)return;
-  const view=document.getElementById('view');
-  if(!view)return;
-  labelTableCellsForCards(view);
-  // Deliberately watches childList/subtree only, not attributes — setting data-label below
-  // doesn't itself re-trigger this, so there's no feedback loop; it only re-runs when a
-  // render*() function replaces #view's contents with fresh, unlabeled markup.
-  TABLE_CARD_OBSERVER=new MutationObserver(()=>labelTableCellsForCards(view));
-  TABLE_CARD_OBSERVER.observe(view,{childList:true,subtree:true});
-}
-
 /* ===== boot ===== */
 document.getElementById('switch').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setRole(b.dataset.role);});
 loadState();computeHealth();setRole('office');
-startTableCardObserver();
 if(sessionStorage.getItem('koda_idle_signout')){
   sessionStorage.removeItem('koda_idle_signout');
   setTimeout(()=>toast('Signed out due to inactivity — sign back in to continue'),300);
