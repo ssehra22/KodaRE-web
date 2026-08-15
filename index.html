@@ -2543,8 +2543,8 @@ function renderTickets(el){
     ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))],'hide-below-lg')}
     ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}],'hide-below-md')}
     <th class="hide-below-lg" style="text-align:left;min-width:130px;vertical-align:top">
-      ${thTitle(`<span>Comments</span>${clearX('notesQuery','Comments')}`)}
-      <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by comments text" style="${fSel};width:100%;text-transform:none;font-weight:400">
+      ${thTitle(`<span>User Notes</span>${clearX('notesQuery','User Notes')}`)}
+      <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by user notes text" style="${fSel};width:100%;text-transform:none;font-weight:400">
     </th>
   </tr></thead><tbody id="tbody"></tbody></table></div>`;
   drawTickets();
@@ -2594,7 +2594,7 @@ function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="ope
   <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
   <td class="hide-below-lg" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
   <td class="hide-below-md" onclick="event.stopPropagation()">${paySelect(t)}</td>
-  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add comment…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add user notes…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
 function drawTickets(){
   const rows=filtered();
   document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
@@ -4268,7 +4268,7 @@ async function submitNewTicket(){
 }
 
 /* ===== bulk ticket entry: in-app paste grid ===== */
-const BULK_TICKET_HEADERS=['Property','Status','Created','Description','Priority','Service Category','Service Type','Vendor','Cost','Invoice','Payment','Reporter','Comments'];
+const BULK_TICKET_HEADERS=['Property','Status','Created','Description','Priority','Service Category','Service Type','Vendor','Cost','Invoice','Payment','Reporter','User Notes'];
 let BULK_GRID=[];
 function openBulkGrid(){
   BULK_GRID=Array.from({length:20},()=>BULK_TICKET_HEADERS.map(()=>''));
@@ -4327,7 +4327,7 @@ function importBulkGrid(){
   closeDrawer();
   processBulkTicketRows(rows);
 }
-const TICKET_UPLOAD_FIELD_MAP={property:'prop',propertyname:'prop',status:'status',created:'created',createddate:'created',datecreated:'created',date:'created',description:'desc',title:'desc',issue:'desc',priority:'urgency',urgency:'urgency',servicecategory:'svc',category:'svc',servicetype:'svctype',type:'svctype',vendor:'vendor',cost:'cost',estimatedcost:'cost',invoice:'invoice',invoicenumber:'invoice',payment:'payment',paymentstatus:'payment',reporter:'reporter',notes:'notes',comments:'notes'};
+const TICKET_UPLOAD_FIELD_MAP={property:'prop',propertyname:'prop',status:'status',created:'created',createddate:'created',datecreated:'created',date:'created',description:'desc',title:'desc',issue:'desc',priority:'urgency',urgency:'urgency',servicecategory:'svc',category:'svc',servicetype:'svctype',type:'svctype',vendor:'vendor',cost:'cost',estimatedcost:'cost',invoice:'invoice',invoicenumber:'invoice',payment:'payment',paymentstatus:'payment',reporter:'reporter',notes:'notes',comments:'notes',usernotes:'notes'};
 function normHeaderKey(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
 function handleBulkUploadFile(input){
   const file=input.files&&input.files[0];
