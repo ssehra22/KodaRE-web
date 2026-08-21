@@ -146,6 +146,7 @@
   .nav .ct{margin-left:auto;font-size:11px;background:var(--ink-800);border-radius:999px;padding:1px 8px;color:var(--on-dark-2)}
   .nav:hover{background:var(--ink-800);color:var(--on-dark)}
   .nav.active{background:linear-gradient(90deg,rgba(14,154,163,.30),rgba(124,63,214,.18));color:var(--on-dark);box-shadow:inset 3px 0 0 var(--accent)}
+  .navgroup{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--on-dark-3);padding:4px 8px 2px;margin-top:10px}
   .side .foot{margin-top:auto;font-size:11px;color:var(--on-dark-3);padding:10px 8px 0;border-top:1px solid var(--ink-800)}
 
   /* mobile nav drawer — hamburger + off-canvas .side, hidden on desktop by default.
@@ -2265,7 +2266,29 @@ async function currentUserEmail(){
   return user?user.email:null;
 }
 
-const NAV=[{id:'dashboard',ic:'▦',label:'Dashboard'},{id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length},{id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length},{id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length},{id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length},{id:'reports',ic:'📊',label:'Reports'},{id:'assumptions',ic:'🧮',label:'Assumptions'},{id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)'},{id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length},{id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length},{id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length}];
+/* Grouped sidebar nav (Aug 2026) — mirrors the section-bucket pattern from the other platform
+   (an ungrouped Dashboard, then labeled buckets: Portfolio, Finance, Administration). Each item
+   carries its own `group` (null = renders above any bucket label, unindented); `adminOnly` items
+   are filtered out entirely for non-admin roles rather than relying on positional splicing like
+   the old buildNav() did. Order within NAV is preserved within each bucket. */
+const NAV=[
+  {id:'dashboard',ic:'▦',label:'Dashboard',group:null},
+  {id:'tickets',ic:'🎫',label:'Maintenance',count:()=>TICKETS.filter(isOpen).length,group:'Portfolio'},
+  {id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length,group:'Portfolio'},
+  {id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length,group:'Portfolio'},
+  {id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length,group:'Finance'},
+  {id:'reports',ic:'📊',label:'Reports',group:'Finance'},
+  {id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length,group:'Administration',adminOnly:true},
+  {id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length,group:'Administration',adminOnly:true},
+  {id:'assumptions',ic:'🧮',label:'Assumptions',group:'Administration',adminOnly:true},
+  {id:'auditlog',ic:'📜',label:'Audit Log',group:'Administration',adminOnly:true},
+  {id:'errorlog',ic:'🛠️',label:'Error Log',count:()=>ERROR_LOG.filter(e=>!e.resolvedAt).length,group:'Administration',adminOnly:true},
+  {id:'trash',ic:'🗑️',label:'Trash',count:()=>TRASH.length,group:'Administration',adminOnly:true},
+  {id:'clientexp',ic:'💳',label:'Client Expenses (Phase 2)',group:'Phase 2 · TBD'},
+  {id:'recon',ic:'🧾',label:'TBD Reconciliation',count:()=>RECON.weekly.exceptions.length+RECON.monthly.exceptions.length,group:'Phase 2 · TBD'},
+  {id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length,group:'Phase 2 · TBD'}
+];
+const NAV_GROUP_ORDER=['Portfolio','Finance','Administration','Phase 2 · TBD'];
 const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2'],errorlog:['Error Log','Background failures, auto-logged — Senior Admin only'],auditlog:['Audit Log','Sensitive data changes, immutable — Senior Admin only · Scope §5.2/§5.5']};
 // ===== page-header component (design system) — one reusable eyebrow/title/description/
 // actions block, fed by the TITLES map above, so every screen's header comes from the
@@ -2298,8 +2321,18 @@ function toggleUserMenu(e){if(e)e.stopPropagation();const m=document.getElementB
 function closeUserMenu(){const m=document.getElementById('userMenu');if(m)m.classList.add('hidden');}
 document.addEventListener('click',e=>{if(!e.target.closest('#liveRoleBadge'))closeUserMenu();});
 function closeNavDrawer(){document.getElementById('sideNav').classList.remove('open');document.getElementById('navScrim').classList.remove('open');document.getElementById('navMenuBtn').setAttribute('aria-expanded','false');}
-function buildNav(){const nav=document.getElementById('nav');let items=NAV.filter(n=>(n.id!=='assumptions'&&n.id!=='trash')||ROLE==='admin');if(ROLE==='admin'){const aix=items.findIndex(n=>n.id==='assumptions');items.splice(aix+1,0,{id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length});items.splice(aix+2,0,{id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length});items.splice(aix+3,0,{id:'errorlog',ic:'🛠️',label:'Error Log',count:()=>ERROR_LOG.filter(e=>!e.resolvedAt).length});items.splice(aix+4,0,{id:'auditlog',ic:'📜',label:'Audit Log'});}
-  nav.innerHTML=items.map(n=>`<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`).join('');}
+function navBtnHtml(n){return `<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`;}
+function buildNav(){
+  const nav=document.getElementById('nav');
+  const items=NAV.filter(n=>!n.adminOnly||ROLE==='admin');
+  let html=items.filter(n=>!n.group).map(navBtnHtml).join('');
+  NAV_GROUP_ORDER.forEach(g=>{
+    const gi=items.filter(n=>n.group===g);
+    if(!gi.length)return;
+    html+=`<div class="navgroup">${esc(g)}</div>`+gi.map(navBtnHtml).join('');
+  });
+  nav.innerHTML=html;
+}
 function navigate(v){closeNavDrawer();closeUserMenu();if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
   document.getElementById('viewTitle').textContent=v==='approvals'?'Approvals':t[0];
   // .content ('view') itself never scrolls — .main (its parent, tablet width and up) does.
