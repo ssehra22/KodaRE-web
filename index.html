@@ -3097,8 +3097,8 @@ function capitalReservesSection(){
     <div class="muted" style="font-size:12.5px;line-height:1.6">
       Each row below is a portfolio-wide default — expected life and today's replacement cost for that type of component. Properties &gt; Components uses these, plus an install year you enter per property, to work out that property's own numbers:
       <ol style="margin:8px 0 8px 18px;padding:0">
-        <li style="margin-bottom:6px"><b>Expected replacement year</b> = install year + expected life above.</li>
-        <li style="margin-bottom:6px"><b>Inflation-adjusted cost</b> — today's replacement cost is escalated at the inflation rate above, compounded out to that expected replacement year. Once a component runs past its expected life without being replaced, the same rate keeps compounding for however many years it's now overdue instead — so the estimate keeps rising the longer replacement is delayed, rather than freezing at the original figure.</li>
+        <li style="margin-bottom:6px"><b>Expected replacement year</b> = install year + the expected life from the Life of Appliances table below.</li>
+        <li style="margin-bottom:6px"><b>Inflation-adjusted cost</b> — today's replacement cost from the table below is escalated at the inflation rate above, compounded out to that expected replacement year. Once a component runs past its expected life without being replaced, the same rate keeps compounding for however many years it's now overdue instead — so the estimate keeps rising the longer replacement is delayed, rather than freezing at the original figure.</li>
         <li style="margin-bottom:6px"><b>Annual reserve</b> = inflation-adjusted cost ÷ expected life. This is a level amount — the same figure every year across the component's whole life — rather than a schedule that changes as the component ages, so it stays stable and easy to plan against.</li>
         <li>Without an install year, a component can't be inflation-adjusted or flagged Healthy/Plan ahead/Overdue — it just uses today's cost as-is, and shows as missing data on the property's Components tab and on Finance → Capital Reserves.</li>
       </ol>
@@ -3347,7 +3347,13 @@ function propComponents(p){
     </div>
   </div></div>
   <div class="card" style="overflow-x:auto"><table style="min-width:760px"><thead><tr><th>Component</th><th>Installed</th><th>Age</th><th>Expected life</th><th>Remaining</th><th>Status</th><th class="right">Replacement cost</th><th class="right">Annual reserve</th></tr></thead><tbody>${rows}</tbody></table></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = inflation-adjusted replacement cost ÷ expected life. Expected life &amp; today's replacement cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves — the total above doesn't need an install year to be useful, only the per-item flags and inflation-adjusted cost do. Add an install year (exact, or an estimate from the purchase inspection report) to see age, remaining life, and a healthy / plan‑ahead / overdue flag for this property — tag it Actual once you have a real record. Leave blank if unknown.</div>`;
+  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = inflation-adjusted replacement cost ÷ expected life. Expected life &amp; today's replacement cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves — the total above doesn't need an install year to be useful, only the per-item flags and inflation-adjusted cost do. Add an install year (exact, or an estimate from the purchase inspection report) to see age, remaining life, and a healthy / plan‑ahead / overdue flag for this property — tag it Actual once you have a real record. Leave blank if unknown.</div>
+  <div class="card" style="margin-top:14px"><div class="body">
+    <div class="kv">
+      <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update comments…" onchange="updatePropField('${p.id}','comments',this.value)">${esc(p.comments||'')}</textarea></div>
+      <div class="k">User Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update notes…" onchange="updatePropField('${p.id}','userNotes',this.value)">${esc(p.userNotes||'')}</textarea></div>
+    </div>
+  </div></div>`;
 }
 function setComponentAgeYear(pid,name,val){
   const p=propById(pid);if(!p)return;
@@ -3395,9 +3401,9 @@ function renderReserves(el){
   </div>
   ${portfolioMissing?`<div class="card" style="margin-bottom:14px;border-color:var(--amber)"><div class="body" style="display:flex;gap:10px;align-items:flex-start"><span style="font-size:16px">⚠</span><div style="font-size:12.5px;line-height:1.5"><b>${portfolioMissing} component${portfolioMissing===1?'':'s'} across the portfolio ${portfolioMissing===1?'has':'have'} no install year on file.</b> Those components use today's cost with no inflation adjustment and can't be flagged Healthy / Plan ahead / Overdue, so any property highlighted below is understating its true reserve need and may be missing overdue items entirely. Rows with missing data are marked — add install years on each property's Components tab to correct them.</div></div></div>`:''}
   <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="right">Annual reserve</th><th>Overdue</th><th>Plan ahead</th><th class="hide-below-md">Missing data</th></tr></thead><tbody>
-  ${rows.map(({p,s})=>`<tr class="clickable" onclick="openReservesProperty('${p.id}')"${s.missingN?` style="background:var(--tone-warn-soft-bg)"`:''}>
+  ${rows.map(({p,s})=>`<tr class="clickable" onclick="openReservesProperty('${p.id}')">
     <td class="b">${esc(p.name)}</td>
-    <td class="right mono">${money(Math.round(s.total))}/yr${s.missingN?`<div style="color:var(--amber);font-size:10.5px;font-weight:700;margin-top:2px">⚠ incomplete — ${s.missingN} missing</div>`:''}</td>
+    <td class="right mono">${money(Math.round(s.total))}/yr${s.missingN?`<div style="color:var(--amber);font-size:10.5px;font-weight:700;margin-top:2px">⚠ incomplete — missing data</div>`:''}</td>
     <td>${s.overdueN?`<span class="badge b-red"><span class="dot"></span>${s.overdueN}</span>`:'<span class="faint">—</span>'}</td>
     <td>${s.agingN?`<span class="badge b-progress"><span class="dot"></span>${s.agingN}</span>`:'<span class="faint">—</span>'}</td>
     <td class="hide-below-md">${s.missingN?`<span class="badge b-progress"><span class="dot"></span>${s.missingN}</span>`:'<span class="faint">—</span>'}</td>
