@@ -2987,6 +2987,12 @@ function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licen
 function cycleLicChk(pid,ix){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();document.getElementById('propTabBody').innerHTML=propLicensing(p);}
 function setLicChkText(pid,ix,val){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});cur.t=val;p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();}
 const LIFE_TABLE={'HVAC':[25,10000],'Furnace':[20,6000],'Water heater':[15,2000],'Refrigerator':[10,1200],'Gas/electric range':[15,1200],'Oven':[15,1200],'Dishwasher':[10,800],'Microwave':[8,600],'Washing machine':[12,800],'Dryer':[12,800],'Carpeting':[10,0],'Roof':[25,11000]};
+/* Per-property capital reserve tracking (Aug 2026) — scoped entirely to Properties > Components.
+   Only stores an install year per property per component; life/cost always come from the shared
+   LIFE_TABLE above (no per-property override, kept simple for this first pass). Local state only
+   for now (saveState/loadState, like NOTES/ASSUMPTIONS) — not wired to Supabase yet, so nothing
+   else in the app reads or depends on this. {[propertyId]:{[componentName]:installYear}} */
+let COMPONENT_AGES={};
 let ASSUMPTIONS_TAB='capitalreserves';
 // Additional dropdown lists documented in Scope v0.7 that aren't wired to a live field yet
 // (unlike CAT/SVC_TYPES above, which already drive the ticket Service Category/Type
@@ -3244,12 +3250,61 @@ function moveSvcTypeEntry(name,dir){
   if(SUPA_CONFIGURED)dbUpsertReferenceList('SVC_TYPES',SVC_TYPES);else saveState();
   renderAssumptions(document.getElementById('view'));
 }
-function propComponents(p){const names=Object.keys(LIFE_TABLE);
-  const rows=names.map(n=>{const [life,cost]=LIFE_TABLE[n];return {n,life,cost};});
-  return `<div class="card"><table><thead><tr><th>Component</th><th>Avg. lifespan</th><th>Replacement cost</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr><td class="b">${r.n}</td><td class="muted">${r.life} yr</td><td class="right mono">${money(r.cost)}</td></tr>`).join('')}
-  </tbody></table></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Replacement costs &amp; average lifespans per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions). Per-property component age/install-date tracking and end-of-life flagging aren't built yet — this table shows portfolio-wide assumptions only, not this property's actual components.</div>`;}
+function propComponents(p){
+  const names=Object.keys(LIFE_TABLE);
+  const yearNow=new Date(today).getFullYear();
+  const ages=COMPONENT_AGES[p.id]||{};
+  let totalReserve=0,overdueN=0,agingN=0,missingN=0;
+  const rows=names.map(n=>{
+    const [life,cost]=LIFE_TABLE[n];
+    const reserve=life?cost/life:0;
+    totalReserve+=reserve;
+    const installYear=ages[n]||null;
+    let ageYears=null,remaining=null,statusHtml='<span class="faint">Unknown</span>';
+    if(installYear){
+      ageYears=yearNow-installYear;
+      remaining=life-ageYears;
+      if(remaining<=0){statusHtml='<span class="badge b-red"><span class="dot"></span>Overdue</span>';overdueN++;}
+      else if(remaining<=Math.max(2,Math.round(life*0.2))){statusHtml='<span class="badge b-progress"><span class="dot"></span>Plan ahead</span>';agingN++;}
+      else statusHtml='<span class="badge b-resolved"><span class="dot"></span>Healthy</span>';
+    } else missingN++;
+    return `<tr>
+      <td class="b">${esc(n)}</td>
+      <td><input type="number" inputmode="numeric" min="1900" max="${yearNow}" value="${installYear||''}" placeholder="e.g. ${yearNow-Math.round(life/2)}" style="width:100px;font-size:13px" title="Install year — exact if known, or an estimate from the purchase inspection report" onchange="setComponentInstallYear('${p.id}','${n.replace(/'/g,"\\'")}',this.value)"></td>
+      <td class="mono">${ageYears!=null?ageYears+' yr':'<span class="faint">—</span>'}</td>
+      <td class="muted mono">${life} yr</td>
+      <td class="mono">${remaining!=null?Math.max(0,remaining)+' yr':'<span class="faint">—</span>'}</td>
+      <td>${statusHtml}</td>
+      <td class="right mono">${money(cost)}</td>
+      <td class="right mono">${money(Math.round(reserve))}/yr</td>
+    </tr>`;
+  }).join('');
+  return `<div class="card" style="margin-bottom:14px"><div class="body mrow" style="flex-wrap:wrap;gap:12px">
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em">Recommended annual reserve</div><div style="font-size:22px;font-weight:800">${money(Math.round(totalReserve))}/yr</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto">
+      ${overdueN?`<span class="badge b-red"><span class="dot"></span>${overdueN} overdue</span>`:''}
+      ${agingN?`<span class="badge b-progress"><span class="dot"></span>${agingN} plan ahead</span>`:''}
+      ${missingN?`<span class="pill">${missingN} missing install year</span>`:''}
+    </div>
+  </div></div>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Component</th><th>Installed (yr)</th><th>Age</th><th>Expected life</th><th>Remaining</th><th>Status</th><th class="right">Replacement cost</th><th class="right">Annual reserve</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = replacement cost ÷ expected life, per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions) — the total above doesn't need an install year to be useful. Add an install year (exact, or an estimate from the purchase inspection report) per component to see its age, remaining life, and a healthy / plan‑ahead / overdue flag specific to this property. Leave a component blank if the year is unknown.</div>`;
+}
+function setComponentInstallYear(pid,name,val){
+  const p=propById(pid);if(!p)return;
+  const v=val.trim();
+  if(v===''){if(COMPONENT_AGES[pid])delete COMPONENT_AGES[pid][name];}
+  else{
+    const y=parseInt(v,10);
+    const yearNow=new Date(today).getFullYear();
+    if(isNaN(y)||y<1900||y>yearNow){toast('Enter a valid year (1900–'+yearNow+')');document.getElementById('propTabBody').innerHTML=propComponents(p);return;}
+    if(!COMPONENT_AGES[pid])COMPONENT_AGES[pid]={};
+    COMPONENT_AGES[pid][name]=y;
+  }
+  saveState();
+  const body=document.getElementById('propTabBody');
+  if(body)body.innerHTML=propComponents(p);
+}
 function propTickets(tks){return tks.length?`<div class="card"><table><thead><tr><th>Description</th><th>Priority</th><th>Status</th><th class="right">Cost</th></tr></thead><tbody>${tks.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="right mono">${t.cost!=null?money(t.cost):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card"><div class="body muted">No maintenance items for this property.</div></div>';}
 function propDocs(p){
   const docs=DOCS.filter(x=>x.prop===p.id).sort((a,b)=>new Date(b.uploaded)-new Date(a.uploaded));
@@ -4838,7 +4893,7 @@ async function mSubmit(){
 
 /* ===== persistence ===== */
 const LSKEY='kodare_proto_v03_r1';
-function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
+function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
 function mergeById(defaults,saved,idKey){const map={};defaults.forEach(d=>map[d[idKey]]=Object.assign({},d));
   saved.forEach(s=>{const k=s[idKey];if(map[k])Object.assign(map[k],s);else map[k]=s;});
   return Object.values(map);}
@@ -4863,6 +4918,9 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
   if(s.TID)TID=s.TID;
   if(s.LIFE_TABLE)Object.keys(s.LIFE_TABLE).forEach(k=>{if(LIFE_TABLE[k])LIFE_TABLE[k]=s.LIFE_TABLE[k];});
   if(s.ASSUMPTIONS)Object.keys(s.ASSUMPTIONS).forEach(k=>{if(k in ASSUMPTIONS)ASSUMPTIONS[k]=s.ASSUMPTIONS[k];});
+  // Per-property component install years (Properties > Components reserve tracking) — keyed by
+  // property id, so a plain merge is fine; no fixed default keys to protect like LIFE_TABLE above.
+  if(s.COMPONENT_AGES)COMPONENT_AGES=Object.assign({},COMPONENT_AGES,s.COMPONENT_AGES);
   // Additive merges (same convention as LIFE_TABLE/ASSUMPTIONS above): overlay saved custom
   // values on top of the current hardcoded defaults, never delete a hardcoded default just
   // because an older saved snapshot predates it — otherwise expanding these lists in source
