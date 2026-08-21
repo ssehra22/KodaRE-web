@@ -135,14 +135,14 @@
   @media(min-width:768px){ .tb-user-text{display:block} }
 
   /* ---- desktop app shell — dark sidebar, light content area ---- */
-  #desktop{display:grid;grid-template-columns:232px 1fr;min-height:calc(100vh - 56px)}
-  .side{background:var(--ink-900);color:var(--on-dark-1);padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+  #desktop{display:grid;grid-template-columns:188px 1fr;min-height:calc(100vh - 56px)}
+  .side{background:var(--ink-900);color:var(--on-dark-1);padding:16px 10px;display:flex;flex-direction:column;gap:4px}
   .side .who{display:flex;align-items:center;gap:10px;padding:8px 8px 14px;border-bottom:1px solid var(--ink-800);margin-bottom:10px}
   .side .avatar{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:var(--on-dark)}
   .side .who .nm{font-weight:700;color:var(--on-dark);font-size:13px}
   .side .who .rl{font-size:11px;color:var(--on-dark-3)}
-  .nav{background:transparent;border:0;color:var(--on-dark-1);text-align:left;border-radius:9px;padding:9px 11px;display:flex;align-items:center;gap:11px;font-size:13.5px;font-weight:600}
-  .nav .ic{width:20px;text-align:center;font-size:15px}
+  .nav{background:transparent;border:0;color:var(--on-dark-1);text-align:left;border-radius:9px;padding:9px 8px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+  .nav .ic{width:18px;text-align:center;font-size:14px;flex:0 0 auto}
   .nav .ct{margin-left:auto;font-size:11px;background:var(--ink-800);border-radius:999px;padding:1px 8px;color:var(--on-dark-2)}
   .nav:hover{background:var(--ink-800);color:var(--on-dark)}
   .nav.active{background:linear-gradient(90deg,rgba(14,154,163,.30),rgba(124,63,214,.18));color:var(--on-dark);box-shadow:inset 3px 0 0 var(--accent)}
@@ -173,7 +173,7 @@
      .main wide, which pushes #desktop and the whole page wide, regardless of any
      overflow-x:auto set on the table's own wrapper further down. This is usually the actual
      reason "overflow-x:auto did nothing." */
-  .content{padding:22px 24px 60px;max-width:1600px;width:100%;min-width:0}
+  .content{padding:22px 24px 60px;max-width:1900px;width:100%;min-width:0}
 
   /* ---- page header — eyebrow, title, description, and a right-aligned actions slot.
      One reusable class instead of every screen hand-rolling its own heading markup. ---- */
@@ -381,7 +381,7 @@
   @media(min-width:901px){
     html,body{overflow:hidden}
     #desktop{display:flex;height:calc(100vh - 56px);height:calc(100dvh - 56px);overflow:hidden}
-    .side{flex:0 0 232px;width:232px;height:100%;overflow-y:auto}
+    .side{flex:0 0 188px;width:188px;height:100%;overflow-y:auto}
     .main{flex:1;min-width:0;height:100%;overflow-y:auto}
   }
   @media(max-width:560px){
@@ -2525,7 +2525,7 @@ function renderTickets(el){
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="From MM/DD/YY" title="From date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="To MM/DD/YY" title="To date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
     </th>
-    <th style="text-align:left;min-width:170px;max-width:220px;overflow:hidden;vertical-align:top">
+    <th style="text-align:left;min-width:260px;max-width:420px;overflow:hidden;vertical-align:top">
       ${thTitle(`<span>Description</span>${clearX('descQuery','Description')}`)}
       <input type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.descQuery)}" oninput="setFLive('descQuery',this.value)" placeholder="Search..." title="Filter by description text" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
     </th>
@@ -2542,9 +2542,9 @@ function renderTickets(el){
     </th>
     ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))],'hide-below-lg')}
     ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}],'hide-below-md')}
-    <th class="hide-below-lg" style="text-align:left;min-width:130px;vertical-align:top">
-      ${thTitle(`<span>User Notes</span>${clearX('notesQuery','User Notes')}`)}
-      <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by user notes text" style="${fSel};width:100%;text-transform:none;font-weight:400">
+    <th class="hide-below-lg" style="text-align:left;min-width:280px;vertical-align:top">
+      ${thTitle(`<span>Comments</span>${clearX('notesQuery','Comments')}`)}
+      <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by comments text" style="${fSel};width:100%;text-transform:none;font-weight:400">
     </th>
   </tr></thead><tbody id="tbody"></tbody></table></div>`;
   drawTickets();
@@ -2587,14 +2587,14 @@ function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="ope
   <td class="b trunc hide-below-sm col-frozen" style="max-width:130px">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
   <td class="hide-below-sm muted mono" style="white-space:nowrap" title="${age}d ago">${fdate(t.created)}</td>
-  <td><div class="trunc2" style="max-width:260px">${ticketDescCell(t)}</div><div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></td>
+  <td><div class="trunc2" style="max-width:400px">${ticketDescCell(t)}</div><div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></td>
   <td>${ubadge(t.urgency)}</td>
   <td class="hide-below-lg muted">${svcLabel(t)}</td>
   <td class="hide-below-lg">${t.vendor||'<span class="faint">—</span>'}</td>
   <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:85px;font-size:12px;text-align:right;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateCost('${t.id}',this.value)"></td>
   <td class="hide-below-lg" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:3px"><input type="text" value="${esc(t.invoice||'')}" placeholder="invoice #…" style="width:95px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateInvoice('${t.id}',this.value)"><input type="file" id="invFile_${t.id}" style="display:none" onchange="pickInvoiceForTicket('${t.id}',this)"><a onclick="document.getElementById('invFile_${t.id}').click()" title="Choose an invoice file to attach">⬆</a>${t.invoiceFileUrl?`<a onclick="viewInvoiceFile('${t.id}')" title="View attached invoice file">📎</a><a onclick="removeInvoiceFile('${t.id}')" title="Remove attached invoice" style="color:var(--red)">✕</a>`:''}</div></td>
   <td class="hide-below-md" onclick="event.stopPropagation()">${paySelect(t)}</td>
-  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add user notes…" style="width:210px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
+  <td class="hide-below-lg" onclick="event.stopPropagation()"><input type="text" value="${esc(t.notes)}" placeholder="add comment…" style="width:320px;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px" onchange="updateNote('${t.id}',this.value)"></td></tr>`;}
 function drawTickets(){
   const rows=filtered();
   document.getElementById('tbody').innerHTML=rows.length?rows.map(trow).join(''):'<tr><td colspan="12" class="muted" style="text-align:center;padding:26px">No items match these filters.</td></tr>';
@@ -4268,7 +4268,7 @@ async function submitNewTicket(){
 }
 
 /* ===== bulk ticket entry: in-app paste grid ===== */
-const BULK_TICKET_HEADERS=['Property','Status','Created','Description','Priority','Service Category','Service Type','Vendor','Cost','Invoice','Payment','Reporter','User Notes'];
+const BULK_TICKET_HEADERS=['Property','Status','Created','Description','Priority','Service Category','Service Type','Vendor','Cost','Invoice','Payment','Reporter','Comments'];
 let BULK_GRID=[];
 function openBulkGrid(){
   BULK_GRID=Array.from({length:20},()=>BULK_TICKET_HEADERS.map(()=>''));
