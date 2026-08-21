@@ -2277,6 +2277,7 @@ const NAV=[
   {id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length,group:'Portfolio'},
   {id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length,group:'Portfolio'},
   {id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length,group:'Finance'},
+  {id:'reserves',ic:'💰',label:'Capital Reserves',count:()=>PROPS.reduce((n,p)=>n+propertyReserveSummary(p).overdueN,0),group:'Finance'},
   {id:'reports',ic:'📊',label:'Reports',group:'Finance'},
   {id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length,group:'Administration',adminOnly:true},
   {id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length,group:'Administration',adminOnly:true},
@@ -2289,13 +2290,13 @@ const NAV=[
   {id:'compliance',ic:'📜',label:'TBD Compliance',count:()=>CERTS.filter(c=>c.status==='expired').length,group:'Phase 2 · TBD'}
 ];
 const NAV_GROUP_ORDER=['Portfolio','Finance','Administration','Phase 2 · TBD'];
-const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2'],errorlog:['Error Log','Background failures, auto-logged — Senior Admin only'],auditlog:['Audit Log','Sensitive data changes, immutable — Senior Admin only · Scope §5.2/§5.5']};
+const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket lifecycle · Flow C'],properties:['Properties','Portfolio & transactions'],leases:['Leases & Rent','Lease lifecycle · Flow B'],vendors:['Vendor Directory','Approved service providers · Scope §4.9'],compliance:['TBD Compliance','Certificates, licenses & inspections · Scope §4.2'],assumptions:['Assumptions','Portfolio-wide guidelines & planning assumptions'],clientexp:['Client Expenses (Phase 2)','Costs charged to residents/clients · Placeholder'],reports:['Reports','Operational, compliance, financial & capital · Scope §4.11'],recon:['TBD Reconciliation','Matching engine · S1'],trash:['Trash','Deleted vendors & tickets — restore or delete permanently'],users:['User Management','Assign roles — Senior Admin only · Scope §3.2'],errorlog:['Error Log','Background failures, auto-logged — Senior Admin only'],auditlog:['Audit Log','Sensitive data changes, immutable — Senior Admin only · Scope §5.2/§5.5'],reserves:['Capital Reserves','Recommended annual reserve by property, from Properties > Components · Scope §4.8']};
 // ===== page-header component (design system) — one reusable eyebrow/title/description/
 // actions block, fed by the TITLES map above, so every screen's header comes from the
 // same markup instead of each render function hand-rolling its own heading. Called from
 // the top of every render*(el) function below so it survives re-renders triggered from
 // anywhere (filters, saves, etc.), not just the initial navigate().
-const PAGE_EYEBROW={dashboard:'Overview',tickets:'Operations',properties:'Portfolio',leases:'Portfolio',vendors:'Operations',compliance:'Compliance',assumptions:'Configuration',clientexp:'Financial',reports:'Financial',recon:'Financial',approvals:'Operations',trash:'System',users:'Administration',errorlog:'Administration',auditlog:'Administration'};
+const PAGE_EYEBROW={dashboard:'Overview',tickets:'Operations',properties:'Portfolio',leases:'Portfolio',vendors:'Operations',compliance:'Compliance',assumptions:'Configuration',clientexp:'Financial',reports:'Financial',recon:'Financial',approvals:'Operations',trash:'System',users:'Administration',errorlog:'Administration',auditlog:'Administration',reserves:'Financial'};
 function pageHeader(v,actionsHtml){
   const t=TITLES[v]||[v,''];
   const title=v==='approvals'?'Approvals':t[0];
@@ -2341,7 +2342,7 @@ function navigate(v){closeNavDrawer();closeUserMenu();if((v==='assumptions'||v==
   const el=document.getElementById('view');el.scrollTop=0;
   const mainCol=el.closest('.main');if(mainCol)mainCol.scrollTop=0;
   window.scrollTo(0,0);
-  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement,errorlog:renderErrorLog,auditlog:renderAuditLog}[v]||renderDashboard)(el);}
+  ({dashboard:renderDashboard,tickets:renderTickets,properties:renderProperties,leases:renderLeases,vendors:renderVendors,compliance:renderCompliance,assumptions:renderAssumptions,clientexp:renderClientExpenses,reports:renderReports,recon:renderRecon,approvals:renderApprovals,trash:renderTrash,users:renderUserManagement,errorlog:renderErrorLog,auditlog:renderAuditLog,reserves:renderReserves}[v]||renderDashboard)(el);}
 // Second arg lets a call site mark a toast as a genuine failure rather than a confirmation —
 // before this, every toast (success AND error) rendered with the same ✓ checkmark, so "Ticket
 // created" and "Could not submit report: <raw Postgres error>" looked identically reassuring.
@@ -2987,12 +2988,57 @@ function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licen
 function cycleLicChk(pid,ix){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();document.getElementById('propTabBody').innerHTML=propLicensing(p);}
 function setLicChkText(pid,ix,val){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});cur.t=val;p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();}
 const LIFE_TABLE={'HVAC':[25,10000],'Furnace':[20,6000],'Water heater':[15,2000],'Refrigerator':[10,1200],'Gas/electric range':[15,1200],'Oven':[15,1200],'Dishwasher':[10,800],'Microwave':[8,600],'Washing machine':[12,800],'Dryer':[12,800],'Carpeting':[10,0],'Roof':[25,11000]};
-/* Per-property capital reserve tracking (Aug 2026) — scoped entirely to Properties > Components.
-   Only stores an install year per property per component; life/cost always come from the shared
-   LIFE_TABLE above (no per-property override, kept simple for this first pass). Local state only
-   for now (saveState/loadState, like NOTES/ASSUMPTIONS) — not wired to Supabase yet, so nothing
-   else in the app reads or depends on this. {[propertyId]:{[componentName]:installYear}} */
+/* Per-property capital reserve tracking (Aug 2026) — Properties > Components, plus the
+   Finance > Capital Reserves rollup (both read the same two helpers below). Stores an install
+   year + actual/estimated tag per property per component; life/cost always come from the shared
+   LIFE_TABLE above (no per-property override, kept simple). Local state only for now
+   (saveState/loadState, like NOTES/ASSUMPTIONS) — not wired to Supabase yet.
+   Shape: {[propertyId]:{[componentName]:{year, actual}}}. getComponentAge() also accepts the
+   older plain-number-year shape from before the Actual/Estimated tag existed, so nothing already
+   saved breaks. */
 let COMPONENT_AGES={};
+function getComponentAge(pid,name){
+  const raw=COMPONENT_AGES[pid]&&COMPONENT_AGES[pid][name];
+  if(raw==null)return null;
+  if(typeof raw==='number')return {year:raw,actual:false};
+  return raw;
+}
+/* Reserve math for one component: replacement cost is escalated by the Assumptions inflation
+   rate out to the year it's expected to be replaced (install year + expected life); once a
+   component is past that point, the same rate keeps compounding for however many years it's
+   now overdue instead, so the estimate keeps rising the longer replacement is put off. Annual
+   reserve is always inflated-cost ÷ full expected life (level across the item's life, not just
+   the remaining years), so the number doesn't jump around as age changes on its own — only
+   the status flag does. With no install year, nothing is inflated; it's just today's cost. */
+function componentReserveCalc(name,ageInfo){
+  const [life,cost]=LIFE_TABLE[name];
+  const yearNow=new Date(today).getFullYear();
+  const pct=(ASSUMPTIONS.capitalReserveInflationPct||0)/100;
+  let ageYears=null,remaining=null,overdueYears=0,statusKey='unknown',inflatedCost=cost;
+  if(ageInfo&&ageInfo.year){
+    ageYears=yearNow-ageInfo.year;
+    remaining=life-ageYears;
+    if(remaining>=0){
+      inflatedCost=cost*Math.pow(1+pct,remaining);
+      statusKey=remaining<=Math.max(2,Math.round(life*0.2))?'aging':'healthy';
+    } else {
+      overdueYears=-remaining;
+      inflatedCost=cost*Math.pow(1+pct,overdueYears);
+      statusKey='overdue';
+    }
+  }
+  const annualReserve=life?inflatedCost/life:0;
+  return {life,cost,inflatedCost,annualReserve,ageYears,remaining,overdueYears,statusKey};
+}
+function propertyReserveSummary(p){
+  let total=0,overdueN=0,agingN=0,missingN=0;
+  Object.keys(LIFE_TABLE).forEach(n=>{
+    const r=componentReserveCalc(n,getComponentAge(p.id,n));
+    total+=r.annualReserve;
+    if(r.statusKey==='overdue')overdueN++;else if(r.statusKey==='aging')agingN++;else if(r.statusKey==='unknown')missingN++;
+  });
+  return {total,overdueN,agingN,missingN};
+}
 let ASSUMPTIONS_TAB='capitalreserves';
 // Additional dropdown lists documented in Scope v0.7 that aren't wired to a live field yet
 // (unlike CAT/SVC_TYPES above, which already drive the ticket Service Category/Type
@@ -3253,57 +3299,108 @@ function moveSvcTypeEntry(name,dir){
 function propComponents(p){
   const names=Object.keys(LIFE_TABLE);
   const yearNow=new Date(today).getFullYear();
-  const ages=COMPONENT_AGES[p.id]||{};
-  let totalReserve=0,overdueN=0,agingN=0,missingN=0;
+  const summary=propertyReserveSummary(p);
   const rows=names.map(n=>{
-    const [life,cost]=LIFE_TABLE[n];
-    const reserve=life?cost/life:0;
-    totalReserve+=reserve;
-    const installYear=ages[n]||null;
-    let ageYears=null,remaining=null,statusHtml='<span class="faint">Unknown</span>';
-    if(installYear){
-      ageYears=yearNow-installYear;
-      remaining=life-ageYears;
-      if(remaining<=0){statusHtml='<span class="badge b-red"><span class="dot"></span>Overdue</span>';overdueN++;}
-      else if(remaining<=Math.max(2,Math.round(life*0.2))){statusHtml='<span class="badge b-progress"><span class="dot"></span>Plan ahead</span>';agingN++;}
-      else statusHtml='<span class="badge b-resolved"><span class="dot"></span>Healthy</span>';
-    } else missingN++;
+    const info=getComponentAge(p.id,n);
+    const r=componentReserveCalc(n,info);
+    const nameEsc=n.replace(/'/g,"\\'");
+    let statusHtml='<span class="faint">Unknown</span>';
+    if(r.statusKey==='overdue')statusHtml='<span class="badge b-red"><span class="dot"></span>Overdue</span>';
+    else if(r.statusKey==='aging')statusHtml='<span class="badge b-progress"><span class="dot"></span>Plan ahead</span>';
+    else if(r.statusKey==='healthy')statusHtml='<span class="badge b-resolved"><span class="dot"></span>Healthy</span>';
+    const remainingHtml=r.remaining==null?'<span class="faint">—</span>':(r.remaining>=0?`${r.remaining} yr`:`<span style="color:var(--red);font-weight:700">${r.overdueYears} yr overdue</span>`);
+    const costHtml=Math.round(r.inflatedCost)!==r.cost
+      ? `${money(Math.round(r.inflatedCost))}<div class="faint" style="font-size:10.5px">today: ${money(r.cost)}</div>`
+      : money(r.cost);
     return `<tr>
       <td class="b">${esc(n)}</td>
-      <td><input type="number" inputmode="numeric" min="1900" max="${yearNow}" value="${installYear||''}" placeholder="e.g. ${yearNow-Math.round(life/2)}" style="width:100px;font-size:13px" title="Install year — exact if known, or an estimate from the purchase inspection report" onchange="setComponentInstallYear('${p.id}','${n.replace(/'/g,"\\'")}',this.value)"></td>
-      <td class="mono">${ageYears!=null?ageYears+' yr':'<span class="faint">—</span>'}</td>
-      <td class="muted mono">${life} yr</td>
-      <td class="mono">${remaining!=null?Math.max(0,remaining)+' yr':'<span class="faint">—</span>'}</td>
+      <td>
+        <input type="number" inputmode="numeric" min="1900" max="${yearNow}" value="${info?info.year:''}" placeholder="e.g. ${yearNow-Math.round(r.life/2)}" style="width:100px;font-size:12.5px" title="Install year — exact if known, or an estimate from the purchase inspection report" onchange="setComponentAgeYear('${p.id}','${nameEsc}',this.value)">
+        ${info&&info.year?`<select style="width:100px;font-size:10.5px;margin-top:3px;color:var(--ink-500)" onchange="setComponentAgeSource('${p.id}','${nameEsc}',this.value)" title="Is this year from an actual record (invoice/receipt), or an estimate?"><option value="estimated"${!info.actual?' selected':''}>Estimated</option><option value="actual"${info.actual?' selected':''}>Actual</option></select>`:''}
+      </td>
+      <td class="mono">${r.ageYears!=null?r.ageYears+' yr':'<span class="faint">—</span>'}</td>
+      <td class="muted mono">${r.life} yr</td>
+      <td class="mono">${remainingHtml}</td>
       <td>${statusHtml}</td>
-      <td class="right mono">${money(cost)}</td>
-      <td class="right mono">${money(Math.round(reserve))}/yr</td>
+      <td class="right mono">${costHtml}</td>
+      <td class="right mono">${money(Math.round(r.annualReserve))}/yr</td>
     </tr>`;
   }).join('');
   return `<div class="card" style="margin-bottom:14px"><div class="body mrow" style="flex-wrap:wrap;gap:12px">
-    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em">Recommended annual reserve</div><div style="font-size:22px;font-weight:800">${money(Math.round(totalReserve))}/yr</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto">
-      ${overdueN?`<span class="badge b-red"><span class="dot"></span>${overdueN} overdue</span>`:''}
-      ${agingN?`<span class="badge b-progress"><span class="dot"></span>${agingN} plan ahead</span>`:''}
-      ${missingN?`<span class="pill">${missingN} missing install year</span>`:''}
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em">Recommended annual reserve</div><div style="font-size:22px;font-weight:800">${money(Math.round(summary.total))}/yr</div><div class="faint" style="font-size:11px;margin-top:2px">Includes ${ASSUMPTIONS.capitalReserveInflationPct}%/yr inflation for components with a known install year</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;align-items:flex-start">
+      ${summary.overdueN?`<span class="badge b-red"><span class="dot"></span>${summary.overdueN} overdue</span>`:''}
+      ${summary.agingN?`<span class="badge b-progress"><span class="dot"></span>${summary.agingN} plan ahead</span>`:''}
+      ${summary.missingN?`<span class="pill">${summary.missingN} missing install year</span>`:''}
     </div>
   </div></div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Component</th><th>Installed (yr)</th><th>Age</th><th>Expected life</th><th>Remaining</th><th>Status</th><th class="right">Replacement cost</th><th class="right">Annual reserve</th></tr></thead><tbody>${rows}</tbody></table></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = replacement cost ÷ expected life, per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions) — the total above doesn't need an install year to be useful. Add an install year (exact, or an estimate from the purchase inspection report) per component to see its age, remaining life, and a healthy / plan‑ahead / overdue flag specific to this property. Leave a component blank if the year is unknown.</div>`;
+  <div class="card" style="overflow-x:auto"><table style="min-width:760px"><thead><tr><th>Component</th><th>Installed</th><th>Age</th><th>Expected life</th><th>Remaining</th><th>Status</th><th class="right">Replacement cost</th><th class="right">Annual reserve</th></tr></thead><tbody>${rows}</tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = inflation-adjusted replacement cost ÷ expected life. Expected life &amp; today's replacement cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves — the total above doesn't need an install year to be useful, only the per-item flags and inflation-adjusted cost do. Add an install year (exact, or an estimate from the purchase inspection report) to see age, remaining life, and a healthy / plan‑ahead / overdue flag for this property — tag it Actual once you have a real record. Leave blank if unknown.</div>`;
 }
-function setComponentInstallYear(pid,name,val){
+function setComponentAgeYear(pid,name,val){
   const p=propById(pid);if(!p)return;
   const v=val.trim();
-  if(v===''){if(COMPONENT_AGES[pid])delete COMPONENT_AGES[pid][name];}
+  if(!COMPONENT_AGES[pid])COMPONENT_AGES[pid]={};
+  if(v===''){delete COMPONENT_AGES[pid][name];}
   else{
     const y=parseInt(v,10);
     const yearNow=new Date(today).getFullYear();
     if(isNaN(y)||y<1900||y>yearNow){toast('Enter a valid year (1900–'+yearNow+')');document.getElementById('propTabBody').innerHTML=propComponents(p);return;}
-    if(!COMPONENT_AGES[pid])COMPONENT_AGES[pid]={};
-    COMPONENT_AGES[pid][name]=y;
+    const existing=getComponentAge(pid,name);
+    COMPONENT_AGES[pid][name]={year:y,actual:existing?existing.actual:false};
   }
   saveState();
   const body=document.getElementById('propTabBody');
   if(body)body.innerHTML=propComponents(p);
+}
+function setComponentAgeSource(pid,name,val){
+  const p=propById(pid);if(!p)return;
+  const existing=getComponentAge(pid,name);
+  if(!existing||!existing.year)return;
+  if(!COMPONENT_AGES[pid])COMPONENT_AGES[pid]={};
+  COMPONENT_AGES[pid][name]={year:existing.year,actual:val==='actual'};
+  saveState();
+  const body=document.getElementById('propTabBody');
+  if(body)body.innerHTML=propComponents(p);
+}
+/* ===== Finance > Capital Reserves — portfolio rollup of the per-property Components math above.
+   Read-only list; all editing (install year, actual/estimated) still only happens on each
+   property's own Components tab, reached here by clicking a row. */
+function renderReserves(el){
+  const list=[...PROPS].sort((a,b)=>a.name.localeCompare(b.name));
+  let portfolioTotal=0,portfolioOverdue=0,portfolioAging=0,portfolioMissing=0;
+  const rows=list.map(p=>{
+    const s=propertyReserveSummary(p);
+    portfolioTotal+=s.total;portfolioOverdue+=s.overdueN;portfolioAging+=s.agingN;portfolioMissing+=s.missingN;
+    return {p,s};
+  });
+  el.innerHTML=`${pageHeader('reserves')}
+  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kpi"><div class="lab">Portfolio annual reserve</div><div class="val">${money(Math.round(portfolioTotal))}</div></div>
+    <div class="kpi ${portfolioOverdue?'red':'green'}"><div class="lab">Components overdue</div><div class="val">${portfolioOverdue}</div></div>
+    <div class="kpi ${portfolioAging?'amber':'green'}"><div class="lab">Plan ahead soon</div><div class="val">${portfolioAging}</div></div>
+    <div class="kpi"><div class="lab">Missing install year</div><div class="val">${portfolioMissing}</div></div>
+  </div>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="right">Annual reserve</th><th>Overdue</th><th>Plan ahead</th><th class="hide-below-md">Missing data</th></tr></thead><tbody>
+  ${rows.map(({p,s})=>`<tr class="clickable" onclick="openReservesProperty('${p.id}')">
+    <td class="b">${esc(p.name)}</td>
+    <td class="right mono">${money(Math.round(s.total))}/yr</td>
+    <td>${s.overdueN?`<span class="badge b-red"><span class="dot"></span>${s.overdueN}</span>`:'<span class="faint">—</span>'}</td>
+    <td>${s.agingN?`<span class="badge b-progress"><span class="dot"></span>${s.agingN}</span>`:'<span class="faint">—</span>'}</td>
+    <td class="hide-below-md">${s.missingN?`<span class="pill">${s.missingN}</span>`:'<span class="faint">—</span>'}</td>
+  </tr>`).join('')}
+  </tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Per-component detail — including which items are overdue and editable install years — lives on each property's Components tab. Click a row to jump there.</div>`;
+}
+function openReservesProperty(id){
+  navigate('properties');
+  setTimeout(()=>{
+    openProperty(id);
+    setTimeout(()=>{
+      const btn=[...document.querySelectorAll('.drawer .tab')].find(b=>b.textContent.trim()==='Components');
+      if(btn)propTab(btn,id,'Components');
+    },0);
+  },60);
 }
 function propTickets(tks){return tks.length?`<div class="card"><table><thead><tr><th>Description</th><th>Priority</th><th>Status</th><th class="right">Cost</th></tr></thead><tbody>${tks.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="right mono">${t.cost!=null?money(t.cost):'—'}</td></tr>`).join('')}</tbody></table></div>`:'<div class="card"><div class="body muted">No maintenance items for this property.</div></div>';}
 function propDocs(p){
