@@ -3006,28 +3006,34 @@ function getComponentAge(pid,name){
 /* Reserve math for one component: replacement cost is escalated by the Assumptions inflation
    rate out to the year it's expected to be replaced (install year + expected life); once a
    component is past that point, the same rate keeps compounding for however many years it's
-   now overdue instead, so the estimate keeps rising the longer replacement is put off. Annual
-   reserve is always inflated-cost ÷ full expected life (level across the item's life, not just
-   the remaining years), so the number doesn't jump around as age changes on its own — only
-   the status flag does. With no install year, nothing is inflated; it's just today's cost. */
+   now overdue instead, so the estimate keeps rising the longer replacement is put off.
+   Annual reserve = inflated cost ÷ years actually left before it's due (floored at 1once due/
+   overdue, so the divisor never balloons the other way). This is a catch-up figure, not a level
+   one: since a purchased property's components arrive at whatever age they're already at (not
+   day-one-of-life, unlike new construction), there's no assumption anything's been saved for
+   them yet, so a component with little runway left needs a much larger annual figure than one
+   that's brand new — the whole point being to size up fast for what's coming soon, not smooth
+   it out over a life that's mostly already elapsed. With no install year, nothing is inflated
+   or age-adjusted; it falls back to a plain straight-line today's-cost ÷ expected life. */
 function componentReserveCalc(name,ageInfo){
   const [life,cost]=LIFE_TABLE[name];
   const yearNow=new Date(today).getFullYear();
   const pct=(ASSUMPTIONS.capitalReserveInflationPct||0)/100;
-  let ageYears=null,remaining=null,overdueYears=0,statusKey='unknown',inflatedCost=cost;
+  let ageYears=null,remaining=null,overdueYears=0,statusKey='unknown',inflatedCost=cost,annualReserve=life?cost/life:0;
   if(ageInfo&&ageInfo.year){
     ageYears=yearNow-ageInfo.year;
     remaining=life-ageYears;
     if(remaining>=0){
       inflatedCost=cost*Math.pow(1+pct,remaining);
       statusKey=remaining<=Math.max(2,Math.round(life*0.2))?'aging':'healthy';
+      annualReserve=inflatedCost/Math.max(remaining,1);
     } else {
       overdueYears=-remaining;
       inflatedCost=cost*Math.pow(1+pct,overdueYears);
       statusKey='overdue';
+      annualReserve=inflatedCost;
     }
   }
-  const annualReserve=life?inflatedCost/life:0;
   return {life,cost,inflatedCost,annualReserve,ageYears,remaining,overdueYears,statusKey};
 }
 function propertyReserveSummary(p){
@@ -3099,8 +3105,8 @@ function capitalReservesSection(){
       <ol style="margin:8px 0 8px 18px;padding:0">
         <li style="margin-bottom:6px"><b>Expected replacement year</b> = install year + the expected life from the Life of Appliances table below.</li>
         <li style="margin-bottom:6px"><b>Inflation-adjusted cost</b> — today's replacement cost from the table below is escalated at the inflation rate above, compounded out to that expected replacement year. Once a component runs past its expected life without being replaced, the same rate keeps compounding for however many years it's now overdue instead — so the estimate keeps rising the longer replacement is delayed, rather than freezing at the original figure.</li>
-        <li style="margin-bottom:6px"><b>Annual reserve</b> = inflation-adjusted cost ÷ expected life. This is a level amount — the same figure every year across the component's whole life — rather than a schedule that changes as the component ages, so it stays stable and easy to plan against.</li>
-        <li>Without an install year, a component can't be inflation-adjusted or flagged Healthy/Plan ahead/Overdue — it just uses today's cost as-is, and shows as missing data on the property's Components tab and on Finance → Capital Reserves.</li>
+        <li style="margin-bottom:6px"><b>Annual reserve</b> = inflation-adjusted cost ÷ years actually remaining before it's due (not the full expected life). Properties are bought with components already at whatever age they're at, not brand new, so there's no assumption anything's been saved for them yet — a component with 20 years left needs a small, gentle figure; the same component with 1 year left needs to catch up fast, so its figure is much larger. Once a component is overdue, the figure is simply the full inflated replacement cost, since it could be needed at any time.</li>
+        <li>Without an install year, a component can't be inflation-adjusted, age-weighted, or flagged Healthy/Plan ahead/Overdue — it falls back to a plain today's-cost ÷ expected life estimate, and shows as missing data on the property's Components tab and on Finance → Capital Reserves.</li>
       </ol>
       This is a planning estimate, not a running account balance — it doesn't track actual dollars saved anywhere, so correcting a life or cost value below simply updates the recommendation going forward for every property; it doesn't try to reconcile against what would have been recommended before.
     </div>
@@ -3355,7 +3361,7 @@ function propComponents(p){
       <div class="k">User Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update notes…" onchange="updatePropField('${p.id}','userNotes',this.value)">${esc(p.userNotes||'')}</textarea></div>
     </div>
   </div></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = inflation-adjusted replacement cost ÷ expected life. Expected life &amp; today's replacement cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves — the total above doesn't need an install year to be useful, only the per-item flags and inflation-adjusted cost do. Add an install year (exact, or an estimate from the purchase inspection report) to see age, remaining life, and a healthy / plan‑ahead / overdue flag for this property — tag it Actual once you have a real record. Leave blank if unknown.</div>`;
+  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = inflation-adjusted replacement cost ÷ years remaining before it's due (full inflated cost once overdue) — this rises as a component gets closer to end of life, since a purchased property's components start at whatever age they're already at, with nothing assumed saved for them yet. Without an install year, it falls back to a plain today's-cost ÷ expected life estimate. Expected life &amp; today's replacement cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves. Add an install year (exact, or an estimate from the purchase inspection report) to see age, remaining life, and a healthy / plan‑ahead / overdue flag for this property — tag it Actual once you have a real record. Leave blank if unknown.</div>`;
 }
 function setComponentAgeYear(pid,name,val){
   const p=propById(pid);if(!p)return;
