@@ -192,7 +192,7 @@
      sits inside .row/.grid2/.grid-props is itself a flex/grid item of one of these, so it
      also needs min-width:0 or it will refuse to shrink and widen its container instead. */
   .row>*,.grid2>*,.grid-props>*{min-width:0}
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
   .kpi,.stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow)}
   .kpi .lab,.stat-tile .lab{font-size:11.5px;color:var(--ink-500);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
   .kpi .val,.stat-tile .val{font-size:var(--fs-2xl);font-weight:800;margin-top:4px;letter-spacing:-.02em}
@@ -2018,7 +2018,7 @@ async function confirmInvoiceMatches(){
 }
 function ageDays(t){return Math.max(0,Math.round((today-new Date(t.created))/864e5));}
 function spendFor(id){return TICKETS.filter(t=>t.prop===id&&t.cost).reduce((s,t)=>s+t.cost,0);}
-function computeHealth(){PROPS.forEach(p=>{if(p.status==='New Transaction')return;const ts=TICKETS.filter(t=>t.prop===p.id&&isOpen(t));p.health=ts.some(t=>t.urgency==='Emergency')?'red':(ts.length?'amber':'green');p.status=p.health==='red'?'At risk':'Active';});}
+function computeHealth(){PROPS.forEach(p=>{if(p.status==='New Transaction')return;const ts=TICKETS.filter(t=>t.prop===p.id&&isOpen(t));p.health=ts.some(t=>t.urgency==='Emergency')?'red':(ts.length?'amber':'green');p.status=p.health==='red'?'Emergency':'Active';});}
 
 const PURCHASE_CHECKLIST=["Flood Risk / County Confirmed","Non-contiguous Clearance","Offer Acceptance","HOA Docs Reviewed (if appl)","Deposit Received by Seller","Contingency — Inspection: Home/Property","Contingency — Inspection: Termite/Pest","Contingency — Other","Inspection Feedback Deadline — Buyer","Inspection Feedback Deadline — Seller","Other Contingency Deadline","Appraisal","Insurance Coverage","Utilities / Sewer Transferred","Financing / Loan Approval","Walkthrough","Close","Certificate of Occupancy / Use","Closing Documents Stored","Videos / Photos","Licensed","Stage","Comments","User Notes"];
 const RENTAL_CHECKLIST=["County Confirmed","Non-contiguous Clearance","Lease Negotiations / Mgmt Doc Review","Lease Execution","Deposit / Initial Rent Received by Landlord","Insurance Coverage","Portal Setup (if appl)","Rent Payment Setup (Finance)","Utilities / Sewer Transferred","Possession Taken (Keys)","Walkthrough / Condition Report","Certificate of Occupancy / Use","Documents Stored","Videos / Photos","Licensed","Stage","Comments","User Notes"];
@@ -2048,11 +2048,11 @@ function certBadge(c){if(c.status==='expired')return '<span class="badge b-red">
  * fail ("Not Compliance Ready") verdict; anything else can only produce the warn state.
  *
  * Labels are deliberately prefixed "Compliance" (Compliance Ready / Compliance At Risk /
- * Not Compliance Ready) rather than plain "Ready/At risk/Not ready", because Maintenance
- * Status already uses the bare word "At risk" for a ticket-driven signal — the two badges
- * can appear side by side on the Properties list, and unprefixed labels would look like the
- * same thing measured twice. See Assumptions -> Compliance Reminders for the full write-up
- * of what triggers each state.
+ * Not Compliance Ready) rather than plain "Ready/At risk/Not ready", so the two badges
+ * (this one and Maintenance Status, which can appear side by side on the Properties list)
+ * never read like the same thing measured twice — even now that Maintenance Status's red
+ * state reads "Emergency" rather than "At risk". See Assumptions -> Compliance Reminders
+ * for the full write-up of what triggers each state.
  */
 function criticalComplianceKeywords(){return (REF_LISTS.criticalComplianceKeywords&&REF_LISTS.criticalComplianceKeywords.values)||[];}
 function matchesCriticalKeyword(typeStr){
@@ -2476,13 +2476,14 @@ function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};retu
 
 /* ===== dashboard ===== */
 function renderDashboard(el){
-  const open=TICKETS.filter(isOpen);const emerg=open.filter(t=>t.urgency==='Emergency');const atrisk=PROPS.filter(p=>p.health==='red');
+  const open=TICKETS.filter(isOpen);const inProg=open.filter(t=>t.status==='In progress');const emerg=open.filter(t=>t.urgency==='Emergency');const atrisk=PROPS.filter(p=>p.health==='red');
   const exc=RECON.weekly.exceptions.length+RECON.monthly.exceptions.length;
   const spend=TICKETS.filter(t=>t.cost&&t.payment==='Paid'&&new Date(t.created)>=fyStart()).reduce((s,t)=>s+t.cost,0);
   const recent=[...TICKETS].sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,7);
   el.innerHTML=`${pageHeader('dashboard')}
   <div class="kpis">
     <div class="kpi"><div class="lab">Open items</div><div class="val">${open.length}</div><div class="sub">${TICKETS.length} total tracked</div></div>
+    <div class="kpi"><div class="lab">In progress</div><div class="val">${inProg.length}</div><div class="sub">being worked</div></div>
     <div class="kpi red"><div class="lab">Emergencies</div><div class="val">${emerg.length}</div><div class="sub">need action now</div></div>
     <div class="kpi ${atrisk.length?'red':'green'}"><div class="lab">Properties at risk</div><div class="val">${atrisk.length}</div><div class="sub">of ${PROPS.length} homes</div></div>
     <div class="kpi"><div class="lab">YTD Spend</div><div class="val">${money(spend)}</div><div class="sub">this fiscal year</div></div>
@@ -2768,7 +2769,7 @@ function renderProperties(el){
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" id="propsRefreshBtn" onclick="refreshPropertiesFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
     ${ROLE==='admin'?'<button class="btn sec sm" onclick="startOnboard()">+ New property</button>':''}</div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-sm">Type</th><th title="Driven by open maintenance tickets: Active, At risk (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th class="hide-below-md" title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="hide-below-md">Stage</th><th class="hide-below-sm">Open</th><th class="hide-below-lg">Total items</th><th class="hide-below-lg right">YTD Spend</th><th class="hide-below-lg" style="text-align:left;min-width:130px">Metro
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-sm">Type</th><th title="Driven by open maintenance tickets: Active, Emergency (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th class="hide-below-md" title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="hide-below-md">Stage</th><th class="hide-below-sm">Open</th><th class="hide-below-lg">Total items</th><th class="hide-below-lg right">YTD Spend</th><th class="hide-below-lg" style="text-align:left;min-width:130px">Metro
     <select onchange="setPF('metro',this.value)" style="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer;margin-top:4px" title="Filter by Metro"><option value="all"${PFILTER.metro==='all'?' selected':''}>All</option>${metroOpts.map(m=>`<option value="${esc(m)}"${PFILTER.metro===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
   </th></tr></thead><tbody>
   ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');return `<tr class="clickable" onclick="openProperty('${p.id}')">
