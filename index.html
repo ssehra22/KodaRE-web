@@ -1503,7 +1503,7 @@ function updateNote(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;cons
   if(t._backend==='supabase')dbUpdateTicket(id,{notes:val}).then(ok=>{if(!ok){t.notes=prev;refreshTickets();}});
   else saveState();
   toast('Note saved');}
-function paySelect(t){return `<select onchange="updatePayment('${t.id}',this.value)" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${t.payment==='Paid'?'var(--tone-ok-soft-bg)':t.payment==='Ready for Payment'?'var(--tone-warn-soft-bg)':t.payment==='Match Proposed'?'var(--tone-warn-soft-bg)':'var(--surface)'}"><option value=""${!t.payment?' selected':''}>—</option><option value="Match Proposed"${t.payment==='Match Proposed'?' selected':''}>⚠ Match Proposed</option><option value="Ready for Payment"${t.payment==='Ready for Payment'?' selected':''}>Ready for Payment</option><option value="Paid"${t.payment==='Paid'?' selected':''}>Paid</option></select>`;}
+function paySelect(t){return `<select onchange="updatePayment('${t.id}',this.value)" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${t.payment==='Paid'?'var(--tone-ok-soft-bg)':t.payment==='Ready for Payment'?'var(--tone-warn-soft-bg)':t.payment==='Match Proposed'?'var(--tone-warn-soft-bg)':'var(--surface)'}"><option value=""${!t.payment?' selected':''}>—</option>${REF_LISTS.paymentStatus.values.map(v=>`<option value="${v}"${t.payment===v?' selected':''}>${v==='Match Proposed'?'⚠ ':''}${v}</option>`).join('')}</select>`;}
 function refreshTickets(){computeHealth();if(VIEW==='tickets'&&MAINT_TAB==='items')renderTickets(document.getElementById('view'));}
 function renderTrash(el){
   if(ROLE!=='admin'){el.innerHTML=pageHeader('trash')+'<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view Trash.</div>';return;}
@@ -2114,7 +2114,7 @@ function dstr(v){return mdyy(v);}
 
 /* ===== property disposition (Scope §4.13/4.14) ===== */
 const DISPOSITION_CHECKLIST=["Offer Acceptance","Deposit Received by Seller","HOA Docs Sent (if appl)","Contingency — Inspection: Home/Property","Contingency — Inspection: Termite/Pest","Contingency — Other","Inspection Feedback Deadline — Buyer","Inspection Feedback Deadline — Seller","Other Contingency Deadline","Utilities / Sewer Transferred","Financing / Loan Payoff","Walkthrough","Close","Closing Documents Stored","Stage","Comments","User Notes"];
-const LICENSING_CHECKLIST=["Non-contiguous approval","Certificate of Occupancy / Use application and receipt","Home / operational setup","Self-inspection / DHS site inspection","Licensure (Certification Licensing System – CLS) application","Document submission to RA-odplicensing@pa.gov","ODP Licensing approval","Residential Approval Letter request to APC","Submission of APC form/docs (to Waiver Capacity Manager)","PROMISe enrollment completion","EFT enrollment (PROMISe)","Referral and matching","Submission of contracted/approved status in HCSIS","ISP update and authorization","Billing / authorization confirmed in PROMISe","Set up and link of PROMISe account (after approval)","Move-in of individual(s)","Comments","User Notes"];
+const LICENSING_CHECKLIST=["Non-contiguous approval","Certificate of Occupancy / Use application and receipt","Home / operational setup","Self-inspection / DHS site inspection","Licensure (Certification Licensing System – CLS) application","Document submission to RA-odplicensing@pa.gov","ODP Licensing approval","Residential Approval Letter request to APC","Submission of APC form/docs (to Waiver Capacity Manager)","PROMISe enrollment completion","EFT enrollment (PROMISe)","Referral and matching","Submission of contracted / approved status in HCSIS","ISP update and authorization","Billing / authorization confirmed in PROMISe","Set up and link of PROMISe account (after approval)","Move-in of individual(s)","Comments","User Notes"];
 
 /* ===== document upload & auto-populate (Scope §4.1 Property Documents / §4.10 invoice routing) ===== */
 const DOC_TYPES=['Deed','Lease','Insurance','Certificate of Occupancy','Inspection Report','Loan Documents','Photos / Videos','Other'];
@@ -2576,7 +2576,7 @@ function renderTickets(el){
       </div>
     </th>
     ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))],'hide-below-lg')}
-    ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},{v:'Match Proposed',l:'Match Proposed'},{v:'Ready for Payment',l:'Ready for Payment'},{v:'Paid',l:'Paid'}],'hide-below-md')}
+    ${thSel('payment','Payment',[{v:'__blank__',l:'— none —'},...REF_LISTS.paymentStatus.values.map(v=>({v:v,l:v}))],'hide-below-md')}
     <th class="hide-below-lg" style="text-align:left;min-width:280px;vertical-align:top">
       ${thTitle(`<span>Comments</span>${clearX('notesQuery','Comments')}`)}
       <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by comments text" style="${fSel};width:100%;text-transform:none;font-weight:400">
@@ -3063,7 +3063,7 @@ const REF_LISTS={
   leaseType:{label:'Lease Type',scope:'§4.16 Leased Property Records',values:['ResHab','Corp']},
   ticketStatus:{label:'Maintenance Ticket Status',scope:'§4.7 Maintenance Items',note:'Live ticket Status today uses "In progress" (lower-case p) rather than "In Progress".',values:['Open','In Progress','Completed','Closed']},
   priority:{label:'Priority',scope:'§4.7 Maintenance Items',note:'Live ticket Priority today uses shorter labels: Low, Urgent, Emergency.',values:['Low-Not Priority','Medium-Urgent','High-Emergency']},
-  paymentStatus:{label:'Payment Status',scope:'§4.7 Maintenance Items',note:'Doc lists "blank" as a valid state alongside the two named ones below, meaning no payment status has been recorded yet.',values:['(blank / not set)','Ready for Payment','Paid']},
+  paymentStatus:{label:'Payment Status',scope:'§4.7 Maintenance Items',live:true,note:'Drives the Payment Status dropdown on Maintenance tickets (ticket drawer/row select, column filter, and Bulk add tickets). "Match Proposed" is also set automatically when an invoice is attached to a ticket, not just chosen manually here. Blank/not-set is always available as the default "—" option and isn\'t itself a value in this list.',values:['Match Proposed','Ready for Payment','Paid']},
   workQuality:{label:'Vendor Work Quality',scope:'§4.9 Vendor Directory',live:true,note:'Doc lists the top value as "Excel" — transcribed here as "Excellent," matching the parallel condition-rating language elsewhere in the doc. Drives the Work Quality dropdown on the Vendor Directory drill-down.',values:['Excellent','Good','Fair','Poor']},
   vendorPrimarySecondary:{label:'Vendor Primary/Secondary',scope:'§4.9 Vendor Directory',live:true,note:'Drives the Primary/Secondary dropdown on the Vendor Directory drill-down. Doc also lists "Blank" as a valid state, meaning none selected.',values:['Primary','Secondary','Inactive']},
   conditionRating:{label:'Component Condition Rating',scope:'§4.8 Capital Reserves',values:['Excellent','Good','Fair','Poor','Failing']},
@@ -3216,7 +3216,7 @@ function referenceListsSection(){
   <div class="muted" style="font-size:12.5px;margin:6px 0 14px;line-height:1.5">These drive real dropdowns on each property's Acquisition/Disposition checklist tab and the Vendor Directory drill-down (§4.9) — edits here change what's selectable there immediately.</div>
   ${Object.keys(REF_LISTS).filter(k=>REF_LISTS[k].live).map(refListCard).join('')}
   <div class="sectitle" style="margin-top:22px">Other picklists — Scope v0.7 (not yet wired)</div>
-  <div class="muted" style="font-size:12.5px;margin:6px 0 14px;line-height:1.5">The rest of the dropdown lists called out in the ResHab Property Management Platform Scope v0.7 requirements doc, for fields not yet built in this prototype (ticket Priority/Status/Payment Status wording, Component Condition Rating). Values are transcribed straight from the doc so they're ready to wire up when each field gets built — edit freely in the meantime.</div>
+  <div class="muted" style="font-size:12.5px;margin:6px 0 14px;line-height:1.5">The rest of the dropdown lists called out in the ResHab Property Management Platform Scope v0.7 requirements doc, for fields not yet built in this prototype (ticket Priority/Status wording, Component Condition Rating). Values are transcribed straight from the doc so they're ready to wire up when each field gets built — edit freely in the meantime.</div>
   ${Object.keys(REF_LISTS).filter(k=>!REF_LISTS[k].live).map(refListCard).join('')}`;
 }
 function refListCard(key){
@@ -4416,9 +4416,7 @@ function openAddTicket(){
     <div class="field" style="margin-top:10px"><label class="f">Payment status</label>
       <select id="nt_payment" style="width:100%">
         <option value="">— none yet —</option>
-        <option value="Match Proposed">Match Proposed</option>
-        <option value="Ready for Payment">Ready for Payment</option>
-        <option value="Paid">Paid</option>
+        ${REF_LISTS.paymentStatus.values.map(v=>`<option value="${v}">${v}</option>`).join('')}
       </select>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Reporter</label>
@@ -4567,7 +4565,7 @@ async function processBulkTicketRows(rows){
   const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
   const STATUS_OPTS=['Open','In progress','Completed','Closed'];
   const URGENCY_OPTS=['Low','Urgent','Emergency'];
-  const PAYMENT_OPTS=['Match Proposed','Ready for Payment','Paid'];
+  const PAYMENT_OPTS=REF_LISTS.paymentStatus.values;
   const parsed=[],skipped=[];
   rows.forEach((row,i)=>{
     const f={};
