@@ -5056,25 +5056,36 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
   // Order-preserving merges: Reference Lists items can now be reordered (see move* functions), so a saved
   // snapshot's key/array order must win for anything already in it — only append hardcoded defaults the
   // saved snapshot predates, at the end, rather than always following hardcoded order.
-  if(s.CAT){
-    DEPRECATED_CAT.forEach(k=>delete s.CAT[k]);
-    const merged={};Object.keys(s.CAT).forEach(k=>{merged[k]=s.CAT[k];});
-    Object.keys(CAT).forEach(k=>{if(!(k in merged))merged[k]=CAT[k];});
-    Object.keys(CAT).forEach(k=>delete CAT[k]);
-    Object.keys(merged).forEach(k=>{CAT[k]=merged[k];});
-  }
-  if(Array.isArray(s.SVC_TYPES)){
-    const merged=s.SVC_TYPES.filter(v=>!DEPRECATED_SVC_TYPES.includes(v));
-    SVC_TYPES.forEach(v=>{if(!merged.includes(v))merged.push(v);});
-    SVC_TYPES.length=0;merged.forEach(v=>SVC_TYPES.push(v));
-  }
-  if(s.REF_LISTS)Object.keys(s.REF_LISTS).forEach(k=>{
-    if(REF_LISTS[k]&&Array.isArray(s.REF_LISTS[k].values)){
-      const merged=s.REF_LISTS[k].values.slice();
-      REF_LISTS[k].values.forEach(v=>{if(!merged.includes(v))merged.push(v);});
-      REF_LISTS[k].values=merged;
+  // CAT/SVC_TYPES/REF_LISTS are skipped entirely once live (SUPA_CONFIGURED) — same reasoning
+  // as TICKETS above. loadRealReferenceLists() already loads and merges these from Supabase,
+  // which is the real source of truth once connected. Merging this browser's possibly-stale
+  // localStorage snapshot on top of that (additive-only — it can add a value back but never
+  // remove one) was silently undoing intentional removals in Reference Lists: delete a value
+  // in the UI, it saves correctly to Supabase, but the next page load re-merged the old value
+  // back in from whatever this browser had cached from before the removal, making the delete
+  // look like it "didn't stick." Demo/offline mode (no Supabase) still needs this merge, since
+  // there's no server copy to load instead.
+  if(!SUPA_CONFIGURED){
+    if(s.CAT){
+      DEPRECATED_CAT.forEach(k=>delete s.CAT[k]);
+      const merged={};Object.keys(s.CAT).forEach(k=>{merged[k]=s.CAT[k];});
+      Object.keys(CAT).forEach(k=>{if(!(k in merged))merged[k]=CAT[k];});
+      Object.keys(CAT).forEach(k=>delete CAT[k]);
+      Object.keys(merged).forEach(k=>{CAT[k]=merged[k];});
     }
-  });
+    if(Array.isArray(s.SVC_TYPES)){
+      const merged=s.SVC_TYPES.filter(v=>!DEPRECATED_SVC_TYPES.includes(v));
+      SVC_TYPES.forEach(v=>{if(!merged.includes(v))merged.push(v);});
+      SVC_TYPES.length=0;merged.forEach(v=>SVC_TYPES.push(v));
+    }
+    if(s.REF_LISTS)Object.keys(s.REF_LISTS).forEach(k=>{
+      if(REF_LISTS[k]&&Array.isArray(s.REF_LISTS[k].values)){
+        const merged=s.REF_LISTS[k].values.slice();
+        REF_LISTS[k].values.forEach(v=>{if(!merged.includes(v))merged.push(v);});
+        REF_LISTS[k].values=merged;
+      }
+    });
+  }
   return true;}catch(e){return false;}}
 function resetDemo(){
   // Defense in depth — the button that calls this is disabled until the typed-RESET check in
