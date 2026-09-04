@@ -2616,14 +2616,14 @@ function renderTickets(el){
       <button class="btn sec sm" onclick="toggleDropMenu('addMenu_bulk',event)">📋 Bulk add tickets ▾</button>
       <div class="dropmenu hidden" id="addMenu_bulk">
         <button onclick="closeDropMenus();openBulkGrid('tickets')">🎫 Maintenance tickets</button>
-        ${ROLE==='admin'?`<button onclick="closeDropMenus();openBulkGrid('finance')" title="Paste-grid matching the Finance transaction report's own columns -- translates via Assumptions &gt; Finance File Mapping on import">🧾 Finance entries</button>`:''}
+        ${ROLE==='admin'?`<button onclick="closeDropMenus();openBulkGrid('finance')" title="Paste-grid matching the Finance transaction report's own columns -- translates via Assumptions &gt; Finance Entry Mapping on import">🧾 Finance entries</button>`:''}
       </div>
     </div>
     <div class="dropwrap">
       <button class="btn sec sm" onclick="toggleDropMenu('addMenu_upload',event)">⬆ Upload spreadsheet ▾</button>
       <div class="dropmenu hidden" id="addMenu_upload">
         <button onclick="closeDropMenus();document.getElementById('bulkTicketFile').click()">🎫 Maintenance tickets</button>
-        ${ROLE==='admin'?`<button onclick="closeDropMenus();document.getElementById('financeImportFile').click()" title="Translates via Assumptions &gt; Finance File Mapping and creates one Closed/Paid ticket per transaction">🧾 Finance entries</button>`:''}
+        ${ROLE==='admin'?`<button onclick="closeDropMenus();document.getElementById('financeImportFile').click()" title="Translates via Assumptions &gt; Finance Entry Mapping and creates one Closed/Paid ticket per transaction">🧾 Finance entries</button>`:''}
       </div>
     </div>
     <input type="file" id="bulkTicketFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkUploadFile(this)">
@@ -3184,12 +3184,12 @@ const REF_LISTS={
 // i.e. the CAT object above. Same for Service Type: Vendor Directory's Service Type (Default) shares SVC_TYPES.
 // Translates an outside accounting/finance system's own vocabulary (property account codes,
 // vendor names, payment account names) into KodaRE's own -- see Maintenance > Import finance
-// file. Admin-editable in Assumptions > Finance File Mapping; persisted the same way as
+// file. Admin-editable in Assumptions > Finance Entry Mapping; persisted the same way as
 // REF_LISTS (reference_lists table when live, localStorage when in demo mode). Starts empty --
 // unlike REF_LISTS there are no sensible hardcoded defaults, since every one of these values
 // is specific to Sonia's own chart of accounts and vendor list.
 const FINANCE_MAP={propCodes:[],vendorNames:[],ccAccounts:[]};
-const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Reserves'},{id:'valuation',ic:'📈',label:'Valuation'},{id:'complianceReminders',ic:'📜',label:'Compliance Reminders'},{id:'reportsAccess',ic:'📊',label:'Reports Access'},{id:'sessionTimeouts',ic:'⏱️',label:'Session Timeouts'},{id:'referenceLists',ic:'📋',label:'Reference Lists'},{id:'financeMapping',ic:'🧾',label:'Finance File Mapping'}];
+const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Reserves'},{id:'valuation',ic:'📈',label:'Valuation'},{id:'complianceReminders',ic:'📜',label:'Compliance Reminders'},{id:'reportsAccess',ic:'📊',label:'Reports Access'},{id:'sessionTimeouts',ic:'⏱️',label:'Session Timeouts'},{id:'referenceLists',ic:'📋',label:'Reference Lists'},{id:'financeMapping',ic:'🧾',label:'Finance Entry Mapping'}];
 // Shared scalar assumptions (as opposed to LIFE_TABLE, which is per-component). Only
 // complianceExpiringDays actually drives live prototype behavior right now (certBadge()
 // and the Compliance dashboard both read it) — valuationVariancePct and
@@ -3432,7 +3432,7 @@ function moveSvcTypeEntry(name,dir){
   if(SUPA_CONFIGURED)dbUpsertReferenceList('SVC_TYPES',SVC_TYPES);else saveState();
   renderAssumptions(document.getElementById('view'));
 }
-// ===== Finance File Mapping (Assumptions) =====
+// ===== Finance Entry Mapping (Assumptions) =====
 // Three small translation tables so Maintenance > Import finance file can turn an outside
 // accounting system's own vocabulary into KodaRE's. Add a row here the first time a new
 // property code, vendor name, or payment account shows up in the finance file that isn't
@@ -4942,7 +4942,7 @@ async function processFinanceImportRows(rows){
     if(f.amount!=null&&String(f.amount).trim()!==''){const n=Number(String(f.amount).replace(/[^0-9.\-]/g,''));if(!isNaN(n))amount=n;}
     if(!name&&amount==null){skipped.push('Row '+rowNum+': no Name or Amount -- not a real transaction, skipped');return;}
     const codeMap=FINANCE_MAP.propCodes.find(m=>m.code.trim().toLowerCase()===code.toLowerCase());
-    if(!codeMap){skipped.push('Row '+rowNum+': Code "'+code+'" has no Property mapping -- add it in Assumptions > Finance File Mapping, then re-import');return;}
+    if(!codeMap){skipped.push('Row '+rowNum+': Code "'+code+'" has no Property mapping -- add it in Assumptions > Finance Entry Mapping, then re-import');return;}
     const prop=plist.find(p=>p.id===codeMap.propId);
     if(!prop){skipped.push('Row '+rowNum+': mapped property no longer exists');return;}
     const vendMap=FINANCE_MAP.vendorNames.find(m=>m.financeName.trim().toLowerCase()===name.toLowerCase());
@@ -5464,7 +5464,7 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
       }
     });
     // FINANCE_MAP has no hardcoded defaults to merge against (unlike REF_LISTS) -- everything
-    // in it is something Sonia typed in via Assumptions > Finance File Mapping, so a saved
+    // in it is something Sonia typed in via Assumptions > Finance Entry Mapping, so a saved
     // snapshot is simply restored as-is rather than additively merged.
     if(s.FINANCE_MAP){
       if(Array.isArray(s.FINANCE_MAP.propCodes))FINANCE_MAP.propCodes=s.FINANCE_MAP.propCodes;
