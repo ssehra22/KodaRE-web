@@ -133,6 +133,14 @@
   .tb-usermenu button{width:100%;text-align:left;background:transparent;border:0;padding:11px 14px;font-size:13px;font-weight:600;color:var(--ink-900);cursor:pointer}
   .tb-usermenu button:hover{background:var(--surface-sunken)}
   @media(min-width:768px){ .tb-user-text{display:block} }
+  /* Small reusable click-to-open menu -- used to consolidate Maintenance's "add tickets"
+     buttons (Bulk add tickets / Upload spreadsheet), each of which now offers a choice of
+     Maintenance tickets vs. Finance entries, instead of a growing row of separate buttons. */
+  .dropwrap{position:relative;display:inline-block}
+  .dropmenu{position:absolute;top:calc(100% + 6px);left:0;background:var(--surface);border:1px solid var(--border);
+    border-radius:10px;box-shadow:var(--shadow);min-width:210px;z-index:80;overflow:hidden}
+  .dropmenu button{width:100%;text-align:left;background:transparent;border:0;padding:10px 14px;font-size:13px;font-weight:600;color:var(--ink-900);cursor:pointer;display:flex;align-items:center;gap:8px}
+  .dropmenu button:hover{background:var(--surface-sunken)}
 
   /* ---- desktop app shell — dark sidebar, light content area ---- */
   #desktop{display:grid;grid-template-columns:188px 1fr;min-height:calc(100vh - 56px)}
@@ -2389,6 +2397,9 @@ function toggleNavDrawer(){const open=document.getElementById('sideNav').classLi
 /* Top-bar account menu — sign-out lives here instead of its own always-visible button. */
 function toggleUserMenu(e){if(e)e.stopPropagation();const m=document.getElementById('userMenu');if(m)m.classList.toggle('hidden');}
 function closeUserMenu(){const m=document.getElementById('userMenu');if(m)m.classList.add('hidden');}
+function toggleDropMenu(id,e){if(e)e.stopPropagation();document.querySelectorAll('.dropmenu').forEach(m=>{if(m.id!==id)m.classList.add('hidden');});const m=document.getElementById(id);if(m)m.classList.toggle('hidden');}
+function closeDropMenus(){document.querySelectorAll('.dropmenu').forEach(m=>m.classList.add('hidden'));}
+document.addEventListener('click',e=>{if(!e.target.closest('.dropwrap'))closeDropMenus();});
 document.addEventListener('click',e=>{if(!e.target.closest('#liveRoleBadge'))closeUserMenu();});
 function closeNavDrawer(){document.getElementById('sideNav').classList.remove('open');document.getElementById('navScrim').classList.remove('open');document.getElementById('navMenuBtn').setAttribute('aria-expanded','false');}
 function navBtnHtml(n){return `<button class="nav ${n.id===VIEW?'active':''}" onclick="navigate('${n.id}')"><span class="ic">${n.ic}</span>${n.label}${n.count?`<span class="ct">${n.count()}</span>`:''}</button>`;}
@@ -2600,11 +2611,22 @@ function renderTickets(el){
     <span class="faint" style="font-size:11.5px;margin-left:4px">— filter to your area first; different Metros are used by different regional teams</span>
   </div>`;
   el.innerHTML=pageHeader('tickets')+MT+metroBar+`
-  <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Report an issue</button>
-    <button class="btn sec sm" onclick="openBulkGrid()">📋 Bulk add tickets</button>
-    <button class="btn sec sm" onclick="document.getElementById('bulkTicketFile').click()">⬆ Upload spreadsheet</button>
+  <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Submit ticket</button>
+    <div class="dropwrap">
+      <button class="btn sec sm" onclick="toggleDropMenu('addMenu_bulk',event)">📋 Bulk add tickets ▾</button>
+      <div class="dropmenu hidden" id="addMenu_bulk">
+        <button onclick="closeDropMenus();openBulkGrid('tickets')">🎫 Maintenance tickets</button>
+        ${ROLE==='admin'?`<button onclick="closeDropMenus();openBulkGrid('finance')" title="Paste-grid matching the Finance transaction report's own columns -- translates via Assumptions &gt; Finance File Mapping on import">🧾 Finance entries</button>`:''}
+      </div>
+    </div>
+    <div class="dropwrap">
+      <button class="btn sec sm" onclick="toggleDropMenu('addMenu_upload',event)">⬆ Upload spreadsheet ▾</button>
+      <div class="dropmenu hidden" id="addMenu_upload">
+        <button onclick="closeDropMenus();document.getElementById('bulkTicketFile').click()">🎫 Maintenance tickets</button>
+        ${ROLE==='admin'?`<button onclick="closeDropMenus();document.getElementById('financeImportFile').click()" title="Translates via Assumptions &gt; Finance File Mapping and creates one Closed/Paid ticket per transaction">🧾 Finance entries</button>`:''}
+      </div>
+    </div>
     <input type="file" id="bulkTicketFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkUploadFile(this)">
-    ${ROLE==='admin'?`<button class="btn sec sm" onclick="document.getElementById('financeImportFile').click()" title="Import a Finance transaction report -- translates it via Assumptions &gt; Finance File Mapping and creates one Closed/Paid ticket per transaction">🧾 Import finance file</button>`:''}
     <input type="file" id="financeImportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFinanceImportFile(this)">
     ${ROLE!=='caregiver'&&SUPA_CONFIGURED?`<button class="btn sec sm" onclick="openInvoiceUploadModal()">🤖 Upload vendor invoice</button>`:''}
     <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
@@ -3423,7 +3445,7 @@ function financeMappingSection(){
     return `<tr><td class="mono" style="font-size:11.5px">${esc(m.code)}</td><td class="b">${p?esc(p.name):'<span class="faint">— property not found —</span>'}</td><td><button class="btn sec sm" onclick="removeFinanceMap('propCodes',${i})">Remove</button></td></tr>`;
   }).join('');
   const vendRows=FINANCE_MAP.vendorNames.map((m,i)=>`<tr><td class="mono" style="font-size:11.5px">${esc(m.financeName)}</td><td class="b">${esc(m.vendor)}</td><td><button class="btn sec sm" onclick="removeFinanceMap('vendorNames',${i})">Remove</button></td></tr>`).join('');
-  const acctRows=FINANCE_MAP.ccAccounts.map((m,i)=>`<tr><td class="mono" style="font-size:11.5px">${esc(m.account)}</td><td>${m.cc?'✅ Credit card':'—'}</td><td><button class="btn sec sm" onclick="removeFinanceMap('ccAccounts',${i})">Remove</button></td></tr>`).join('');
+  const acctRows=FINANCE_MAP.ccAccounts.map((m,i)=>`<tr><td class="mono" style="font-size:11.5px">${esc(m.account)}</td><td>${m.cc?'✅ Credit card':'—'}</td><td>${m.desc?esc(m.desc):'<span class="faint">— uses Finance file\'s own description —</span>'}</td><td><button class="btn sec sm" onclick="removeFinanceMap('ccAccounts',${i})">Remove</button></td></tr>`).join('');
   return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">Translates your accounting system's Finance transaction report into KodaRE's own wording, so Maintenance &gt; Import finance file knows what each row means. Edit freely — Senior Admin only; changes apply to every import from now on, not to tickets already imported.</div>
   <div class="card" style="margin-bottom:12px"><h3>🏠 Property code → Property</h3><div class="body">
   <div class="muted" style="font-size:12px;margin-bottom:10px">The exact "Code" column text from the Finance file (e.g. "661.39 Repairs &amp; Mte - Winston Dr"), mapped to the matching KodaRE property. A code with no mapping here is skipped on import, not guessed.</div>
@@ -3443,12 +3465,13 @@ function financeMappingSection(){
     <button class="btn sm" onclick="addFinanceVendorMap()">+ Add</button>
   </div>
   </div></div>
-  <div class="card" style="margin-bottom:12px"><h3>💳 Payment account → Credit card</h3><div class="body">
-  <div class="muted" style="font-size:12px;margin-bottom:10px">The "Item split account" column text from the Finance file (e.g. "224 Ramp Credit Card"). A mapped-and-checked account gets the ticket's CC box checked on import; an unmapped account, or one mapped without the box checked, leaves it unchecked.</div>
-  <table><thead><tr><th>Finance account</th><th>Credit card?</th><th></th></tr></thead><tbody>${acctRows||'<tr><td colspan="3" class="muted">No mappings yet.</td></tr>'}</tbody></table>
+  <div class="card" style="margin-bottom:12px"><h3>💳 Payment account → Credit card &amp; Description</h3><div class="body">
+  <div class="muted" style="font-size:12px;margin-bottom:10px">The "Item split account" column text from the Finance file (e.g. "224 Ramp Credit Card"). A mapped-and-checked account gets the ticket's CC box checked on import; an unmapped account, or one mapped without the box checked, leaves it unchecked. Add a Description here too if you want every transaction on that account to get a standard ticket description (e.g. "Credit Card - Ramp") instead of whatever the Finance file happens to say — leave it blank to keep using the Finance file's own description.</div>
+  <table><thead><tr><th>Finance account</th><th>Credit card?</th><th>Description override</th><th></th></tr></thead><tbody>${acctRows||'<tr><td colspan="4" class="muted">No mappings yet.</td></tr>'}</tbody></table>
   <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
     <input type="text" id="fm_acct_name" placeholder="Item split account (paste exactly)" style="flex:1;min-width:220px;font-size:13px">
     <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="fm_acct_cc"> Credit card</label>
+    <input type="text" id="fm_acct_desc" placeholder="Description override (optional)" style="flex:1;min-width:200px;font-size:13px">
     <button class="btn sm" onclick="addFinanceAcctMap()">+ Add</button>
   </div>
   </div></div>`;
@@ -3481,11 +3504,13 @@ function addFinanceVendorMap(){
 function addFinanceAcctMap(){
   const account=(document.getElementById('fm_acct_name').value||'').trim();
   const cc=document.getElementById('fm_acct_cc').checked;
+  const desc=(document.getElementById('fm_acct_desc').value||'').trim();
   if(!account){toast('Enter an account name');return;}
   if(FINANCE_MAP.ccAccounts.some(m=>m.account.toLowerCase()===account.toLowerCase())){toast('That account is already mapped');return;}
-  FINANCE_MAP.ccAccounts.push({account,cc});
+  FINANCE_MAP.ccAccounts.push({account,cc,desc});
   saveFinanceMap('ccAccounts');
   document.getElementById('fm_acct_name').value='';
+  document.getElementById('fm_acct_desc').value='';
   toast('Mapping added');renderAssumptions(document.getElementById('view'));
 }
 function removeFinanceMap(kind,idx){
@@ -4685,18 +4710,33 @@ async function submitNewTicket(){
   refreshTickets();
 }
 
-/* ===== bulk ticket entry: in-app paste grid ===== */
+/* ===== bulk entry: in-app paste grid (Maintenance tickets, and Finance entries) =====
+   One shared grid component, parameterized by "kind" -- BULK_KIND_CONFIG holds each kind's
+   column headers, modal title, and which processor turns the pasted rows into tickets.
+   Finance entries reuses processFinanceImportRows() unchanged: it already accepts rows as
+   plain {header: value} objects (the same shape the grid produces) regardless of whether
+   they came from a pasted grid or an uploaded file, since it maps headers through
+   FINANCE_UPLOAD_FIELD_MAP either way. */
 const BULK_TICKET_HEADERS=['Property','Status','Created','Description','Priority','Service Category','Service Type','Vendor','Cost','Invoice','Payment','Reporter','Comments'];
+const FINANCE_ENTRY_HEADERS=['Code','Transaction date','Transaction type','Num','Name','Description','Account Name','Item split account','Amount','Balance'];
+const BULK_KIND_CONFIG={
+  tickets:{headers:BULK_TICKET_HEADERS,title:'Bulk add tickets',process:rows=>processBulkTicketRows(rows)},
+  finance:{headers:FINANCE_ENTRY_HEADERS,title:'Bulk add finance entries',process:rows=>processFinanceImportRows(rows)}
+};
 let BULK_GRID=[];
-function openBulkGrid(){
-  BULK_GRID=Array.from({length:20},()=>BULK_TICKET_HEADERS.map(()=>''));
+let BULK_GRID_KIND='tickets';
+function openBulkGrid(kind){
+  BULK_GRID_KIND=(kind&&BULK_KIND_CONFIG[kind])?kind:'tickets';
+  const headers=BULK_KIND_CONFIG[BULK_GRID_KIND].headers;
+  BULK_GRID=Array.from({length:20},()=>headers.map(()=>''));
   document.getElementById('drawerRoot').innerHTML=bulkGridMarkup();
 }
 function bulkGridMarkup(){
+  const cfg=BULK_KIND_CONFIG[BULK_GRID_KIND];
   return `<div class="scrim" style="justify-content:center;align-items:center" onclick="if(event.target===this)closeDrawer()">
     <div style="background:var(--bg);width:96vw;max-width:1500px;height:92vh;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)">
       <div style="padding:16px 20px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px">
-        <div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:19px;font-weight:800">Bulk add tickets</div>
+        <div style="flex:1"><div class="faint" style="font-size:12px">Maintenance</div><div style="font-size:19px;font-weight:800">${cfg.title}</div>
         <div class="muted" style="font-size:12.5px;margin-top:4px">Type directly into cells, or copy a range from Excel or Google Sheets and paste anywhere in the grid — it fills starting from the cell you paste into.</div></div>
         <button class="x" onclick="closeDrawer()">✕</button>
       </div>
@@ -4710,40 +4750,44 @@ function bulkGridMarkup(){
   </div>`;
 }
 function bulkGridTable(){
+  const headers=BULK_KIND_CONFIG[BULK_GRID_KIND].headers;
   return `<table style="border-collapse:collapse;min-width:1550px">
-    <thead><tr>${BULK_TICKET_HEADERS.map(h=>`<th style="position:sticky;top:0;background:var(--panel2);border:1px solid var(--line);padding:6px 8px;font-size:11.5px;text-align:left;white-space:nowrap;z-index:1">${h}</th>`).join('')}</tr></thead>
+    <thead><tr>${headers.map(h=>`<th style="position:sticky;top:0;background:var(--panel2);border:1px solid var(--line);padding:6px 8px;font-size:11.5px;text-align:left;white-space:nowrap;z-index:1">${h}</th>`).join('')}</tr></thead>
     <tbody>${BULK_GRID.map((row,r)=>`<tr>${row.map((val,c)=>`<td style="border:1px solid var(--line);padding:0"><input value="${esc(val)}" oninput="setBulkCell(${r},${c},this.value)" onpaste="bulkGridPaste(event,${r},${c})" style="width:130px;border:0;padding:6px 8px;font-size:12.5px;background:transparent"></td>`).join('')}</tr>`).join('')}</tbody>
   </table>`;
 }
 function setBulkCell(r,c,val){if(BULK_GRID[r])BULK_GRID[r][c]=val;}
 function bulkGridPaste(event,r,c){
+  const headers=BULK_KIND_CONFIG[BULK_GRID_KIND].headers;
   const text=(event.clipboardData||window.clipboardData).getData('text');
   if(!text||(!text.includes('\t')&&!text.includes('\n')))return; // single-cell paste: let the browser handle it natively
   event.preventDefault();
   const lines=text.replace(/\r/g,'').split('\n').filter((l,i,arr)=>!(i===arr.length-1&&l===''));
   lines.forEach((line,ri)=>{
-    while(!BULK_GRID[r+ri])BULK_GRID.push(BULK_TICKET_HEADERS.map(()=>''));
+    while(!BULK_GRID[r+ri])BULK_GRID.push(headers.map(()=>''));
     const cells=line.split('\t');
     cells.forEach((cell,ci)=>{
       const col=c+ci;
-      if(col<BULK_TICKET_HEADERS.length)BULK_GRID[r+ri][col]=cell.trim();
+      if(col<headers.length)BULK_GRID[r+ri][col]=cell.trim();
     });
   });
   document.getElementById('bulkGridWrap').innerHTML=bulkGridTable();
 }
 function addBulkGridRows(n){
-  for(let i=0;i<n;i++)BULK_GRID.push(BULK_TICKET_HEADERS.map(()=>''));
+  const headers=BULK_KIND_CONFIG[BULK_GRID_KIND].headers;
+  for(let i=0;i<n;i++)BULK_GRID.push(headers.map(()=>''));
   document.getElementById('bulkGridWrap').innerHTML=bulkGridTable();
 }
 function importBulkGrid(){
+  const headers=BULK_KIND_CONFIG[BULK_GRID_KIND].headers;
   const rows=BULK_GRID.map(row=>{
     const obj={};
-    BULK_TICKET_HEADERS.forEach((h,i)=>{obj[h]=row[i];});
+    headers.forEach((h,i)=>{obj[h]=row[i];});
     return obj;
   }).filter(obj=>Object.values(obj).some(v=>String(v||'').trim()!==''));
   if(!rows.length){const m=document.getElementById('bulkGridMsg');if(m)m.textContent='Nothing to import yet — fill in at least one row.';return;}
   closeDrawer();
-  processBulkTicketRows(rows);
+  BULK_KIND_CONFIG[BULK_GRID_KIND].process(rows);
 }
 const TICKET_UPLOAD_FIELD_MAP={property:'prop',propertyname:'prop',status:'status',created:'created',createddate:'created',datecreated:'created',date:'created',description:'desc',title:'desc',issue:'desc',priority:'urgency',urgency:'urgency',servicecategory:'svc',category:'svc',servicetype:'svctype',type:'svctype',vendor:'vendor',cost:'cost',estimatedcost:'cost',invoice:'invoice',invoicenumber:'invoice',payment:'payment',paymentstatus:'payment',reporter:'reporter',notes:'notes',comments:'notes',usernotes:'notes'};
 function normHeaderKey(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
@@ -4913,7 +4957,7 @@ async function processFinanceImportRows(rows){
       if(isNaN(txnDate))txnDate=null;
     }
     if(!txnDate){txnDate=new Date(today);dateDefaulted=true;}
-    const desc=String(f.desc||'').trim();
+    const desc=(acctMap&&acctMap.desc)?acctMap.desc:String(f.desc||'').trim();
     const title=(desc||name||'Finance import').slice(0,60);
     // Property with no mapping is a hard skip above (a ticket genuinely can't be created
     // without knowing which property it belongs to). These four, by contrast, are soft --
@@ -4936,15 +4980,15 @@ async function processFinanceImportRows(rows){
   const demoRows=parsed.filter(r=>r.prop._backend!=='supabase');
   if(liveRows.length){
     const uploaderEmail=await currentUserEmail();
-    const payloads=liveRows.map(r=>({property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:'Closed',urgency:'Low',service_category:null,service_type:null,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:'Paid',paid_by_credit_card:r.cc,reporter:currentUserDisplayName(),created_by_email:uploaderEmail,created_at:r.created.toISOString()}));
+    const payloads=liveRows.map(r=>({property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:'Completed',urgency:'Low',service_category:null,service_type:null,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:'Paid',paid_by_credit_card:r.cc,reporter:currentUserDisplayName(),created_by_email:uploaderEmail,created_at:r.created.toISOString()}));
     const {data,error}=await sb.from('maintenance_tickets').insert(payloads).select();
     if(error){toast('Finance import failed: '+error.message);return;}
     for(let idx=0;idx<data.length;idx++){
       const row=data[idx];const r=liveRows[idx];
       const ts=r.created.toISOString();
       await dbLogActivity(row.id,'Logged',logDetail,ts);
-      await dbLogActivity(row.id,'Closed',logDetail,ts);
-      TICKETS.unshift(rowToTicket(Object.assign({},row,{maintenance_ticket_activity:[{action:'Logged',detail:logDetail,created_at:ts},{action:'Closed',detail:logDetail,created_at:ts}]})));
+      await dbLogActivity(row.id,'Completed',logDetail,ts);
+      TICKETS.unshift(rowToTicket(Object.assign({},row,{maintenance_ticket_activity:[{action:'Logged',detail:logDetail,created_at:ts},{action:'Completed',detail:logDetail,created_at:ts}]})));
       created++;
       if(r.needsReview)needsReviewCount++;
     }
@@ -4952,7 +4996,7 @@ async function processFinanceImportRows(rows){
   if(demoRows.length){
     demoRows.forEach(r=>{
       const daysAgo=Math.max(0,Math.round((today-r.created)/864e5));
-      const t=mkTicket({prop:r.prop.id,title:r.title,desc:r.desc,notes:r.notes,svc:null,svctype:null,urgency:'Low',status:'Closed',vendor:r.vendor,cost:r.cost,invoice:r.invoice,payment:'Paid',ccPayment:r.cc,targetCompletion:null,created:r.created,reporter:currentUserDisplayName(),log:[['Logged',logDetail,daysAgo],['Closed',logDetail,daysAgo]]});
+      const t=mkTicket({prop:r.prop.id,title:r.title,desc:r.desc,notes:r.notes,svc:null,svctype:null,urgency:'Low',status:'Completed',vendor:r.vendor,cost:r.cost,invoice:r.invoice,payment:'Paid',ccPayment:r.cc,targetCompletion:null,created:r.created,reporter:currentUserDisplayName(),log:[['Logged',logDetail,daysAgo],['Completed',logDetail,daysAgo]]});
       TICKETS.push(t);
       created++;
       if(r.needsReview)needsReviewCount++;
