@@ -641,8 +641,10 @@ async function dbPermanentlyDeleteTicket(id){
   if(error){toast('Delete failed: '+error.message);return false;}
   return true;
 }
-async function dbLogActivity(ticketId,action,detail){
-  const {error}=await sb.from('maintenance_ticket_activity').insert({ticket_id:ticketId,action,detail});
+async function dbLogActivity(ticketId,action,detail,createdAt){
+  const payload={ticket_id:ticketId,action,detail};
+  if(createdAt)payload.created_at=createdAt;
+  const {error}=await sb.from('maintenance_ticket_activity').insert(payload);
   if(error)console.error('activity log failed',error);
 }
 function pushActivity(t,action,detail){
@@ -1196,6 +1198,21 @@ async function loadRealReferenceLists(){
     Object.keys(lifeRow.data).forEach(k=>{if(Array.isArray(lifeRow.data[k]))LIFE_TABLE[k]=lifeRow.data[k];});
   }
 }
+// FINANCE_MAP's three tables reuse the same reference_lists table as REF_LISTS (key/data
+// jsonb) under three dedicated keys, rather than a separate table -- same storage shape,
+// same admin-only RLS, no schema migration needed for this.
+async function loadRealFinanceMappings(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('reference_lists').select('*').in('key',['FINANCE_PROP_CODES','FINANCE_VENDOR_NAMES','FINANCE_CC_ACCOUNTS']);
+  if(error){toast('Could not load finance file mappings: '+error.message);return;}
+  const rows=data||[];
+  const propRow=rows.find(r=>r.key==='FINANCE_PROP_CODES');
+  if(propRow&&Array.isArray(propRow.data))FINANCE_MAP.propCodes=propRow.data;
+  const vendRow=rows.find(r=>r.key==='FINANCE_VENDOR_NAMES');
+  if(vendRow&&Array.isArray(vendRow.data))FINANCE_MAP.vendorNames=vendRow.data;
+  const acctRow=rows.find(r=>r.key==='FINANCE_CC_ACCOUNTS');
+  if(acctRow&&Array.isArray(acctRow.data))FINANCE_MAP.ccAccounts=acctRow.data;
+}
 async function authSignIn(){
   const email=document.getElementById('authEmail').value.trim();
   const password=document.getElementById('authPassword').value;
@@ -1312,6 +1329,7 @@ async function enterLiveApp(){
   await loadRealDispositionChecklists();
   await loadRealLicensingChecklists();
   await loadRealReferenceLists();
+  await loadRealFinanceMappings();
   await loadRealDocuments();
   await loadRealTicketAttachments();
   await loadRealTicketUserNotes();
@@ -2330,7 +2348,7 @@ const NAV=[
   {id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length,group:'Finance'},
   {id:'reserves',ic:'💰',label:'Capital Reserves',count:()=>PROPS.reduce((n,p)=>n+propertyReserveSummary(p).overdueN,0),group:'Finance'},
   {id:'reports',ic:'📊',label:'Reports',group:'Finance'},
-  {id:'approvals',ic:'✅',label:'Approvals',count:()=>approvalItems().length,group:'Administration',adminOnly:true},
+  {id:'approvals',ic:'✅',label:'Needs Review',count:()=>approvalItems().length,group:'Administration',adminOnly:true},
   {id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length,group:'Administration',adminOnly:true},
   {id:'assumptions',ic:'🧮',label:'Assumptions',group:'Administration',adminOnly:true},
   {id:'auditlog',ic:'📜',label:'Audit Log',group:'Administration',adminOnly:true},
@@ -2350,8 +2368,8 @@ const TITLES={dashboard:['Dashboard','Overview'],tickets:['Maintenance','Ticket 
 const PAGE_EYEBROW={dashboard:'Overview',tickets:'Operations',properties:'Portfolio',leases:'Portfolio',vendors:'Operations',compliance:'Compliance',assumptions:'Configuration',clientexp:'Financial',reports:'Financial',recon:'Financial',approvals:'Operations',trash:'System',users:'Administration',errorlog:'Administration',auditlog:'Administration',reserves:'Financial'};
 function pageHeader(v,actionsHtml){
   const t=TITLES[v]||[v,''];
-  const title=v==='approvals'?'Approvals':t[0];
-  const desc=v==='approvals'?'Items waiting on Senior Admin review':t[1];
+  const title=v==='approvals'?'Needs Review':t[0];
+  const desc=v==='approvals'?'Items waiting on Senior Admin attention — emergencies, reconciliation sign-off, and flagged finance imports':t[1];
   const eyebrow=PAGE_EYEBROW[v]||'';
   return `<div class="page-header">
     <div class="ph-text">${eyebrow?`<div class="ph-eyebrow">${esc(eyebrow)}</div>`:''}
@@ -2386,7 +2404,7 @@ function buildNav(){
   nav.innerHTML=html;
 }
 function navigate(v){closeNavDrawer();closeUserMenu();if((v==='assumptions'||v==='trash'||v==='users'||v==='errorlog'||v==='auditlog')&&ROLE!=='admin')v='dashboard';VIEW=v;buildNav();const t=TITLES[v]||[v,''];
-  document.getElementById('viewTitle').textContent=v==='approvals'?'Approvals':t[0];
+  document.getElementById('viewTitle').textContent=v==='approvals'?'Needs Review':t[0];
   // .content ('view') itself never scrolls — .main (its parent, tablet width and up) does.
   // Reset both, plus the window for the phone breakpoint where the page scrolls normally,
   // so landing on a new page never starts halfway down from wherever the last page left off.
@@ -2586,6 +2604,8 @@ function renderTickets(el){
     <button class="btn sec sm" onclick="openBulkGrid()">📋 Bulk add tickets</button>
     <button class="btn sec sm" onclick="document.getElementById('bulkTicketFile').click()">⬆ Upload spreadsheet</button>
     <input type="file" id="bulkTicketFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkUploadFile(this)">
+    ${ROLE==='admin'?`<button class="btn sec sm" onclick="document.getElementById('financeImportFile').click()" title="Import a Finance transaction report -- translates it via Assumptions &gt; Finance File Mapping and creates one Closed/Paid ticket per transaction">🧾 Import finance file</button>`:''}
+    <input type="file" id="financeImportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFinanceImportFile(this)">
     ${ROLE!=='caregiver'&&SUPA_CONFIGURED?`<button class="btn sec sm" onclick="openInvoiceUploadModal()">🤖 Upload vendor invoice</button>`:''}
     <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
       ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
@@ -3140,7 +3160,14 @@ const REF_LISTS={
 // Note: Vendor Service Category is intentionally NOT a separate list here — per Scope v0.8, Vendor Directory's
 // "Service Category (Default)" (§4.9) points at the same Service Category List as Maintenance tickets (§4.7),
 // i.e. the CAT object above. Same for Service Type: Vendor Directory's Service Type (Default) shares SVC_TYPES.
-const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Reserves'},{id:'valuation',ic:'📈',label:'Valuation'},{id:'complianceReminders',ic:'📜',label:'Compliance Reminders'},{id:'reportsAccess',ic:'📊',label:'Reports Access'},{id:'sessionTimeouts',ic:'⏱️',label:'Session Timeouts'},{id:'referenceLists',ic:'📋',label:'Reference Lists'}];
+// Translates an outside accounting/finance system's own vocabulary (property account codes,
+// vendor names, payment account names) into KodaRE's own -- see Maintenance > Import finance
+// file. Admin-editable in Assumptions > Finance File Mapping; persisted the same way as
+// REF_LISTS (reference_lists table when live, localStorage when in demo mode). Starts empty --
+// unlike REF_LISTS there are no sensible hardcoded defaults, since every one of these values
+// is specific to Sonia's own chart of accounts and vendor list.
+const FINANCE_MAP={propCodes:[],vendorNames:[],ccAccounts:[]};
+const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Reserves'},{id:'valuation',ic:'📈',label:'Valuation'},{id:'complianceReminders',ic:'📜',label:'Compliance Reminders'},{id:'reportsAccess',ic:'📊',label:'Reports Access'},{id:'sessionTimeouts',ic:'⏱️',label:'Session Timeouts'},{id:'referenceLists',ic:'📋',label:'Reference Lists'},{id:'financeMapping',ic:'🧾',label:'Finance File Mapping'}];
 // Shared scalar assumptions (as opposed to LIFE_TABLE, which is per-component). Only
 // complianceExpiringDays actually drives live prototype behavior right now (certBadge()
 // and the Compliance dashboard both read it) — valuationVariancePct and
@@ -3150,7 +3177,7 @@ const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Re
 let ASSUMPTIONS={complianceExpiringDays:90,valuationVariancePct:10,capitalReserveInflationPct:3,sessionTimeoutAdminMin:15,sessionTimeoutOfficeMin:45,sessionTimeoutCaregiverMin:240};
 function renderAssumptions(el){
   const tabsHtml=`<div class="tabs">${ASSUMPTIONS_SECTIONS.map(s=>`<button class="tab ${ASSUMPTIONS_TAB===s.id?'active':''}" onclick="ASSUMPTIONS_TAB='${s.id}';renderAssumptions(document.getElementById('view'))">${s.ic} ${s.label}</button>`).join('')}</div>`;
-  const body={capitalreserves:capitalReservesSection,valuation:valuationSection,complianceReminders:complianceRemindersSection,reportsAccess:reportsAccessSection,sessionTimeouts:sessionTimeoutsSection,referenceLists:referenceListsSection}[ASSUMPTIONS_TAB]?.() || '<div class="card"><div class="body muted">Section coming soon.</div></div>';
+  const body={capitalreserves:capitalReservesSection,valuation:valuationSection,complianceReminders:complianceRemindersSection,reportsAccess:reportsAccessSection,sessionTimeouts:sessionTimeoutsSection,referenceLists:referenceListsSection,financeMapping:financeMappingSection}[ASSUMPTIONS_TAB]?.() || '<div class="card"><div class="body muted">Section coming soon.</div></div>';
   el.innerHTML=pageHeader('assumptions')+tabsHtml+body;
 }
 function updateAssumption(key,val){
@@ -3382,6 +3409,90 @@ function moveSvcTypeEntry(name,dir){
   [SVC_TYPES[i],SVC_TYPES[j]]=[SVC_TYPES[j],SVC_TYPES[i]];
   if(SUPA_CONFIGURED)dbUpsertReferenceList('SVC_TYPES',SVC_TYPES);else saveState();
   renderAssumptions(document.getElementById('view'));
+}
+// ===== Finance File Mapping (Assumptions) =====
+// Three small translation tables so Maintenance > Import finance file can turn an outside
+// accounting system's own vocabulary into KodaRE's. Add a row here the first time a new
+// property code, vendor name, or payment account shows up in the finance file that isn't
+// already mapped -- an ongoing, ad-hoc process as the chart of accounts / vendor list grows,
+// which is exactly why this lives in an admin-editable table instead of hardcoded in the
+// import logic.
+function financeMappingSection(){
+  const propRows=FINANCE_MAP.propCodes.map((m,i)=>{
+    const p=PROPS.find(x=>x.id===m.propId);
+    return `<tr><td class="mono" style="font-size:11.5px">${esc(m.code)}</td><td class="b">${p?esc(p.name):'<span class="faint">— property not found —</span>'}</td><td><button class="btn sec sm" onclick="removeFinanceMap('propCodes',${i})">Remove</button></td></tr>`;
+  }).join('');
+  const vendRows=FINANCE_MAP.vendorNames.map((m,i)=>`<tr><td class="mono" style="font-size:11.5px">${esc(m.financeName)}</td><td class="b">${esc(m.vendor)}</td><td><button class="btn sec sm" onclick="removeFinanceMap('vendorNames',${i})">Remove</button></td></tr>`).join('');
+  const acctRows=FINANCE_MAP.ccAccounts.map((m,i)=>`<tr><td class="mono" style="font-size:11.5px">${esc(m.account)}</td><td>${m.cc?'✅ Credit card':'—'}</td><td><button class="btn sec sm" onclick="removeFinanceMap('ccAccounts',${i})">Remove</button></td></tr>`).join('');
+  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">Translates your accounting system's Finance transaction report into KodaRE's own wording, so Maintenance &gt; Import finance file knows what each row means. Edit freely — Senior Admin only; changes apply to every import from now on, not to tickets already imported.</div>
+  <div class="card" style="margin-bottom:12px"><h3>🏠 Property code → Property</h3><div class="body">
+  <div class="muted" style="font-size:12px;margin-bottom:10px">The exact "Code" column text from the Finance file (e.g. "661.39 Repairs &amp; Mte - Winston Dr"), mapped to the matching KodaRE property. A code with no mapping here is skipped on import, not guessed.</div>
+  <table><thead><tr><th>Finance code</th><th>Property</th><th></th></tr></thead><tbody>${propRows||'<tr><td colspan="3" class="muted">No mappings yet.</td></tr>'}</tbody></table>
+  <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
+    <input type="text" id="fm_prop_code" placeholder="Finance code (paste exactly)" style="flex:1;min-width:220px;font-size:13px">
+    <select id="fm_prop_prop" style="min-width:160px;font-size:13px"><option value="">Select property…</option>${PROPS.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+    <button class="btn sm" onclick="addFinancePropMap()">+ Add</button>
+  </div>
+  </div></div>
+  <div class="card" style="margin-bottom:12px"><h3>🔧 Finance vendor name → Vendor</h3><div class="body">
+  <div class="muted" style="font-size:12px;margin-bottom:10px">Only needed when the Finance file's Name doesn't already match a Vendor Directory name exactly (e.g. "Lawn Love Lawn Care" → "Lawn Love"). A name with no mapping here is still imported — using the Finance file's raw text as the ticket's Vendor — it just won't line up with an existing Vendor Directory entry.</div>
+  <table><thead><tr><th>Finance name</th><th>KodaRE vendor</th><th></th></tr></thead><tbody>${vendRows||'<tr><td colspan="3" class="muted">No mappings yet.</td></tr>'}</tbody></table>
+  <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
+    <input type="text" id="fm_vend_name" placeholder="Finance file Name (paste exactly)" style="flex:1;min-width:220px;font-size:13px">
+    <select id="fm_vend_vendor" style="min-width:160px;font-size:13px"><option value="">Select vendor…</option>${VENDORS.map(v=>`<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('')}</select>
+    <button class="btn sm" onclick="addFinanceVendorMap()">+ Add</button>
+  </div>
+  </div></div>
+  <div class="card" style="margin-bottom:12px"><h3>💳 Payment account → Credit card</h3><div class="body">
+  <div class="muted" style="font-size:12px;margin-bottom:10px">The "Item split account" column text from the Finance file (e.g. "224 Ramp Credit Card"). A mapped-and-checked account gets the ticket's CC box checked on import; an unmapped account, or one mapped without the box checked, leaves it unchecked.</div>
+  <table><thead><tr><th>Finance account</th><th>Credit card?</th><th></th></tr></thead><tbody>${acctRows||'<tr><td colspan="3" class="muted">No mappings yet.</td></tr>'}</tbody></table>
+  <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
+    <input type="text" id="fm_acct_name" placeholder="Item split account (paste exactly)" style="flex:1;min-width:220px;font-size:13px">
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="fm_acct_cc"> Credit card</label>
+    <button class="btn sm" onclick="addFinanceAcctMap()">+ Add</button>
+  </div>
+  </div></div>`;
+}
+async function saveFinanceMap(kind){
+  const keyMap={propCodes:'FINANCE_PROP_CODES',vendorNames:'FINANCE_VENDOR_NAMES',ccAccounts:'FINANCE_CC_ACCOUNTS'};
+  if(SUPA_CONFIGURED)await dbUpsertReferenceList(keyMap[kind],FINANCE_MAP[kind]);
+  else saveState();
+}
+function addFinancePropMap(){
+  const code=(document.getElementById('fm_prop_code').value||'').trim();
+  const propId=document.getElementById('fm_prop_prop').value;
+  if(!code||!propId){toast('Enter a code and choose a property');return;}
+  if(FINANCE_MAP.propCodes.some(m=>m.code.toLowerCase()===code.toLowerCase())){toast('That code is already mapped');return;}
+  FINANCE_MAP.propCodes.push({code,propId});
+  saveFinanceMap('propCodes');
+  document.getElementById('fm_prop_code').value='';
+  toast('Mapping added');renderAssumptions(document.getElementById('view'));
+}
+function addFinanceVendorMap(){
+  const financeName=(document.getElementById('fm_vend_name').value||'').trim();
+  const vendor=document.getElementById('fm_vend_vendor').value;
+  if(!financeName||!vendor){toast('Enter a Finance name and choose a vendor');return;}
+  if(FINANCE_MAP.vendorNames.some(m=>m.financeName.toLowerCase()===financeName.toLowerCase())){toast('That name is already mapped');return;}
+  FINANCE_MAP.vendorNames.push({financeName,vendor});
+  saveFinanceMap('vendorNames');
+  document.getElementById('fm_vend_name').value='';
+  toast('Mapping added');renderAssumptions(document.getElementById('view'));
+}
+function addFinanceAcctMap(){
+  const account=(document.getElementById('fm_acct_name').value||'').trim();
+  const cc=document.getElementById('fm_acct_cc').checked;
+  if(!account){toast('Enter an account name');return;}
+  if(FINANCE_MAP.ccAccounts.some(m=>m.account.toLowerCase()===account.toLowerCase())){toast('That account is already mapped');return;}
+  FINANCE_MAP.ccAccounts.push({account,cc});
+  saveFinanceMap('ccAccounts');
+  document.getElementById('fm_acct_name').value='';
+  toast('Mapping added');renderAssumptions(document.getElementById('view'));
+}
+function removeFinanceMap(kind,idx){
+  if(!FINANCE_MAP[kind]||!FINANCE_MAP[kind][idx])return;
+  FINANCE_MAP[kind].splice(idx,1);
+  saveFinanceMap(kind);
+  toast('Mapping removed');renderAssumptions(document.getElementById('view'));
 }
 function propComponents(p){
   const names=Object.keys(LIFE_TABLE);
@@ -4416,12 +4527,36 @@ function resolveExc(i){RECON[RTAB].exceptions.splice(i,1);saveState();toast('Exc
 function signRecon(){RECON[RTAB].signed=true;saveState();toast(RTAB==='weekly'?'Weekly reconciliation signed off':'Month reconciled & locked');renderRecon(document.getElementById('view'));}
 
 /* ===== approvals ===== */
-function approvalItems(){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));const recon=[];if(!RECON.weekly.signed&&!RECON.weekly.exceptions.length)recon.push('w');if(!RECON.monthly.signed&&!RECON.monthly.exceptions.length)recon.push('m');return [...esc,...recon];}
-function renderApprovals(el){const esc=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));el.innerHTML=`${pageHeader('approvals')}
-  <div class="kpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi red"><div class="lab">Open emergencies</div><div class="val">${esc.length}</div></div><div class="kpi amber"><div class="lab">Recon awaiting sign-off</div><div class="val">${(RECON.weekly.signed?0:1)+(RECON.monthly.signed?0:1)}</div></div><div class="kpi green"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div></div>
+// A finance-imported ticket is flagged for review by prepending a "⚠ NEEDS REVIEW: ..."
+// marker to its Notes, delimited from the rest of the note (the finance-file trace, or
+// anything typed manually later) by " ||| " -- see processFinanceImportRows(). Detecting and
+// clearing the flag both just look for that marker, so no separate database field or table is
+// needed to track review state; it rides entirely on the Notes/Comments field that already
+// exists, searchable, and visible in the Maintenance table today.
+function ticketNeedsReview(t){return (t.notes||'').indexOf('⚠ NEEDS REVIEW:')===0;}
+function markTicketReviewed(id){
+  const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const prev=t.notes;
+  const stripped=(t.notes||'').replace(/^⚠ NEEDS REVIEW:.*? \|\|\| /,'');
+  t.notes=stripped;
+  if(t._backend==='supabase')dbUpdateTicket(id,{notes:stripped}).then(ok=>{if(!ok){t.notes=prev;refreshTickets();renderApprovals(document.getElementById('view'));}});
+  else saveState();
+  toast('Marked reviewed');
+  refreshTickets();
+  renderApprovals(document.getElementById('view'));
+}
+function approvalItems(){const emerg=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));const recon=[];if(!RECON.weekly.signed&&!RECON.weekly.exceptions.length)recon.push('w');if(!RECON.monthly.signed&&!RECON.monthly.exceptions.length)recon.push('m');const review=TICKETS.filter(ticketNeedsReview);return [...emerg,...recon,...review];}
+function renderApprovals(el){
+  const emerg=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));
+  const review=TICKETS.filter(ticketNeedsReview);
+  el.innerHTML=`${pageHeader('approvals')}
+  <div class="kpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi red"><div class="lab">Open emergencies</div><div class="val">${emerg.length}</div></div><div class="kpi amber"><div class="lab">Recon awaiting sign-off</div><div class="val">${(RECON.weekly.signed?0:1)+(RECON.monthly.signed?0:1)}</div></div><div class="kpi amber"><div class="lab">Finance import — needs review</div><div class="val">${review.length}</div></div><div class="kpi green"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div></div>
   <div class="sectitle">Open emergencies</div>
-  <div class="card">${esc.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${esc.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
-  <div class="sectitle">Reconciliation sign-off</div><div class="card"><div class="body row"><button class="btn ${RECON.weekly.signed?'sec':'green'}" onclick="RTAB='weekly';navigate('recon')">${RECON.weekly.signed?'Weekly ✓ signed':'Review weekly →'}</button><button class="btn ${RECON.monthly.signed?'sec':'green'}" onclick="RTAB='monthly';navigate('recon')">${RECON.monthly.signed?'Monthly ✓ locked':'Review monthly →'}</button></div></div>`;}
+  <div class="card">${emerg.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${emerg.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
+  <div class="sectitle">Reconciliation sign-off</div><div class="card"><div class="body row"><button class="btn ${RECON.weekly.signed?'sec':'green'}" onclick="RTAB='weekly';navigate('recon')">${RECON.weekly.signed?'Weekly ✓ signed':'Review weekly →'}</button><button class="btn ${RECON.monthly.signed?'sec':'green'}" onclick="RTAB='monthly';navigate('recon')">${RECON.monthly.signed?'Monthly ✓ locked':'Review monthly →'}</button></div></div>
+  <div class="sectitle">Finance import — needs review</div>
+  <div class="card">${review.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Why it's flagged</th><th></th></tr></thead><tbody>${review.map(t=>{const reason=(t.notes||'').replace(/^⚠ NEEDS REVIEW:\s*/,'').split(' ||| ')[0];return `<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:260px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td class="muted" style="font-size:12px"><div class="trunc2" style="max-width:300px">${esc(reason)}</div></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="markTicketReviewed('${t.id}')">✓ Mark reviewed</button></td></tr>`;}).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing flagged.</div>'}</div>`;
+}
 
 /* ===== search ===== */
 function globalSearch(q){q=q.trim().toLowerCase();if(!q){navigate(VIEW);return;}if(VIEW!=='tickets')navigate('tickets');
@@ -4700,6 +4835,133 @@ async function processBulkTicketRows(rows){
   }
   refreshTickets();
   let msg=created+' ticket'+(created===1?'':'s')+' imported.';
+  if(skipped.length)msg+=' '+skipped.length+' row'+(skipped.length===1?'':'s')+' skipped.';
+  toast(msg);
+  if(skipped.length)alert('Skipped rows:\n\n'+skipped.join('\n'));
+}
+
+/* ===== finance file import (Maintenance) =====
+   A Finance transaction report (e.g. exported from QuickBooks) is a different shape than the
+   Bulk add tickets template above -- title rows before the real header, and its own column
+   names (Code / Name / Item split account, not Property / Vendor / Payment) that mean
+   something different in KodaRE's own vocabulary. FINANCE_MAP (Assumptions > Finance File
+   Mapping) is what bridges that gap. Each transaction row becomes one new ticket, defaulting
+   to Closed + Paid, since a row appearing in the finance file at all means the work and the
+   payment already happened historically -- this isn't a "report an issue" flow. */
+const FINANCE_UPLOAD_FIELD_MAP={code:'code',transactiondate:'txndate',transactiontype:'txntype',num:'num',name:'name',description:'desc',accountname:'acctname',itemsplitaccount:'account',amount:'amount',balance:'balance'};
+function handleFinanceImportFile(input){
+  const file=input.files&&input.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array',cellDates:true});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      // Finance transaction reports typically have a few title rows (company name, report
+      // name, period) before the real header row -- find the row that actually looks like a
+      // header (has both a Code-ish and a Transaction date-ish column) instead of assuming
+      // row 1 is it, the way handleBulkUploadFile can for KodaRE's own bulk-ticket template.
+      const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      let headerIdx=-1;
+      for(let i=0;i<aoa.length;i++){
+        const norm=aoa[i].map(c=>normHeaderKey(c));
+        if(norm.includes('code')&&norm.includes('transactiondate')){headerIdx=i;break;}
+      }
+      if(headerIdx===-1){toast('Could not find the header row (expected "Code" and "Transaction date" columns) in that file.');input.value='';return;}
+      const headers=aoa[headerIdx];
+      const rows=aoa.slice(headerIdx+1)
+        .filter(r=>r.some(c=>String(c||'').trim()!==''))
+        .map(r=>{const obj={};headers.forEach((h,i)=>{if(h)obj[h]=r[i];});return obj;});
+      processFinanceImportRows(rows);
+    }catch(err){
+      toast('Could not read that file: '+err.message);
+    }finally{
+      input.value='';
+    }
+  };
+  reader.onerror=function(){toast('Could not read that file.');input.value='';};
+  reader.readAsArrayBuffer(file);
+}
+async function processFinanceImportRows(rows){
+  if(!rows||!rows.length){toast('That file has no rows to import.');return;}
+  const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
+  const parsed=[],skipped=[];
+  rows.forEach((row,i)=>{
+    const f={};
+    Object.keys(row).forEach(k=>{const mapped=FINANCE_UPLOAD_FIELD_MAP[normHeaderKey(k)];if(mapped&&!(mapped in f))f[mapped]=row[k];});
+    const rowNum=i+2;
+    const code=String(f.code||'').trim();
+    if(!code){skipped.push('Row '+rowNum+': missing Code -- skipped (likely a blank/section-break row)');return;}
+    const name=String(f.name||'').trim();
+    let amount=null;
+    if(f.amount!=null&&String(f.amount).trim()!==''){const n=Number(String(f.amount).replace(/[^0-9.\-]/g,''));if(!isNaN(n))amount=n;}
+    if(!name&&amount==null){skipped.push('Row '+rowNum+': no Name or Amount -- not a real transaction, skipped');return;}
+    const codeMap=FINANCE_MAP.propCodes.find(m=>m.code.trim().toLowerCase()===code.toLowerCase());
+    if(!codeMap){skipped.push('Row '+rowNum+': Code "'+code+'" has no Property mapping -- add it in Assumptions > Finance File Mapping, then re-import');return;}
+    const prop=plist.find(p=>p.id===codeMap.propId);
+    if(!prop){skipped.push('Row '+rowNum+': mapped property no longer exists');return;}
+    const vendMap=FINANCE_MAP.vendorNames.find(m=>m.financeName.trim().toLowerCase()===name.toLowerCase());
+    const vendor=vendMap?vendMap.vendor:(name||null);
+    const account=String(f.account||'').trim();
+    const acctMap=FINANCE_MAP.ccAccounts.find(m=>m.account.trim().toLowerCase()===account.toLowerCase());
+    const cc=!!(acctMap&&acctMap.cc);
+    let txnDate=null,dateDefaulted=false;
+    if(f.txndate){
+      if(f.txndate instanceof Date)txnDate=f.txndate;
+      else{const s=String(f.txndate).trim();txnDate=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T00:00:00'):new Date(s);}
+      if(isNaN(txnDate))txnDate=null;
+    }
+    if(!txnDate){txnDate=new Date(today);dateDefaulted=true;}
+    const desc=String(f.desc||'').trim();
+    const title=(desc||name||'Finance import').slice(0,60);
+    // Property with no mapping is a hard skip above (a ticket genuinely can't be created
+    // without knowing which property it belongs to). These four, by contrast, are soft --
+    // the ticket still gets created, just flagged via the Notes marker so it shows up under
+    // Needs Review > Finance import instead of silently looking like a normal ticket.
+    const reviewReasons=[];
+    if(!vendMap)reviewReasons.push('vendor "'+name+'" not matched to Vendor Directory (imported as typed)');
+    if(!account)reviewReasons.push('no payment account on this transaction');
+    else if(!acctMap)reviewReasons.push('payment account "'+account+'" not matched — CC left unchecked');
+    if(amount==null)reviewReasons.push('missing dollar amount');
+    if(dateDefaulted)reviewReasons.push('missing/unreadable transaction date — defaulted to import date');
+    const traceNote='Imported from Finance file — Code: '+code+(account?', Account: '+account:'')+', Txn date: '+toISODate(txnDate);
+    const notes=reviewReasons.length?('⚠ NEEDS REVIEW: '+reviewReasons.join('; ')+' ||| '+traceNote):traceNote;
+    parsed.push({prop,vendor,cc,cost:amount,desc:desc||name,title,created:txnDate,notes,invoice:String(f.num||'').trim()||null,needsReview:reviewReasons.length>0});
+  });
+  if(!parsed.length){alert('No rows could be imported.'+(skipped.length?'\n\n'+skipped.join('\n'):''));return;}
+  let created=0,needsReviewCount=0;
+  const logDetail='Imported from finance file — already completed and paid';
+  const liveRows=parsed.filter(r=>r.prop._backend==='supabase');
+  const demoRows=parsed.filter(r=>r.prop._backend!=='supabase');
+  if(liveRows.length){
+    const uploaderEmail=await currentUserEmail();
+    const payloads=liveRows.map(r=>({property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:'Closed',urgency:'Low',service_category:null,service_type:null,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:'Paid',paid_by_credit_card:r.cc,reporter:currentUserDisplayName(),created_by_email:uploaderEmail,created_at:r.created.toISOString()}));
+    const {data,error}=await sb.from('maintenance_tickets').insert(payloads).select();
+    if(error){toast('Finance import failed: '+error.message);return;}
+    for(let idx=0;idx<data.length;idx++){
+      const row=data[idx];const r=liveRows[idx];
+      const ts=r.created.toISOString();
+      await dbLogActivity(row.id,'Logged',logDetail,ts);
+      await dbLogActivity(row.id,'Closed',logDetail,ts);
+      TICKETS.unshift(rowToTicket(Object.assign({},row,{maintenance_ticket_activity:[{action:'Logged',detail:logDetail,created_at:ts},{action:'Closed',detail:logDetail,created_at:ts}]})));
+      created++;
+      if(r.needsReview)needsReviewCount++;
+    }
+  }
+  if(demoRows.length){
+    demoRows.forEach(r=>{
+      const daysAgo=Math.max(0,Math.round((today-r.created)/864e5));
+      const t=mkTicket({prop:r.prop.id,title:r.title,desc:r.desc,notes:r.notes,svc:null,svctype:null,urgency:'Low',status:'Closed',vendor:r.vendor,cost:r.cost,invoice:r.invoice,payment:'Paid',ccPayment:r.cc,targetCompletion:null,created:r.created,reporter:currentUserDisplayName(),log:[['Logged',logDetail,daysAgo],['Closed',logDetail,daysAgo]]});
+      TICKETS.push(t);
+      created++;
+      if(r.needsReview)needsReviewCount++;
+    });
+    saveState();
+  }
+  refreshTickets();
+  let msg=created+' ticket'+(created===1?'':'s')+' imported from finance file.';
+  if(needsReviewCount)msg+=' '+needsReviewCount+' need'+(needsReviewCount===1?'s':'')+' review — see Needs Review.';
   if(skipped.length)msg+=' '+skipped.length+' row'+(skipped.length===1?'':'s')+' skipped.';
   toast(msg);
   if(skipped.length)alert('Skipped rows:\n\n'+skipped.join('\n'));
@@ -5088,7 +5350,7 @@ async function mSubmit(){
 
 /* ===== persistence ===== */
 const LSKEY='kodare_proto_v03_r1';
-function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
+function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES,FINANCE_MAP};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
 function mergeById(defaults,saved,idKey){const map={};defaults.forEach(d=>map[d[idKey]]=Object.assign({},d));
   saved.forEach(s=>{const k=s[idKey];if(map[k])Object.assign(map[k],s);else map[k]=s;});
   return Object.values(map);}
@@ -5157,6 +5419,14 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
         REF_LISTS[k].values=merged;
       }
     });
+    // FINANCE_MAP has no hardcoded defaults to merge against (unlike REF_LISTS) -- everything
+    // in it is something Sonia typed in via Assumptions > Finance File Mapping, so a saved
+    // snapshot is simply restored as-is rather than additively merged.
+    if(s.FINANCE_MAP){
+      if(Array.isArray(s.FINANCE_MAP.propCodes))FINANCE_MAP.propCodes=s.FINANCE_MAP.propCodes;
+      if(Array.isArray(s.FINANCE_MAP.vendorNames))FINANCE_MAP.vendorNames=s.FINANCE_MAP.vendorNames;
+      if(Array.isArray(s.FINANCE_MAP.ccAccounts))FINANCE_MAP.ccAccounts=s.FINANCE_MAP.ccAccounts;
+    }
   }
   return true;}catch(e){return false;}}
 function resetDemo(){
