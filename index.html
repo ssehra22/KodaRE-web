@@ -2017,6 +2017,38 @@ async function confirmInvoiceMatches(){
   refreshTickets();
 }
 function ageDays(t){return Math.max(0,Math.round((today-new Date(t.created))/864e5));}
+// A log entry's timestamp, handling both formats used across the app: demo/sample tickets
+// store a plain number of days-ago (see logAge() above); real Supabase tickets store an
+// actual ISO timestamp string.
+function logEntryDate(l){
+  if(typeof l[2]==='number'){const d=new Date(today);d.setDate(d.getDate()-l[2]);return d;}
+  return new Date(l[2]);
+}
+// Cumulative time a ticket has actually spent unresolved (Open/In progress), pausing while
+// Completed/Closed and resuming on reopen — for "how long has this genuinely been open"
+// displays (Dashboard priority queue, Reports > Open ticket aging). Deliberately different
+// from ageDays() above (plain days-since-created, used for "Requested X days ago" and the
+// Maintenance table's Created column) — those answer "when was this made," not "how long has
+// it been unresolved." A ticket closed for months then reopened for something new should read
+// as recently reopened, not as having sat open the whole time; one reopened repeatedly should
+// read as having genuinely accumulated that much unresolved time, not reset to zero each time.
+const OPEN_STATUSES=['Open','In progress'],RESOLVED_STATUSES=['Completed','Closed'];
+function cumulativeOpenDays(t){
+  const transitions=(t.log||[])
+    .filter(l=>OPEN_STATUSES.includes(l[0])||RESOLVED_STATUSES.includes(l[0]))
+    .map(l=>({status:l[0],date:logEntryDate(l)}))
+    .filter(x=>!isNaN(x.date))
+    .sort((a,b)=>a.date-b.date);
+  let openSince=new Date(t.created),totalMs=0,isOpenNow=true;
+  transitions.forEach(tr=>{
+    const wasOpen=isOpenNow;
+    isOpenNow=OPEN_STATUSES.includes(tr.status);
+    if(wasOpen&&!isOpenNow&&openSince){totalMs+=Math.max(0,tr.date-openSince);openSince=null;}
+    else if(!wasOpen&&isOpenNow){openSince=tr.date;}
+  });
+  if(isOpenNow&&openSince)totalMs+=Math.max(0,today-openSince);
+  return Math.max(0,Math.round(totalMs/864e5));
+}
 function spendFor(id){return TICKETS.filter(t=>t.prop===id&&t.cost).reduce((s,t)=>s+t.cost,0);}
 function computeHealth(){PROPS.forEach(p=>{if(p.status==='New Transaction')return;const ts=TICKETS.filter(t=>t.prop===p.id&&isOpen(t));p.health=ts.some(t=>t.urgency==='Emergency')?'red':(ts.length?'amber':'green');p.status=p.health==='red'?'Emergency':'Active';});}
 
@@ -2492,7 +2524,7 @@ function renderDashboard(el){
   <div class="grid2" style="margin-top:18px">
     <div class="card"><h3>🎫 Maintenance priority queue<a class="link" onclick="navigate('tickets')">View all →</a></h3>
       <table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th>Status</th><th>Age</th></tr></thead><tbody>
-      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b trunc2" style="max-width:280px">${ticketDescCell(t)}</div><div class="faint" style="font-size:11.5px">${svcLabel(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono">${ageDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
+      ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b trunc2" style="max-width:280px">${ticketDescCell(t)}</div><div class="faint" style="font-size:11.5px">${svcLabel(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono" title="Cumulative time open, excluding any Completed/Closed period">${cumulativeOpenDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
       </tbody></table></div>
     <div class="card"><h3>🏠 Portfolio health</h3><div class="body">
       ${PROPS.map(p=>`<div class="mrow" style="padding:7px 0;border-bottom:1px solid var(--line)"><div><span class="dotc" style="background:var(--${p.health==='green'?'green':(p.health==='red'?'red':'amber')})"></span> <span class="b">${p.name}</span> <span class="faint" style="font-size:11.5px">· ${p.own==='owned'?'Owned':'Leased'}</span></div><div class="pill" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">${p.status}</div></div>`).join('')}
@@ -2654,7 +2686,20 @@ function clearAllFilters(){
   if(VIEW==='tickets')renderTickets(document.getElementById('view'));
 }
 
-function actualCompletionDate(t){const c=t.log.find(l=>l[0]==='Completed');if(!c)return null;const d=new Date(today);d.setDate(d.getDate()-c[2]);return d;}
+// Only meaningful while the ticket is actually Completed/Closed right now — if it's been
+// reopened since, this correctly reverts to null (N/A) rather than showing a stale date from
+// before the reopen. Uses the *latest* Completed/Closed activity entry, so a ticket that was
+// completed, reopened, and completed again shows the most recent completion, not the first.
+// Log timestamps come in two formats depending on backend: demo/sample tickets store a plain
+// number of days-ago (see logAge() above, same convention); real Supabase tickets store an
+// actual ISO timestamp string.
+function actualCompletionDate(t){
+  if(t.status!=='Completed'&&t.status!=='Closed')return null;
+  const entries=t.log.filter(l=>l[0]==='Completed'||l[0]==='Closed');
+  if(!entries.length)return null;
+  const d=logEntryDate(entries[entries.length-1]);
+  return isNaN(d)?null:d;
+}
 function ticketRecon(t){const inMonthly=RECON.monthly.groups.some(g=>g.tickets.includes(t.id));const inWeekly=RECON.weekly.groups.some(g=>g.tickets.includes(t.id));
   if(inMonthly)return {label:'Matched — monthly',cls:'b-resolved'};
   if(inWeekly)return {label:'Matched — weekly (preliminary)',cls:'b-progress'};
@@ -2672,8 +2717,8 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Cost</div><div><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:110px;font-size:13px" onchange="updateCost('${t.id}',this.value)"></div>
       <div class="k">Invoice</div><div><input type="text" value="${esc(t.invoice||'')}" placeholder="—" style="width:180px;font-size:13px" onchange="updateInvoice('${t.id}',this.value)"></div>
       <div class="k">Target completion</div><div><span class="faint">— (not captured in this sample)</span></div>
-      <div class="k">Actual completion</div><div>${actualCompletionDate(t)?fdate(actualCompletionDate(t)):'<span class="faint">—</span>'}</div>
-      <div class="k">Year / Month completed</div><div>${actualCompletionDate(t)?actualCompletionDate(t).toLocaleDateString('en-US',{year:'numeric',month:'long'}):'<span class="faint">—</span>'}</div>
+      <div class="k">Actual completion</div><div>${actualCompletionDate(t)?fdate(actualCompletionDate(t)):'<span class="faint">N/A</span>'}</div>
+      <div class="k">Year / Month completed</div><div>${actualCompletionDate(t)?actualCompletionDate(t).toLocaleDateString('en-US',{year:'numeric',month:'long'}):'<span class="faint">N/A</span>'}</div>
       <div class="k">Finance recon</div><div><span class="badge ${ticketRecon(t).cls}"><span class="dot"></span>${ticketRecon(t).label}</span></div>
       <div class="k">Payment</div><div>${paySelect(t)}</div>
       <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:56px" placeholder="add / update comments…" onchange="updateNote('${t.id}',this.value)">${esc(t.notes)}</textarea></div>
@@ -4209,7 +4254,7 @@ function reportBody(tab){
     const vendorTotal=vendorRows.reduce((s,r)=>s+r.t12,0);
     const openT=TICKETS.filter(isOpen);
     const buckets=[['0–7 days',0,7],['8–30 days',8,30],['31–90 days',31,90],['90+ days',91,Infinity]];
-    const agingRows=buckets.map(([label,lo,hi])=>({label,lo,rows:openT.filter(t=>{const a=ageDays(t);return a>=lo&&a<=hi;})}));
+    const agingRows=buckets.map(([label,lo,hi])=>({label,lo,rows:openT.filter(t=>{const a=cumulativeOpenDays(t);return a>=lo&&a<=hi;})}));
     return `<div class="sectitle">Open maintenance tickets — by property</div><div class="card"><table><thead><tr><th>Property</th><th>Open</th><th>Total</th><th class="right">T12 Spend</th><th class="right">YTD Spend</th></tr></thead><tbody>${PROPS.map(p=>{const ps=propertySpendStats(p.id);return `<tr><td class="b">${p.name}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length}</td><td class="mono">${TICKETS.filter(t=>t.prop===p.id).length}</td><td class="right mono">${money(ps.t12)}</td><td class="right mono">${money(ps.ytd)}</td></tr>`;}).join('')}</tbody></table></div>
     <div class="sectitle">Open ticket aging <span class="faint">— best practice: flag anything sitting 30+ days</span></div><div class="card"><table><thead><tr><th>Age</th><th>Open tickets</th><th>Of which emergency</th></tr></thead><tbody>${agingRows.map(r=>`<tr><td class="b">${r.label}</td><td class="mono" style="${r.lo>=31&&r.rows.length?'color:var(--'+(r.lo>=91?'red':'amber')+')':''}">${r.rows.length}</td><td class="mono">${r.rows.filter(t=>t.urgency==='Emergency').length}</td></tr>`).join('')}</tbody></table></div>
     <div class="sectitle">Closed tickets — trailing 90 days</div><div class="card"><div class="body">${closed90.length} tickets closed in the last 90 days · avg cost ${money(closed90.length?Math.round(closed90.reduce((s,t)=>s+(t.cost||0),0)/closed90.length):0)}</div></div>
