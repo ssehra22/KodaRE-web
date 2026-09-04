@@ -2611,13 +2611,13 @@ function renderTickets(el){
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="From MM/DD/YY" title="From date (MM/DD/YY)" style="${fSel};width:100%;min-width:0;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="To MM/DD/YY" title="To date (MM/DD/YY)" style="${fSel};width:100%;min-width:0;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
     </th>
-    <th style="text-align:left;min-width:250px;max-width:400px;overflow:hidden;vertical-align:top">
+    <th style="text-align:left;min-width:225px;max-width:370px;overflow:hidden;vertical-align:top">
       ${thTitle(`<span>Description</span>${clearX('descQuery','Description')}`)}
-      <input type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.descQuery)}" oninput="setFLive('descQuery',this.value)" placeholder="Search..." title="Filter by description text" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
+      <input type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.descQuery)}" oninput="setFLive('descQuery',this.value)" placeholder="Search..." title="Filter by description text" style="${fSel};width:100%;min-width:0;box-sizing:border-box;text-transform:none;font-weight:400">
     </th>
-    ${thSel('urgency','Priority',['Emergency','Urgent','Low'].map(u=>({v:u,l:u})),undefined,106)}
-    ${thSel('svc','Service Category',svcOpts.map(s=>({v:s,l:s})),'hide-below-lg',106)}
-    ${thSel('vendor','Vendor',vendorOpts.map(v=>({v:v,l:v})),'hide-below-lg',106)}
+    ${thSel('urgency','Priority',['Emergency','Urgent','Low'].map(u=>({v:u,l:u})),undefined,92)}
+    ${thSel('svc','Service Category',svcOpts.map(s=>({v:s,l:s})),'hide-below-lg',92)}
+    ${thSel('vendor','Vendor',vendorOpts.map(v=>({v:v,l:v})),'hide-below-lg',160)}
     <th class="hide-below-lg" style="text-align:left;min-width:100px;vertical-align:top">
       ${thTitle(`<span>Cost</span>${clearX('cost','Cost')}`)}
       <div id="costTotalDisplay" style="font-weight:800;font-size:11px;color:var(--os);text-transform:none;letter-spacing:0" title="Total cost across ${rows.length} filtered ticket${rows.length===1?'':'s'} (${costedCount} costed)">${money(totalCost)}</div>
@@ -2676,7 +2676,7 @@ function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="ope
   <td class="b trunc hide-below-sm col-frozen" style="max-width:130px">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
   <td class="hide-below-sm muted mono" style="white-space:nowrap;max-width:115px;overflow:hidden" title="${age}d ago">${fdate(t.created)}</td>
-  <td><div class="trunc2" style="max-width:380px">${ticketDescCell(t)}</div><div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></td>
+  <td><div class="trunc2" style="max-width:350px">${ticketDescCell(t)}</div><div class="show-below-sm faint" style="font-size:11px">${propById(t.prop).name}</div></td>
   <td>${ubadge(t.urgency)}</td>
   <td class="hide-below-lg muted">${svcLabel(t)}</td>
   <td class="hide-below-lg">${t.vendor||'<span class="faint">—</span>'}</td>
