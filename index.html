@@ -2606,7 +2606,7 @@ function renderTickets(el){
     <th class="hide-below-md" style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
     ${thSel('prop','Property',PROPS.map(p=>({v:p.id,l:p.name})),'hide-below-sm col-frozen')}
     ${thSel('status','Status',['Open','In progress','Completed','Closed'].map(s=>({v:s,l:s})))}
-    <th class="hide-below-sm" style="text-align:left;min-width:150px;max-width:150px;overflow:hidden;vertical-align:top">
+    <th class="hide-below-sm" style="text-align:left;min-width:115px;max-width:115px;overflow:hidden;vertical-align:top">
       ${thTitle(`<span>Created</span>${clearX('created','Created')}`)}
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdFrom)}" oninput="setFLive('createdFrom',this.value)" placeholder="From MM/DD/YY" title="From date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;margin-bottom:2px;font-weight:400">
       <input type="text" inputmode="numeric" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(FILTER.createdTo)}" oninput="setFLive('createdTo',this.value)" placeholder="To MM/DD/YY" title="To date (MM/DD/YY)" style="${fSel};width:100%;box-sizing:border-box;text-transform:none;font-weight:400">
