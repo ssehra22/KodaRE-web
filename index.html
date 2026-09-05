@@ -1775,6 +1775,15 @@ function updateTargetCompletion(id,val){const t=TICKETS.find(x=>x.id===id);if(!t
 // target completion nobody actually chose. Reopen the ticket after clearing to see it reflected
 // (this mirrors every other drawer field here -- none of them re-render the open drawer either).
 function clearTargetCompletion(id){updateTargetCompletion(id,'');}
+// Swaps the "Not set" text for a real <input type=date>, only on deliberate click -- an empty
+// native date input rendered at rest is exactly what looked like a saved 9/5/26 on every
+// ticket (confirmed the DB column itself has no default and is nullable), so this stops the
+// drawer from ever showing one unless someone is actively picking a date right now.
+function showTargetCompletionInput(id){
+  const el=document.getElementById('tcwrap_'+id);
+  if(!el)return;
+  el.innerHTML=`<input type="date" style="font-size:13px" onchange="updateTargetCompletion('${id}',this.value)">`;
+}
 // Whether this ticket's payment was made via credit card -- a simple yes/no indicator shown
 // as a checkbox immediately right of the Payment column, independent of what Payment status
 // itself is set to.
@@ -2784,11 +2793,12 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Vendor</div><div>${vendorSelect(t)}</div>
       <div class="k">Cost</div><div><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:110px;font-size:13px" onchange="updateCost('${t.id}',this.value)"></div>
       <div class="k">Invoice</div><div><input type="text" value="${esc(t.invoice||'')}" placeholder="—" style="width:180px;font-size:13px" onchange="updateInvoice('${t.id}',this.value)"></div>
-      <div class="k">Target completion</div><div><input type="date" value="${t.targetCompletion?toISODate(t.targetCompletion):''}" style="font-size:13px" onchange="updateTargetCompletion('${t.id}',this.value)"></div>
+      <div class="k">Target completion</div><div id="tcwrap_${t.id}">${t.targetCompletion?`<div style="display:flex;align-items:center;gap:8px"><input type="date" value="${toISODate(t.targetCompletion)}" style="font-size:13px" onchange="updateTargetCompletion('${t.id}',this.value)"><a onclick="clearTargetCompletion('${t.id}')" title="Clear target completion date" style="font-size:12px;color:var(--faint);cursor:pointer">✕ clear</a></div>`:`<span class="faint" style="font-size:13px">Not set</span> <a onclick="showTargetCompletionInput('${t.id}')" style="font-size:12px;cursor:pointer;margin-left:6px">+ set date</a>`}</div>
       <div class="k">Actual completion</div><div>${actualCompletionDate(t)?fdate(actualCompletionDate(t)):'<span class="faint">N/A</span>'}</div>
       <div class="k">Year / Month completed</div><div>${actualCompletionDate(t)?actualCompletionDate(t).toLocaleDateString('en-US',{year:'numeric',month:'long'}):'<span class="faint">N/A</span>'}</div>
       <div class="k">Finance recon</div><div><span class="badge ${ticketRecon(t).cls}"><span class="dot"></span>${ticketRecon(t).label}</span></div>
       <div class="k">Payment</div><div>${paySelect(t)}</div>
+      <div class="k">Paid via credit card</div><div><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${t.ccPayment?'checked':''} onchange="updateCCPayment('${t.id}',this.checked)" style="width:16px;height:16px;cursor:pointer"> ${t.ccPayment?'Yes':'No'}</label></div>
       <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:56px" placeholder="add / update comments…" onchange="updateNote('${t.id}',this.value)">${esc(t.notes)}</textarea></div>
       <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
       <div class="k">Reporter</div><div>${esc(t.reporter||'—')}${t.createdByEmail?`<div class="faint" style="font-size:10.5px;margin-top:2px">✓ Created by ${esc(t.createdByEmail)}</div>`:(t._backend==='supabase'?'<div class="faint" style="font-size:10.5px;margin-top:2px">No verified creator on file — entered before this was tracked, or via bulk import.</div>':'')}</div>
