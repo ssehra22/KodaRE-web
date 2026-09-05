@@ -1770,6 +1770,11 @@ function updateTargetCompletion(id,val){const t=TICKETS.find(x=>x.id===id);if(!t
   if(t._backend==='supabase')dbUpdateTicket(id,{target_completion_date:v||null}).then(ok=>{if(!ok){t.targetCompletion=prev;refreshTickets();}});
   else saveState();
   toast('Target completion updated');refreshTickets();}
+// One-click fix for a native date input's own quirk: clicking into an empty date field (or
+// nudging its spinner arrows) can silently fill in today's date and fire onchange, saving a
+// target completion nobody actually chose. Reopen the ticket after clearing to see it reflected
+// (this mirrors every other drawer field here -- none of them re-render the open drawer either).
+function clearTargetCompletion(id){updateTargetCompletion(id,'');}
 // Whether this ticket's payment was made via credit card -- a simple yes/no indicator shown
 // as a checkbox immediately right of the Payment column, independent of what Payment status
 // itself is set to.
@@ -2306,7 +2311,7 @@ function updatePropField(pid,field,value,kind){
 }
 
 /* ===== router ===== */
-let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all',svc:'all',vendor:'all',payment:'all',invoice:'all',metro:'all',selectedOnly:false,createdFrom:'',createdTo:'',descQuery:'',notesQuery:'',costMin:'',costMax:''};
+let ROLE='office',VIEW='dashboard',FILTER={status:'all',urgency:'all',prop:'all',svc:'all',vendor:'all',payment:'all',invoice:'all',metro:'all',cc:'all',selectedOnly:false,createdFrom:'',createdTo:'',descQuery:'',notesQuery:'',costMin:'',costMax:''};
 // Real signed-in user's display name (Phase 20) — was previously hardcoded to the demo
 // placeholder "Alex Rivera" for every Field Staff account. Set in applyLiveRole() once
 // connected to Supabase, or setRole() in offline demo mode.
@@ -2603,7 +2608,7 @@ function renderTickets(el){
     <select onchange="setF('${key}',this.value)" style="${fSel};width:100%" title="Filter by ${label}"><option value="all"${FILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${FILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>
   </th>`;
   const metroOpts=REF_LISTS.metro.values.slice();
-  const activeFilterCount=['status','urgency','prop','svc','vendor','payment','invoice','metro'].filter(k=>FILTER[k]!=='all').length
+  const activeFilterCount=['status','urgency','prop','svc','vendor','payment','invoice','metro','cc'].filter(k=>FILTER[k]!=='all').length
     + ['createdFrom','createdTo','descQuery','notesQuery','costMin','costMax'].filter(k=>FILTER[k]).length;
   const metroBar=`<div class="toolbar" style="flex-wrap:wrap;row-gap:8px"><span class="b" style="margin-right:2px">📍 Metro:</span>
     <span class="chip ${FILTER.metro==='all'?'active':''}" onclick="setF('metro','all')">All</span>
@@ -2670,9 +2675,7 @@ function renderTickets(el){
     </th>
     ${thSel('invoice','Invoice',[{v:'__blank__',l:'— none —'},...invOpts.map(v=>({v:v,l:v}))],'hide-below-lg',106)}
     ${thSel('payment','Payment',[{v:'__blank__',l:'—'},...REF_LISTS.paymentStatus.values.map(v=>({v:v,l:v}))],'hide-below-md',106)}
-    <th class="hide-below-md" style="text-align:center;min-width:56px;vertical-align:top">
-      ${thTitle(`<span title="Paid via credit card">💳 CC</span>`)}
-    </th>
+    ${thSel('cc','💳 CC',[{v:'yes',l:'✅ Yes'},{v:'no',l:'— No'}],'hide-below-md',72)}
     <th class="hide-below-lg" style="text-align:left;min-width:260px;vertical-align:top">
       ${thTitle(`<span>Comments</span>${clearX('notesQuery','Comments')}`)}
       <input type="text" value="${esc(FILTER.notesQuery)}" oninput="setFLive('notesQuery',this.value)" placeholder="Search..." title="Filter by comments text" style="${fSel};width:100%;text-transform:none;font-weight:400">
@@ -2711,7 +2714,7 @@ async function deleteSelectedTickets(){
 function filtered(){
   const cf=parseMDYY(FILTER.createdFrom);
   const ct=parseMDYY(FILTER.createdTo);
-  return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(FILTER.metro==='all'||(FILTER.metro==='__blank__'?!propById(t.prop).metro:propById(t.prop).metro===FILTER.metro))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
+  return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(FILTER.metro==='all'||(FILTER.metro==='__blank__'?!propById(t.prop).metro:propById(t.prop).metro===FILTER.metro))&&(FILTER.cc==='all'||(FILTER.cc==='yes'?!!t.ccPayment:!t.ccPayment))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
 }
 function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
   <td class="hide-below-md" onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
@@ -2745,7 +2748,7 @@ function clearFilter(key){
   if(VIEW==='tickets')renderTickets(document.getElementById('view'));
 }
 function clearAllFilters(){
-  FILTER.status='all';FILTER.urgency='all';FILTER.prop='all';FILTER.svc='all';FILTER.vendor='all';FILTER.payment='all';FILTER.invoice='all';FILTER.metro='all';
+  FILTER.status='all';FILTER.urgency='all';FILTER.prop='all';FILTER.svc='all';FILTER.vendor='all';FILTER.payment='all';FILTER.invoice='all';FILTER.metro='all';FILTER.cc='all';
   FILTER.createdFrom='';FILTER.createdTo='';FILTER.descQuery='';FILTER.notesQuery='';FILTER.costMin='';FILTER.costMax='';
   toast('All filters cleared');
   if(VIEW==='tickets')renderTickets(document.getElementById('view'));
