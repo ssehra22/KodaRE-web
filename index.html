@@ -1772,9 +1772,15 @@ function updateTargetCompletion(id,val){const t=TICKETS.find(x=>x.id===id);if(!t
   toast('Target completion updated');refreshTickets();}
 // One-click fix for a native date input's own quirk: clicking into an empty date field (or
 // nudging its spinner arrows) can silently fill in today's date and fire onchange, saving a
-// target completion nobody actually chose. Reopen the ticket after clearing to see it reflected
-// (this mirrors every other drawer field here -- none of them re-render the open drawer either).
-function clearTargetCompletion(id){updateTargetCompletion(id,'');}
+// target completion nobody actually chose. Unlike most other drawer fields, this one must
+// swap its own DOM back to "Not set" right here -- refreshTickets() alone only redraws the
+// Maintenance table, never the open drawer, so the date input here would otherwise sit there
+// still showing the old value even though the ticket's data (and the database) already cleared.
+function clearTargetCompletion(id){
+  updateTargetCompletion(id,'');
+  const el=document.getElementById('tcwrap_'+id);
+  if(el)el.innerHTML=`<span class="faint" style="font-size:13px">Not set</span> <a onclick="showTargetCompletionInput('${id}')" style="font-size:12px;cursor:pointer;margin-left:6px">+ set date</a>`;
+}
 // Swaps the "Not set" text for a real <input type=date>, only on deliberate click -- an empty
 // native date input rendered at rest is exactly what looked like a saved 9/5/26 on every
 // ticket (confirmed the DB column itself has no default and is nullable), so this stops the
