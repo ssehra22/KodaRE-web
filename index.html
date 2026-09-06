@@ -1802,6 +1802,14 @@ function updateCCPayment(id,checked){const t=TICKETS.find(x=>x.id===id);if(!t)re
   if(t._backend==='supabase')dbUpdateTicket(id,{paid_by_credit_card:checked}).then(ok=>{if(!ok){t.ccPayment=prev;refreshTickets();}});
   else saveState();
   toast('Updated');refreshTickets();}
+// Drawer-only wrapper: keeps the "Yes"/"No" text next to the checkbox in sync with what was
+// just clicked. The checkbox's own checked state already updates itself natively -- this just
+// covers the plain text label, which refreshTickets() alone (table-only) never touches.
+function onCCPaymentChange(id,checked){
+  updateCCPayment(id,checked);
+  const el=document.getElementById('ccLabel_'+id);
+  if(el)el.textContent=checked?'Yes':'No';
+}
 // Description is editable from the ticket drawer — Senior Admin only (see the ROLE==='admin'
 // check around the textarea itself in openTicket()); Office Staff and Field Staff still see
 // the same text read-only, same as every other field on this drawer that isn't theirs to edit.
@@ -2809,7 +2817,7 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Year / Month completed</div><div>${actualCompletionDate(t)?actualCompletionDate(t).toLocaleDateString('en-US',{year:'numeric',month:'long'}):'<span class="faint">N/A</span>'}</div>
       <div class="k">Finance recon</div><div><span class="badge ${ticketRecon(t).cls}"><span class="dot"></span>${ticketRecon(t).label}</span></div>
       <div class="k">Payment</div><div>${paySelect(t)}</div>
-      <div class="k">Paid via credit card</div><div><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${t.ccPayment?'checked':''} onchange="updateCCPayment('${t.id}',this.checked)" style="width:16px;height:16px;cursor:pointer"> ${t.ccPayment?'Yes':'No'}</label></div>
+      <div class="k">Paid via credit card</div><div><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${t.ccPayment?'checked':''} onchange="onCCPaymentChange('${t.id}',this.checked)" style="width:16px;height:16px;cursor:pointer"> <span id="ccLabel_${t.id}">${t.ccPayment?'Yes':'No'}</span></label></div>
       <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:56px" placeholder="add / update comments…" onchange="updateNote('${t.id}',this.value)">${esc(t.notes)}</textarea></div>
       <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
       <div class="k">Reporter</div><div>${esc(t.reporter||'—')}${t.createdByEmail?`<div class="faint" style="font-size:10.5px;margin-top:2px">✓ Created by ${esc(t.createdByEmail)}</div>`:(t._backend==='supabase'?'<div class="faint" style="font-size:10.5px;margin-top:2px">No verified creator on file — entered before this was tracked, or via bulk import.</div>':'')}</div>
