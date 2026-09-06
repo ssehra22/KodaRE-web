@@ -1770,17 +1770,22 @@ function updateTargetCompletion(id,val){const t=TICKETS.find(x=>x.id===id);if(!t
   if(t._backend==='supabase')dbUpdateTicket(id,{target_completion_date:v||null}).then(ok=>{if(!ok){t.targetCompletion=prev;refreshTickets();}});
   else saveState();
   toast('Target completion updated');refreshTickets();}
-// One-click fix for a native date input's own quirk: clicking into an empty date field (or
-// nudging its spinner arrows) can silently fill in today's date and fire onchange, saving a
-// target completion nobody actually chose. Unlike most other drawer fields, this one must
-// swap its own DOM back to "Not set" right here -- refreshTickets() alone only redraws the
-// Maintenance table, never the open drawer, so the date input here would otherwise sit there
-// still showing the old value even though the ticket's data (and the database) already cleared.
-function clearTargetCompletion(id){
-  updateTargetCompletion(id,'');
+// Central handler for every Target completion edit path in the drawer -- both the input that
+// shows once a date is set, and the one revealed by "+ set date". Always rewrites this ticket's
+// own tcwrap_ node to match what was just saved, because refreshTickets() alone only redraws the
+// Maintenance table behind the drawer, never the open drawer itself. Without this, picking a
+// first date via "+ set date" (or clearing the box by hand) left the field showing whatever it
+// showed before, with no way to get back to a working "clear" or "set" control except closing
+// and reopening the ticket.
+function onTargetCompletionChange(id,val){
+  updateTargetCompletion(id,val);
   const el=document.getElementById('tcwrap_'+id);
-  if(el)el.innerHTML=`<span class="faint" style="font-size:13px">Not set</span> <a onclick="showTargetCompletionInput('${id}')" style="font-size:12px;cursor:pointer;margin-left:6px">+ set date</a>`;
+  if(!el)return;
+  el.innerHTML = val
+    ? `<div style="display:flex;align-items:center;gap:8px"><input type="date" value="${val}" style="font-size:13px" onchange="onTargetCompletionChange('${id}',this.value)"><a onclick="clearTargetCompletion('${id}')" title="Clear target completion date" style="font-size:12px;color:var(--faint);cursor:pointer">✕ clear</a></div>`
+    : `<span class="faint" style="font-size:13px">Not set</span> <a onclick="showTargetCompletionInput('${id}')" style="font-size:12px;cursor:pointer;margin-left:6px">+ set date</a>`;
 }
+function clearTargetCompletion(id){ onTargetCompletionChange(id,''); }
 // Swaps the "Not set" text for a real <input type=date>, only on deliberate click -- an empty
 // native date input rendered at rest is exactly what looked like a saved 9/5/26 on every
 // ticket (confirmed the DB column itself has no default and is nullable), so this stops the
@@ -1788,7 +1793,7 @@ function clearTargetCompletion(id){
 function showTargetCompletionInput(id){
   const el=document.getElementById('tcwrap_'+id);
   if(!el)return;
-  el.innerHTML=`<input type="date" style="font-size:13px" onchange="updateTargetCompletion('${id}',this.value)">`;
+  el.innerHTML=`<input type="date" style="font-size:13px" onchange="onTargetCompletionChange('${id}',this.value)">`;
 }
 // Whether this ticket's payment was made via credit card -- a simple yes/no indicator shown
 // as a checkbox immediately right of the Payment column, independent of what Payment status
@@ -2799,7 +2804,7 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Vendor</div><div>${vendorSelect(t)}</div>
       <div class="k">Cost</div><div><input type="text" inputmode="decimal" value="${t.cost!=null?t.cost:''}" placeholder="—" style="width:110px;font-size:13px" onchange="updateCost('${t.id}',this.value)"></div>
       <div class="k">Invoice</div><div><input type="text" value="${esc(t.invoice||'')}" placeholder="—" style="width:180px;font-size:13px" onchange="updateInvoice('${t.id}',this.value)"></div>
-      <div class="k">Target completion</div><div id="tcwrap_${t.id}">${t.targetCompletion?`<div style="display:flex;align-items:center;gap:8px"><input type="date" value="${toISODate(t.targetCompletion)}" style="font-size:13px" onchange="updateTargetCompletion('${t.id}',this.value)"><a onclick="clearTargetCompletion('${t.id}')" title="Clear target completion date" style="font-size:12px;color:var(--faint);cursor:pointer">✕ clear</a></div>`:`<span class="faint" style="font-size:13px">Not set</span> <a onclick="showTargetCompletionInput('${t.id}')" style="font-size:12px;cursor:pointer;margin-left:6px">+ set date</a>`}</div>
+      <div class="k">Target completion</div><div id="tcwrap_${t.id}">${t.targetCompletion?`<div style="display:flex;align-items:center;gap:8px"><input type="date" value="${toISODate(t.targetCompletion)}" style="font-size:13px" onchange="onTargetCompletionChange('${t.id}',this.value)"><a onclick="clearTargetCompletion('${t.id}')" title="Clear target completion date" style="font-size:12px;color:var(--faint);cursor:pointer">✕ clear</a></div>`:`<span class="faint" style="font-size:13px">Not set</span> <a onclick="showTargetCompletionInput('${t.id}')" style="font-size:12px;cursor:pointer;margin-left:6px">+ set date</a>`}</div>
       <div class="k">Actual completion</div><div>${actualCompletionDate(t)?fdate(actualCompletionDate(t)):'<span class="faint">N/A</span>'}</div>
       <div class="k">Year / Month completed</div><div>${actualCompletionDate(t)?actualCompletionDate(t).toLocaleDateString('en-US',{year:'numeric',month:'long'}):'<span class="faint">N/A</span>'}</div>
       <div class="k">Finance recon</div><div><span class="badge ${ticketRecon(t).cls}"><span class="dot"></span>${ticketRecon(t).label}</span></div>
