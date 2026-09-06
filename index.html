@@ -4985,6 +4985,15 @@ async function processFinanceImportRows(rows){
     // add a same-to-same mapping row for it.
     const directVendorMatch=name?VENDORS.find(v=>v.name.trim().toLowerCase()===name.toLowerCase()):null;
     const vendor=vendMap?vendMap.vendor:(directVendorMatch?directVendorMatch.name:(name||null));
+    // Vendor Directory's Service Category (Default) / Service Type (Default) fill in the
+    // ticket's category/type, same as the Maintenance-tickets bulk add already does -- Finance
+    // rows have no column for either, so without this every imported ticket sat uncategorised
+    // even when its vendor has known defaults.
+    let svc=null,svctype=null;
+    if(vendor){
+      const vend=VENDORS.find(v=>v.name.trim().toLowerCase()===vendor.trim().toLowerCase());
+      if(vend){svc=vend.trade||null;svctype=vend.svctype||null;}
+    }
     const account=String(f.account||'').trim();
     const acctMap=FINANCE_MAP.ccAccounts.find(m=>m.account.trim().toLowerCase()===account.toLowerCase());
     const cc=!!(acctMap&&acctMap.cc);
@@ -5009,7 +5018,7 @@ async function processFinanceImportRows(rows){
     if(dateDefaulted)reviewReasons.push('missing/unreadable transaction date — defaulted to import date');
     const traceNote='Imported from Finance file — Code: '+code+(account?', Account: '+account:'')+', Txn date: '+toISODate(txnDate);
     const notes=reviewReasons.length?('⚠ NEEDS REVIEW: '+reviewReasons.join('; ')+' ||| '+traceNote):traceNote;
-    parsed.push({prop,vendor,cc,cost:amount,desc:desc||name,title,created:txnDate,notes,invoice:String(f.num||'').trim()||null,needsReview:reviewReasons.length>0});
+    parsed.push({prop,vendor,svc,svctype,cc,cost:amount,desc:desc||name,title,created:txnDate,notes,invoice:String(f.num||'').trim()||null,needsReview:reviewReasons.length>0});
   });
   if(!parsed.length){alert('No rows could be imported.'+(skipped.length?'\n\n'+skipped.join('\n'):''));return;}
   let created=0,needsReviewCount=0;
@@ -5018,7 +5027,7 @@ async function processFinanceImportRows(rows){
   const demoRows=parsed.filter(r=>r.prop._backend!=='supabase');
   if(liveRows.length){
     const uploaderEmail=await currentUserEmail();
-    const payloads=liveRows.map(r=>({property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:'Completed',urgency:'Low',service_category:null,service_type:null,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:'Paid',paid_by_credit_card:r.cc,reporter:currentUserDisplayName(),created_by_email:uploaderEmail,created_at:r.created.toISOString()}));
+    const payloads=liveRows.map(r=>({property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:'Completed',urgency:'Low',service_category:r.svc,service_type:r.svctype,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:'Paid',paid_by_credit_card:r.cc,reporter:currentUserDisplayName(),created_by_email:uploaderEmail,created_at:r.created.toISOString()}));
     const {data,error}=await sb.from('maintenance_tickets').insert(payloads).select();
     if(error){toast('Finance import failed: '+error.message);return;}
     for(let idx=0;idx<data.length;idx++){
@@ -5034,7 +5043,7 @@ async function processFinanceImportRows(rows){
   if(demoRows.length){
     demoRows.forEach(r=>{
       const daysAgo=Math.max(0,Math.round((today-r.created)/864e5));
-      const t=mkTicket({prop:r.prop.id,title:r.title,desc:r.desc,notes:r.notes,svc:null,svctype:null,urgency:'Low',status:'Completed',vendor:r.vendor,cost:r.cost,invoice:r.invoice,payment:'Paid',ccPayment:r.cc,targetCompletion:null,created:r.created,reporter:currentUserDisplayName(),log:[['Logged',logDetail,daysAgo],['Completed',logDetail,daysAgo]]});
+      const t=mkTicket({prop:r.prop.id,title:r.title,desc:r.desc,notes:r.notes,svc:r.svc,svctype:r.svctype,urgency:'Low',status:'Completed',vendor:r.vendor,cost:r.cost,invoice:r.invoice,payment:'Paid',ccPayment:r.cc,targetCompletion:null,created:r.created,reporter:currentUserDisplayName(),log:[['Logged',logDetail,daysAgo],['Completed',logDetail,daysAgo]]});
       TICKETS.push(t);
       created++;
       if(r.needsReview)needsReviewCount++;
