@@ -4978,7 +4978,13 @@ async function processFinanceImportRows(rows){
     const prop=plist.find(p=>p.id===codeMap.propId);
     if(!prop){skipped.push('Row '+rowNum+': mapped property no longer exists');return;}
     const vendMap=FINANCE_MAP.vendorNames.find(m=>m.financeName.trim().toLowerCase()===name.toLowerCase());
-    const vendor=vendMap?vendMap.vendor:(name||null);
+    // A translation-table row is only needed when the Finance file's Name doesn't already
+    // match a Vendor Directory name exactly (see the Finance Entry Mapping card's own copy).
+    // Checking only vendMap here was flagging "Needs Review" on every transaction whose vendor
+    // already matches the Vendor Directory verbatim, just because nobody had (or needed to)
+    // add a same-to-same mapping row for it.
+    const directVendorMatch=name?VENDORS.find(v=>v.name.trim().toLowerCase()===name.toLowerCase()):null;
+    const vendor=vendMap?vendMap.vendor:(directVendorMatch?directVendorMatch.name:(name||null));
     const account=String(f.account||'').trim();
     const acctMap=FINANCE_MAP.ccAccounts.find(m=>m.account.trim().toLowerCase()===account.toLowerCase());
     const cc=!!(acctMap&&acctMap.cc);
@@ -4996,7 +5002,7 @@ async function processFinanceImportRows(rows){
     // the ticket still gets created, just flagged via the Notes marker so it shows up under
     // Needs Review > Finance import instead of silently looking like a normal ticket.
     const reviewReasons=[];
-    if(!vendMap)reviewReasons.push('vendor "'+name+'" not matched to Vendor Directory (imported as typed)');
+    if(!vendMap&&!directVendorMatch)reviewReasons.push('vendor "'+name+'" not matched to Vendor Directory (imported as typed)');
     if(!account)reviewReasons.push('no payment account on this transaction');
     else if(!acctMap)reviewReasons.push('payment account "'+account+'" not matched — CC left unchecked');
     if(amount==null)reviewReasons.push('missing dollar amount');
