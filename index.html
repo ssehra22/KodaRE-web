@@ -2819,7 +2819,8 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <div class="k">Payment</div><div>${paySelect(t)}</div>
       <div class="k">Paid via credit card</div><div><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${t.ccPayment?'checked':''} onchange="onCCPaymentChange('${t.id}',this.checked)" style="width:16px;height:16px;cursor:pointer"> <span id="ccLabel_${t.id}">${t.ccPayment?'Yes':'No'}</span></label></div>
       <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:56px" placeholder="add / update comments…" onchange="updateNote('${t.id}',this.value)">${esc(t.notes)}</textarea></div>
-      <div class="k">Requested</div><div>${fdate(t.created)} (${ageDays(t)}d ago)</div>
+      <div class="k">Requested</div><div>${fdate(t.created)}${isOpen(t)?' ('+ageDays(t)+'d ago)':''}</div>
+      <div class="k">Days open</div><div>${cumulativeOpenDays(t)} day${cumulativeOpenDays(t)===1?'':'s'}${isOpen(t)?' <span class="faint" style="font-size:11px">(ongoing)</span>':' <span class="faint" style="font-size:11px">(total time unresolved, before it was resolved)</span>'}</div>
       <div class="k">Reporter</div><div>${esc(t.reporter||'—')}${t.createdByEmail?`<div class="faint" style="font-size:10.5px;margin-top:2px">✓ Created by ${esc(t.createdByEmail)}</div>`:(t._backend==='supabase'?'<div class="faint" style="font-size:10.5px;margin-top:2px">No verified creator on file — entered before this was tracked, or via bulk import.</div>':'')}</div>
     </div></div></div>
     <div class="sectitle">Your Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></div>
