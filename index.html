@@ -1817,6 +1817,16 @@ function updateDescription(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)retu
   if(t._backend==='supabase')dbUpdateTicket(id,{description:val}).then(ok=>{if(!ok){t.desc=prev;refreshTickets();}});
   else saveState();
   toast('Description updated');refreshTickets();}
+// Drawer-only wrapper: the big bold title at the top of the ticket drawer is ticketCardTitle(t),
+// which renders straight from t.desc -- same field this textarea edits. refreshTickets() alone
+// (table-only) never touches that header, so without this the title sat showing the old text
+// until the ticket was closed and reopened, same class of bug as Target completion/CC above.
+function onDescriptionChange(id,val){
+  updateDescription(id,val);
+  const t=TICKETS.find(x=>x.id===id);
+  const el=document.getElementById('ticketTitle_'+id);
+  if(t&&el)el.innerHTML=ticketCardTitle(t);
+}
 /* ===== ticket-detail inline editors: Service category/type, Vendor, Priority — Office
    Staff and Senior Admin can edit category/type/vendor/cost/invoice/payment; Priority is
    Senior Admin only (Office Staff sees a read-only badge, same as before). ===== */
@@ -1826,7 +1836,7 @@ function updateDescription(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)retu
 // ticket reads as "needs a decision" rather than "field left blank."
 function svcSelect(t){const opts=Object.keys(CAT);if(t.svc&&!opts.includes(t.svc))opts.push(t.svc);return `<select onchange="updateSvc('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.svc?' selected':''}>Not yet categorised</option>${opts.map(c=>`<option value="${c}"${t.svc===c?' selected':''}>${CAT[c]||''} ${c}</option>`).join('')}</select>`;}
 function svcTypeSelect(t){const opts=SVC_TYPES.slice();if(t.svctype&&!opts.includes(t.svctype))opts.push(t.svctype);return `<select onchange="updateSvcType('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.svctype?' selected':''}>Not yet set</option>${opts.map(s=>`<option value="${s}"${t.svctype===s?' selected':''}>${s}</option>`).join('')}</select>`;}
-function vendorSelect(t){return `<select onchange="updateVendor('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.vendor?' selected':''}>Not assigned</option>${VENDORS.map(v=>`<option value="${v.name}"${t.vendor===v.name?' selected':''}>${v.name} (${v.trade})</option>`).join('')}</select>`;}
+function vendorSelect(t){return `<select onchange="updateVendor('${t.id}',this.value)" style="font-size:13px"><option value=""${!t.vendor?' selected':''}>Not assigned</option>${vendorsSorted().map(v=>`<option value="${v.name}"${t.vendor===v.name?' selected':''}>${v.name} (${v.trade})</option>`).join('')}</select>`;}
 function priorityEditSelect(t){return `<select onchange="updatePriority('${t.id}',this.value)" style="font-size:13px">${['Emergency','Urgent','Low'].map(u=>`<option value="${u}"${t.urgency===u?' selected':''}>${u}</option>`).join('')}</select>`;}
 function updateSvc(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const prev=t.svc;t.svc=val||null;
   if(t._backend==='supabase')dbUpdateTicket(id,{service_category:t.svc}).then(ok=>{if(!ok){t.svc=prev;refresh(id);}});
@@ -2802,7 +2812,7 @@ function ticketRecon(t){const inMonthly=RECON.monthly.groups.some(g=>g.tickets.i
   if(t.status==='Completed'||t.status==='Closed')return {label:'Pending reconciliation',cls:'b-new'};
   return {label:'—',cls:'b-closed'};}
 function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=propById(t.prop);
-  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${ticketRef(t)}${t.svc?' · '+esc((CAT[t.svc]||'')+' '+t.svc).trim():''}</div><div style="font-size:18px;font-weight:800;margin-top:2px">${ticketCardTitle(t)}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${ticketRef(t)}${t.svc?' · '+esc((CAT[t.svc]||'')+' '+t.svc).trim():''}</div><div id="ticketTitle_${t.id}" style="font-size:18px;font-weight:800;margin-top:2px">${ticketCardTitle(t)}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${ubadge(t.urgency)} ${badge(t)} <span class="pill">🏠 ${p.name}</span></div></div>`,
    `<div class="card"><div class="body"><div class="kv">
       <div class="k">Property</div><div><a onclick="closeDrawer();navigate('properties');setTimeout(()=>openProperty('${p.id}'),60)">${p.name}</a> · ${p.addr||'—'}</div>
       <div class="k">Status</div><div>${badge(t)}</div>
@@ -2828,12 +2838,12 @@ function openTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const p=
       <textarea style="width:100%;min-height:56px" placeholder="add / update your private notes…" onchange="saveMyTicketNote('${t.id}',this.value)">${esc(myTicketNote(t.id))}</textarea>
       ${ROLE==='admin'?adminTicketNotesOversightHtml(t.id):''}
     </div></div>
-    <div class="sectitle">Description</div><div class="card"><div class="body">${ROLE==='admin'?`<textarea style="width:100%;min-height:72px;font:inherit" onchange="updateDescription('${t.id}',this.value)" placeholder="Describe the issue…">${esc(t.desc||'')}</textarea>`:(t.desc?esc(t.desc):'<span class="faint">No description</span>')}</div></div>
+    <div class="sectitle">Description</div><div class="card"><div class="body">${ROLE==='admin'?`<textarea style="width:100%;min-height:72px;font:inherit" onchange="onDescriptionChange('${t.id}',this.value)" placeholder="Describe the issue…">${esc(t.desc||'')}</textarea>`:(t.desc?esc(t.desc):'<span class="faint">No description</span>')}</div></div>
     <div class="sectitle">Attachments</div>${ticketAttachmentsSectionHtml(t)}
     <div class="sectitle">Actions</div><div class="card"><div class="body" style="display:flex;gap:10px;flex-wrap:wrap">${ticketActions(t)}</div></div>
     <div class="sectitle">Activity</div><div class="card"><div class="body"><ul class="timeline">${t.log.map(l=>`<li><span class="tdot"></span><div class="tt">${l[0]}</div><div class="tm">${l[1]} · ${logAge(l)}</div></li>`).join('')}</ul></div></div>`);
 }
-function ticketActions(t){const b=[];const vsel=`<select onchange="assignVendor('${t.id}',this.value)"><option value="">Assign vendor…</option>${VENDORS.map(v=>`<option value="${v.name}"${t.vendor===v.name?' selected':''}>${v.name} (${v.trade})</option>`).join('')}</select>`;
+function ticketActions(t){const b=[];const vsel=`<select onchange="assignVendor('${t.id}',this.value)"><option value="">Assign vendor…</option>${vendorsSorted().map(v=>`<option value="${v.name}"${t.vendor===v.name?' selected':''}>${v.name} (${v.trade})</option>`).join('')}</select>`;
   if(t.status==='Open'){b.push(vsel);b.push(`<button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Work started')">Start work</button>`);}
   else if(t.status==='In progress'){b.push(`<button class="btn green sm" onclick="completeTicket('${t.id}')">Mark completed</button>`);if(!t.vendor)b.push(vsel);}
   else if(t.status==='Completed'){b.push(`<button class="btn sm" onclick="closeTicket('${t.id}')">Close & reconcile</button>`);}
@@ -3494,7 +3504,7 @@ function financeMappingSection(){
   <table><thead><tr><th>Finance name</th><th>KodaRE vendor</th><th></th></tr></thead><tbody>${vendRows||'<tr><td colspan="3" class="muted">No mappings yet.</td></tr>'}</tbody></table>
   <div style="display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap">
     <input type="text" id="fm_vend_name" placeholder="Finance file Name (paste exactly)" style="flex:1;min-width:220px;font-size:13px">
-    <select id="fm_vend_vendor" style="min-width:160px;font-size:13px"><option value="">Select vendor…</option>${VENDORS.map(v=>`<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('')}</select>
+    <select id="fm_vend_vendor" style="min-width:160px;font-size:13px"><option value="">Select vendor…</option>${vendorsSorted().map(v=>`<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('')}</select>
     <button class="btn sm" onclick="addFinanceVendorMap()">+ Add</button>
   </div>
   </div></div>
@@ -4019,6 +4029,7 @@ function openLease(id){const l=LEASES.find(x=>x.id===id);const p=propById(l.prop
 
 /* ===== vendor directory (Scope §4.9) ===== */
 function vendorById(id){return VENDORS.find(v=>v.id===id);}
+function vendorsSorted(){return VENDORS.slice().sort((a,b)=>a.name.localeCompare(b.name,undefined,{sensitivity:'base'}));}
 let VFILTER={trade:'all',primary:'all',metro:'all',nameQuery:'',contactQuery:'',emailQuery:'',phoneQuery:''};
 // Landing page sort: grouped by Service Category, following the category order set in
 // Assumptions → Reference Lists (not alphabetically) — vendors with no category go last,
@@ -4665,7 +4676,7 @@ function openAddTicket(){
     <div class="field" style="margin-top:10px"><label class="f">Vendor</label>
       <select id="nt_vendor" style="width:100%">
         <option value="">— not assigned yet —</option>
-        ${VENDORS.map(v=>`<option value="${v.name}">${v.name} (${v.trade})</option>`).join('')}
+        ${vendorsSorted().map(v=>`<option value="${v.name}">${v.name} (${v.trade})</option>`).join('')}
       </select>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Estimated cost ($)</label>
