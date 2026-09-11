@@ -2506,7 +2506,7 @@ function friendlyDbError(error){
   if(/violates not-null constraint/i.test(raw))
     return 'A required field is missing — please check the form and try again.';
   if(/row-level security|permission denied|42501/i.test(raw))
-    return "You don't have permission to do that.";
+    return "This didn't go through — usually because your sign-in session has expired. Try refreshing the page and signing in again; if it still happens, you may not have permission for this and should check with your admin.";
   if(/violates foreign key constraint/i.test(raw))
     return 'One of the selected options is no longer valid — please refresh and try again.';
   if(/Failed to fetch|NetworkError|network request failed/i.test(raw))
@@ -4738,7 +4738,7 @@ async function submitNewTicket(){
   if(p&&p._backend==='supabase'){
     const payload={property_id:propId,title,description:desc,notes,service_category:null,service_type:null,urgency,status,vendor:vendor||null,cost,invoice_number:invoice||null,payment_status:payment||null,target_completion_date:targetRaw||null,reporter,created_at:created.toISOString(),created_by_email:await currentUserEmail()};
     const {data,error}=await sb.from('maintenance_tickets').insert(payload).select().single();
-    if(error){errEl.textContent='Could not create ticket: '+error.message;return;}
+    if(error){console.error('Create ticket failed',error);errEl.textContent=friendlyDbError(error);logError('Create ticket failed: '+error.message);return;}
     await dbLogActivity(data.id,'Logged','Entered in maintenance tracker');
     const t=rowToTicket(Object.assign({},data,{maintenance_ticket_activity:[{action:'Logged',detail:'Entered in maintenance tracker',created_at:new Date().toISOString()}]}));
     TICKETS.unshift(t);
@@ -4906,7 +4906,7 @@ async function processBulkTicketRows(rows){
     const uploaderEmail=await currentUserEmail();
     const payloads=liveRows.map(r=>{const payload={property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:r.status,urgency:r.urgency,service_category:r.svc,service_type:r.svctype,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:r.payment,reporter:r.reporter,created_by_email:uploaderEmail};if(r.created)payload.created_at=r.created.toISOString();return payload;});
     const {data,error}=await sb.from('maintenance_tickets').insert(payloads).select();
-    if(error){toast('Bulk import failed: '+error.message);return;}
+    if(error){console.error('Bulk ticket import failed',error);toast(friendlyDbError(error),'error');logError('Bulk ticket import failed: '+error.message);return;}
     for(const row of data){
       await dbLogActivity(row.id,'Logged','Entered via bulk upload');
       TICKETS.unshift(rowToTicket(Object.assign({},row,{maintenance_ticket_activity:[{action:'Logged',detail:'Entered via bulk upload',created_at:new Date().toISOString()}]})));
@@ -5041,7 +5041,7 @@ async function processFinanceImportRows(rows){
     const uploaderEmail=await currentUserEmail();
     const payloads=liveRows.map(r=>({property_id:r.prop.id,title:r.title,description:r.desc,notes:r.notes,status:'Completed',urgency:'Low',service_category:r.svc,service_type:r.svctype,vendor:r.vendor,cost:r.cost,invoice_number:r.invoice,payment_status:'Paid',paid_by_credit_card:r.cc,reporter:currentUserDisplayName(),created_by_email:uploaderEmail,created_at:r.created.toISOString()}));
     const {data,error}=await sb.from('maintenance_tickets').insert(payloads).select();
-    if(error){toast('Finance import failed: '+error.message);return;}
+    if(error){console.error('Finance import failed',error);toast(friendlyDbError(error),'error');logError('Finance import failed: '+error.message);return;}
     for(let idx=0;idx<data.length;idx++){
       const row=data[idx];const r=liveRows[idx];
       const ts=r.created.toISOString();
@@ -5158,7 +5158,7 @@ async function submitNewVendor(){
       contact,phone,email,portal,login,licenses,lic_exp:licExpDate?toISODate(licExpDate):null,
       ins_exp:insExpDate?toISODate(insExpDate):null,referred_by:referredBy,quality,ytd,comments,user_notes:userNotes,properties};
     const {data,error}=await sb.from('vendors').insert(payload).select().single();
-    if(error){if(errEl)errEl.textContent='Could not create vendor: '+error.message;return;}
+    if(error){console.error('Create vendor failed',error);if(errEl)errEl.textContent=friendlyDbError(error);logError('Create vendor failed: '+error.message);return;}
     VENDORS.push(rowToVendor(data));
     closeDrawer();
     toast('Vendor created: '+name);
@@ -5298,7 +5298,7 @@ async function processBulkVendorRows(rows){
       ins_exp:r.insExp,licenses:r.licenses,lic_exp:r.licExp,referred_by:r.referredBy,quality:r.quality,ytd:r.ytd,
       comments:r.comments,user_notes:r.userNotes,properties:r.properties}));
     const {data,error}=await sb.from('vendors').insert(payloads).select();
-    if(error){toast('Bulk import failed: '+error.message);return;}
+    if(error){console.error('Bulk vendor import failed',error);toast(friendlyDbError(error),'error');logError('Bulk vendor import failed: '+error.message);return;}
     data.forEach(row=>{VENDORS.push(rowToVendor(row));created++;});
   }else{
     parsed.forEach(r=>{
@@ -5564,7 +5564,7 @@ async function obCreate(){
     if(d.own==='owned'){payload.llc=d.llc||null;payload.value=parseInt(d.value)||null;}
     else{payload.landlord=d.landlord||null;payload.rent=parseInt(d.rent)||null;}
     const {data,error}=await sb.from('properties').insert(payload).select().single();
-    if(error){toast('Could not create property: '+error.message);return;}
+    if(error){console.error('Create property failed',error);toast(friendlyDbError(error),'error');logError('Create property failed: '+error.message);return;}
     const p=rowToProperty(data);
     PROPS.push(p);
     if(d.own!=='owned'){
