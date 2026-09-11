@@ -1530,7 +1530,7 @@ function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 function updateNote(id,val){const t=TICKETS.find(x=>x.id===id);if(!t)return;const prev=t.notes;t.notes=val;
   if(t._backend==='supabase')dbUpdateTicket(id,{notes:val}).then(ok=>{if(!ok){t.notes=prev;refreshTickets();}});
   else saveState();
-  toast('Note saved');}
+  toast('Note saved');refreshTickets();}
 function paySelect(t){return `<select onchange="updatePayment('${t.id}',this.value)" style="font-size:12px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:${t.payment==='Paid'?'var(--tone-ok-soft-bg)':t.payment==='Ready for Payment'?'var(--tone-warn-soft-bg)':t.payment==='Match Proposed'?'var(--tone-warn-soft-bg)':'var(--surface)'}"><option value=""${!t.payment?' selected':''}>—</option>${REF_LISTS.paymentStatus.values.map(v=>`<option value="${v}"${t.payment===v?' selected':''}>${v==='Match Proposed'?'⚠ ':''}${v}</option>`).join('')}</select>`;}
 function refreshTickets(){computeHealth();if(VIEW==='tickets'&&MAINT_TAB==='items')renderTickets(document.getElementById('view'));}
 function renderTrash(el){
