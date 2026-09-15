@@ -1,10 +1,14 @@
 // KodaRE — Vercel serverless function: read an uploaded vendor invoice with AI and propose
-// which existing maintenance ticket(s) it covers. Scope §4.10 "Invoice matching": one invoice
-// commonly spans multiple tickets (one vendor visit, several jobs) and typically covers a
-// single property; the platform reads it, proposes ticket matches + a cost per matched ticket
-// for staff to review, and never writes to the database itself — same never-writes-itself
-// design as /api/extract-loan-doc.js and /api/extract-property-doc.js, adapted for a
-// many-tickets target instead of a single property record.
+// which existing maintenance ticket(s) it covers. Scope §4.10 "Invoice matching": the platform
+// reads each invoice for its vendor, property, invoice number, description of work, and cost;
+// candidate tickets are those Completed/Closed and not yet invoiced for that invoice's vendor
+// and property; description is the primary match signal since vendor/property alone often
+// won't distinguish between several candidates. One invoice commonly spans multiple tickets
+// (one vendor visit, several jobs) and typically covers a single property. This function
+// proposes ticket matches + a cost per matched ticket for staff to review, and never writes to
+// the database itself — same never-writes-itself design as /api/extract-loan-doc.js and
+// /api/extract-property-doc.js, adapted for a many-tickets target instead of a single property
+// record.
 //
 // Unlike those two (Senior Admin only, because they draft Senior-Admin-locked property/loan
 // fields), this one allows Office Staff too — "Expenses & invoices" is an Office Staff R/W
@@ -16,13 +20,15 @@
 // already set up (they were, as of the loan/property readers going in).
 //
 // Request body: { path: string (file path inside the 'invoices' storage bucket, already
-//   uploaded by the client with the authenticated session), candidates: [{id, ref, title,
-//   desc}] (candidate maintenance tickets — already filtered client-side to the selected
-//   vendor, Completed/Closed, not yet invoiced, so this function only has to do description
-//   matching, not vendor/status filtering) }
+//   uploaded by the client with the authenticated session), candidates: [{id, ref, title, desc,
+//   vendor, property}] (candidate maintenance tickets — already filtered client-side to
+//   Completed/Closed, not yet invoiced, and optionally one property, but NOT to a single
+//   vendor: per Scope §4.10 the vendor comes from reading the invoice itself, not from a human
+//   pre-selecting it, so this function has to identify the vendor on the invoice and match it
+//   (along with property and description) against each candidate's own vendor/property fields) }
 //
-// Response: { ok:true, invoiceNumber, invoiceDate, total, items:[{description, amount,
-//   matchedTicketId}], documentName }
+// Response: { ok:true, vendorName, invoiceNumber, invoiceDate, total, items:[{description,
+//   amount, matchedTicketId}], documentName }
 
 const SUPABASE_URL = 'https://ybjsbxswsuuxmoxdhvkt.supabase.co';
 const ANON_KEY = 'sb_publishable_K1BE_CGLkreR0p03Ocwq2w_HW8CuhnT';
@@ -40,30 +46,35 @@ function extToMediaType(name) {
 
 function buildPrompt(candidates) {
   const list = candidates.slice(0, MAX_CANDIDATES).map(c =>
-    `- id: ${c.id} | ref: ${c.ref || c.id} | title: ${(c.title || '').replace(/\s+/g, ' ')} | description: ${(c.desc || '').replace(/\s+/g, ' ')}`
+    `- id: ${c.id} | ref: ${c.ref || c.id} | vendor: ${c.vendor || '(none assigned)'} | property: ${c.property || '(unknown)'} | title: ${(c.title || '').replace(/\s+/g, ' ')} | description: ${(c.desc || '').replace(/\s+/g, ' ')}`
   ).join('\n');
 
   return `You are reading a vendor invoice for a property-management company. One invoice commonly covers several separate maintenance jobs done by the same vendor, often at the same property, billed together.
 
-Below is a list of candidate maintenance tickets already logged in KodaRE for this vendor (already filtered to the right vendor and to tickets that are Completed/Closed and not yet invoiced) — your job is only to match invoice line items to these by description, not to judge vendor or status.
+Below is a list of candidate maintenance tickets already logged in KodaRE — already filtered to tickets that are Completed/Closed and not yet invoiced or paid, but spanning MULTIPLE vendors and properties. Your job has three parts:
+1. Identify which vendor issued this invoice (the company name on the letterhead/header — not a person's name unless that's how the business is known) and, if stated, which property/address it's for.
+2. Using that vendor (required match) and property (when the invoice names one — otherwise don't filter by property), narrow to the candidates that plausibly apply.
+3. Within that narrowed set, match each invoice line item to the single best candidate by the description of the work. Vendor and property alone often won't distinguish between several candidates for the same vendor at the same property — description is the primary signal once vendor/property have narrowed the field.
 
 Candidate tickets:
 ${list || '(no candidate tickets provided)'}
 
-Important: the invoice's date will often NOT match when the ticket work was logged or completed in KodaRE — Koda's own ticket dates are sometimes estimated. Do NOT use dates to decide matches. Match on the description of the work only.
+Important: the invoice's date will often NOT match when the ticket work was logged or completed in KodaRE — Koda's own ticket dates are sometimes estimated. Do NOT use dates to decide matches.
 
 Read the invoice and extract:
-1. The invoice number.
-2. The invoice date.
-3. The grand total amount due.
-4. Every distinct job/task/line described in the invoice — even if the invoice gives only ONE lump total for everything with no per-job dollar breakdown, still separate out each distinct task, unit, or address mentioned as its own item (do not merge them into one).
+1. The vendor name as it appears on the invoice.
+2. The invoice number.
+3. The invoice date.
+4. The grand total amount due.
+5. Every distinct job/task/line described in the invoice — even if the invoice gives only ONE lump total for everything with no per-job dollar breakdown, still separate out each distinct task, unit, or address mentioned as its own item (do not merge them into one).
 
 For each item:
 - "amount": the dollar amount for that specific item, ONLY if the invoice itself breaks out a dollar amount per line. If the invoice gives only one total for multiple jobs, use null (do not guess or split evenly).
-- "matchedTicketId": the "id" of the single best-matching candidate ticket above, based on its description, if you're reasonably confident. Use null if no candidate is a good match, or if you're not confident.
+- "matchedTicketId": the "id" of the single best-matching candidate ticket above — it must be a vendor match (the candidate's "vendor" should reasonably correspond to the vendor you identified on the invoice), and if the invoice names a property, the candidate's "property" should correspond too. Within tickets that satisfy that, use the description to pick the best one. Use null if no candidate is a good match, or if you're not confident.
 
 Return ONLY a single JSON object (no markdown, no code fences, no explanation):
 {
+  "vendorName": string or null — the vendor identified on the invoice,
   "invoiceNumber": string or null,
   "invoiceDate": string or null — ISO format YYYY-MM-DD,
   "total": number or null — plain number, no "$" or commas,
@@ -194,6 +205,7 @@ module.exports = async (req, res) => {
       matchedTicketId: it && it.matchedTicketId != null ? String(it.matchedTicketId) : null
     })) : [];
     result = {
+      vendorName: parsed.vendorName != null ? String(parsed.vendorName) : null,
       invoiceNumber: parsed.invoiceNumber != null ? String(parsed.invoiceNumber) : null,
       invoiceDate: parsed.invoiceDate != null ? String(parsed.invoiceDate) : null,
       total: typeof parsed.total === 'number' ? parsed.total : null,
@@ -204,5 +216,5 @@ module.exports = async (req, res) => {
     return;
   }
 
-  res.status(200).json({ ok: true, invoiceNumber: result.invoiceNumber, invoiceDate: result.invoiceDate, total: result.total, items: result.items, documentName: fileName });
+  res.status(200).json({ ok: true, vendorName: result.vendorName, invoiceNumber: result.invoiceNumber, invoiceDate: result.invoiceDate, total: result.total, items: result.items, documentName: fileName });
 };
