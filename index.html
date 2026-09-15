@@ -1912,9 +1912,21 @@ async function dropInvoiceOnTicket(id,ev){
 }
 function bulkDragOver(ev){ev.preventDefault();if(SELECTED.size)ev.currentTarget.style.background='var(--tone-warn-soft-bg)';}
 function bulkDragLeave(ev){ev.currentTarget.style.background='';}
+// One invoice almost always belongs to a single property — bulk-attaching a file to whatever's
+// checked in SELECTED has no idea which properties those tickets actually belong to, so without
+// this check it will silently apply the same invoice across every property in the selection
+// (this is exactly what happened when 3 tickets for 3 different properties got one invoice
+// attached to all of them). Confirms once, naming the properties, before proceeding.
+function confirmInvoiceAcrossSelectedProperties(){
+  const names=[];
+  TICKETS.forEach(t=>{if(SELECTED.has(t.id)){const n=propById(t.prop).name;if(!names.includes(n))names.push(n);}});
+  if(names.length<=1)return true;
+  return confirm('The '+SELECTED.size+' selected tickets span '+names.length+' different properties ('+names.join(', ')+'). One invoice is normally for a single property — attaching this file will apply the same invoice to tickets across all '+names.length+' of them.\n\nContinue anyway?');
+}
 async function dropInvoiceOnSelected(ev){
   ev.preventDefault();ev.currentTarget.style.background='';
   if(SELECTED.size===0){toast('Select tickets first, then drop the invoice');return;}
+  if(!confirmInvoiceAcrossSelectedProperties())return;
   const files=ev.dataTransfer&&ev.dataTransfer.files;const f=files&&files[0];
   if(!f){toast('No file detected in drop');return;}
   const total=promptInvoiceTotal();
@@ -1939,6 +1951,7 @@ async function pickInvoiceForTicket(id,input){
 async function pickInvoiceForSelected(input){
   const f=input.files&&input.files[0];if(!f)return;
   if(SELECTED.size===0){toast('Select tickets first, then choose an invoice');input.value='';return;}
+  if(!confirmInvoiceAcrossSelectedProperties()){input.value='';return;}
   const total=promptInvoiceTotal();
   let n=0,anyLocal=false;
   for(const t of TICKETS){if(SELECTED.has(t.id)){const ok=await attachInvoiceFile(t,f,total);if(ok){n++;if(t._backend!=='supabase')anyLocal=true;}}}
@@ -2032,6 +2045,12 @@ function openInvoiceMatchReview(result,uploaded){
   const items=(result.items||[]).map((it,ix)=>Object.assign({_ix:ix},it));
   const matched=items.filter(it=>it.matchedTicketId&&TICKETS.some(t=>t.id===it.matchedTicketId));
   const unmatched=items.filter(it=>!(it.matchedTicketId&&TICKETS.some(t=>t.id===it.matchedTicketId)));
+  // One invoice is normally for a single property. If the "Property" field was left blank on
+  // the upload modal (or this vendor's outstanding tickets happen to span several properties
+  // anyway), the matches proposed here can span multiple properties without anything flagging
+  // it -- surfaced explicitly so staff notice before confirming, rather than after.
+  const matchedPropNames=[];
+  matched.forEach(it=>{const t=TICKETS.find(x=>x.id===it.matchedTicketId);const n=t?propById(t.prop).name:null;if(n&&!matchedPropNames.includes(n))matchedPropNames.push(n);});
   const anyLineAmounts=matched.some(it=>it.amount!=null);
   // Cost handling per Scope Section 4.10: a lump-sum invoice with no per-line breakdown
   // defaults its full total onto the largest/primary matched ticket (here: the first match);
@@ -2062,6 +2081,7 @@ function openInvoiceMatchReview(result,uploaded){
         <div class="k">Invoice total</div><div><input type="number" step="0.01" id="invRevTotal" value="${result.total!=null?result.total:''}" style="width:140px;font-size:13px"></div>
       </div>
       <div class="muted" style="font-size:12.5px;line-height:1.55;margin-bottom:6px">KodaRE matched ${matched.length} line item${matched.length===1?'':'s'} to existing tickets by description — dates weren't used. Uncheck anything that's wrong, or adjust cost, before confirming. <b>Nothing is saved until you confirm below.</b></div>
+      ${matchedPropNames.length>1?`<div class="faint" style="font-size:12px;margin-bottom:10px;padding:8px 10px;background:var(--tone-warn-soft-bg);border-radius:8px">⚠ These matches span ${matchedPropNames.length} different properties (${matchedPropNames.map(esc).join(', ')}) — one invoice is normally for a single property. Double-check each match below belongs on this invoice, or discard and re-upload with a specific Property selected to narrow it.</div>`:''}
       ${matched.length?matched.map(rowHtml).join(''):'<div class="muted" style="padding:14px 0">No confident matches found — nothing to confirm. Try attaching this invoice manually via drag-and-drop on the Maintenance list instead.</div>'}
     </div></div>
     ${unmatched.length?`<div class="card" style="margin-top:12px"><div class="body">
