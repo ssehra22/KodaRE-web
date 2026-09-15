@@ -600,6 +600,7 @@ function rowToTicket(row){
     invoiceTotal: row.invoice_total!=null?Number(row.invoice_total):null, payment: row.payment_status,
     targetCompletion: row.target_completion_date?new Date(row.target_completion_date+'T00:00:00'):null,
     ccPayment: !!row.paid_by_credit_card,
+    emergencyAckAt: row.emergency_acknowledged_at ? new Date(row.emergency_acknowledged_at) : null,
     reporter: row.reporter, createdByEmail: row.created_by_email||null, created: new Date(row.created_at),
     log: acts.map(a=>[a.action, a.detail, a.created_at])
   };
@@ -2883,6 +2884,27 @@ function setStatus(id,s,note){const t=TICKETS.find(x=>x.id===id);if(!t)return;
   pushActivity(t,s,note||'');
   if(t._backend==='supabase')dbUpdateTicket(id,{status:s}).then(ok=>{if(!ok){t.status=prev;refresh(id);}});
   toast('Status → '+s);refresh(id);}
+// Acknowledging an emergency ticket from the Approvals queue is tracked independently of
+// status (emergency_acknowledged_at, Phase 40) -- some emergencies are seen/triaged before
+// anyone has actually started the work, so acknowledgment shouldn't force status to "In
+// progress" unless the admin is also starting work right now. startWork=true does both in
+// one save; startWork=false clears the ticket from the queue and leaves status untouched.
+function acknowledgeEmergency(id,startWork){
+  const t=TICKETS.find(x=>x.id===id);if(!t)return;
+  const prevStatus=t.status,prevAck=t.emergencyAckAt;
+  const now=new Date();
+  t.emergencyAckAt=now;
+  const patch={emergency_acknowledged_at:now.toISOString()};
+  if(startWork){
+    t.status='In progress';patch.status='In progress';
+    pushActivity(t,'In progress','Acknowledged by Senior Admin — work started');
+  }else{
+    pushActivity(t,'Acknowledged','Acknowledged by Senior Admin — status kept as '+t.status);
+  }
+  if(t._backend==='supabase')dbUpdateTicket(id,patch).then(ok=>{if(!ok){t.status=prevStatus;t.emergencyAckAt=prevAck;refresh(id);}});
+  toast(startWork?'Acknowledged — status → In progress':'Acknowledged — status stays '+t.status);
+  refresh(id);
+}
 function completeTicket(id){const t=TICKETS.find(x=>x.id===id);if(!t)return;const c=prompt('Actual cost ($):',t.cost!=null?t.cost:'');if(c===null)return;
   const prevCost=t.cost,prevStatus=t.status;
   t.cost=Number(c)||0;t.status='Completed';
@@ -4637,14 +4659,14 @@ function markTicketReviewed(id){
   refreshTickets();
   renderApprovals(document.getElementById('view'));
 }
-function approvalItems(){const emerg=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));const recon=[];if(!RECON.weekly.signed&&!RECON.weekly.exceptions.length)recon.push('w');if(!RECON.monthly.signed&&!RECON.monthly.exceptions.length)recon.push('m');const review=TICKETS.filter(ticketNeedsReview);return [...emerg,...recon,...review];}
+function approvalItems(){const emerg=TICKETS.filter(t=>t.urgency==='Emergency'&&t.status==='Open'&&!t.emergencyAckAt);const recon=[];if(!RECON.weekly.signed&&!RECON.weekly.exceptions.length)recon.push('w');if(!RECON.monthly.signed&&!RECON.monthly.exceptions.length)recon.push('m');const review=TICKETS.filter(ticketNeedsReview);return [...emerg,...recon,...review];}
 function renderApprovals(el){
-  const emerg=TICKETS.filter(t=>t.urgency==='Emergency'&&isOpen(t));
+  const emerg=TICKETS.filter(t=>t.urgency==='Emergency'&&t.status==='Open'&&!t.emergencyAckAt);
   const review=TICKETS.filter(ticketNeedsReview);
   el.innerHTML=`${pageHeader('approvals')}
   <div class="kpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi red"><div class="lab">Open emergencies</div><div class="val">${emerg.length}</div></div><div class="kpi amber"><div class="lab">Recon awaiting sign-off</div><div class="val">${(RECON.weekly.signed?0:1)+(RECON.monthly.signed?0:1)}</div></div><div class="kpi amber"><div class="lab">Finance import — needs review</div><div class="val">${review.length}</div></div><div class="kpi green"><div class="lab">Properties</div><div class="val">${PROPS.length}</div></div></div>
   <div class="sectitle">Open emergencies</div>
-  <div class="card">${emerg.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${emerg.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()"><button class="btn amber sm" onclick="setStatus('${t.id}','In progress','Acknowledged by Senior Admin')">Acknowledge</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
+  <div class="card">${emerg.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th></th></tr></thead><tbody>${emerg.map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:280px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td onclick="event.stopPropagation()" style="white-space:nowrap"><button class="btn amber sm" onclick="acknowledgeEmergency('${t.id}',true)" title="Move to In progress">Acknowledge &amp; start work</button> <button class="btn sec sm" onclick="acknowledgeEmergency('${t.id}',false)" title="Clear from this queue, leave status as Open">Acknowledge only</button></td></tr>`).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing open.</div>'}</div>
   <div class="sectitle">Reconciliation sign-off</div><div class="card"><div class="body row"><button class="btn ${RECON.weekly.signed?'sec':'green'}" onclick="RTAB='weekly';navigate('recon')">${RECON.weekly.signed?'Weekly ✓ signed':'Review weekly →'}</button><button class="btn ${RECON.monthly.signed?'sec':'green'}" onclick="RTAB='monthly';navigate('recon')">${RECON.monthly.signed?'Monthly ✓ locked':'Review monthly →'}</button></div></div>
   <div class="sectitle">Finance import — needs review</div>
   <div class="card">${review.length?`<table><thead><tr><th>Item</th><th>Property</th><th>Why it's flagged</th><th></th></tr></thead><tbody>${review.map(t=>{const reason=(t.notes||'').replace(/^⚠ NEEDS REVIEW:\s*/,'').split(' ||| ')[0];return `<tr class="clickable" onclick="openTicket('${t.id}')"><td class="b"><div class="trunc2" style="max-width:260px">${ticketDescCell(t)}</div></td><td>${propById(t.prop).name}</td><td class="muted" style="font-size:12px"><div class="trunc2" style="max-width:300px">${esc(reason)}</div></td><td onclick="event.stopPropagation()"><button class="btn sec sm" onclick="markTicketReviewed('${t.id}')">✓ Mark reviewed</button></td></tr>`;}).join('')}</tbody></table>`:'<div class="body muted">✓ Nothing flagged.</div>'}</div>`;
