@@ -1867,34 +1867,20 @@ function updatePriority(id,val){
   if(t._backend==='supabase')dbUpdateTicket(id,{urgency:val}).then(ok=>{if(!ok){t.urgency=prev;refresh(id);}});
   else saveState();
   toast('Priority updated');refresh(id);}
-/* ===== drag-and-drop invoice attach (single ticket or multi-select) — Scope §4.10 ===== */
-function promptInvoiceTotal(){
-  const raw=prompt('Invoice total for this file, as read by the platform (leave blank to skip the reconciliation check):','');
-  if(raw==null||raw.trim()==='')return null;
-  const n=Number(raw.trim());
-  return isNaN(n)?null:n;
-}
-async function attachInvoiceFile(t,file,invoiceTotal){
-  if(t._backend==='supabase'){
-    const path=`${t.id}/${Date.now()}_${file.name}`;
-    const {error:upErr}=await sb.storage.from('invoices').upload(path,file,{upsert:true});
-    if(upErr){toast('Upload failed: '+upErr.message);return false;}
-    const {data:signed}=await sb.storage.from('invoices').createSignedUrl(path,60*60*24*7);
-    const url=signed?signed.signedUrl:null;
-    t.invoice=file.name;t.invoiceFileUrl=url;t.invoiceFileName=file.name;t.payment='Match Proposed';
-    t.invoiceTotal=(invoiceTotal!=null)?invoiceTotal:null;
-    const ok=await dbUpdateTicket(t.id,{invoice_number:file.name,invoice_file_url:url,invoice_file_name:file.name,payment_status:'Match Proposed',invoice_total:(invoiceTotal!=null?invoiceTotal:null)});
-    if(ok)dbLogActivity(t.id,'Invoice attached',file.name+(invoiceTotal!=null?' · total '+money(invoiceTotal):''));
-    return ok;
-  }
-  let url=null;try{url=URL.createObjectURL(file);}catch(e){}
-  t.invoice=file.name;
-  t.invoiceFileUrl=url;
-  t.invoiceFileName=file.name;
-  t.payment='Match Proposed';
-  t.invoiceTotal=(invoiceTotal!=null)?invoiceTotal:null;
-  return true;
-}
+/* ===== drag-and-drop invoice attach (single ticket or multi-select) — Scope §4.10 =====
+   Every entry point here (drop on a row, drop on the selected-tickets zone, or the file-picker
+   equivalents of both) runs through the same AI read-and-propose-matches pipeline as the
+   "🤖 Upload vendor invoice" toolbar button, instead of blindly attaching the dropped file to
+   whatever ticket(s) it landed on. Staff load the invoice; KodaRE reads it and proposes which
+   Completed/Closed, not-yet-invoiced ticket(s) for that vendor it covers (one invoice can cover
+   many tickets), and nothing is written to any ticket until that proposal is reviewed and
+   confirmed on the same screen the toolbar button uses (see runInvoiceMatchExtraction /
+   openInvoiceMatchReview below). Dropping directly on one ticket's row uses that ticket's own
+   vendor + property to scope the match, since pointing at a specific ticket is a strong signal
+   of intent; dropping on a multi-selection uses whatever vendor those selected tickets share
+   and leaves property open (one invoice can span several properties for the same vendor) --
+   selecting tickets here is a way to tell KodaRE which vendor's invoice this is, not a manual
+   per-ticket assignment. */
 function rowDragOver(ev){ev.preventDefault();ev.currentTarget.style.background='var(--tone-warn-soft-bg)';}
 function rowDragLeave(ev){ev.currentTarget.style.background='';}
 async function dropInvoiceOnTicket(id,ev){
@@ -1902,63 +1888,52 @@ async function dropInvoiceOnTicket(id,ev){
   const files=ev.dataTransfer&&ev.dataTransfer.files;const f=files&&files[0];
   if(!f){toast('No file detected in drop');return;}
   const t=TICKETS.find(x=>x.id===id);if(!t)return;
-  const total=promptInvoiceTotal();
-  const ok=await attachInvoiceFile(t,f,total);
-  if(!ok)return;
-  if(total!=null&&t.cost==null){t.cost=total;if(t._backend==='supabase')await dbUpdateTicket(id,{cost:total});}
-  if(t._backend!=='supabase')saveState();
-  toast('Invoice attached to '+id+' — status set to Match Proposed, review and confirm');
-  refreshTickets();
+  if(!t.vendor){toast('This ticket has no vendor assigned yet — KodaRE matches invoices by vendor. Assign a vendor first, or use "🤖 Upload vendor invoice" above and pick one there.');return;}
+  toast('Reading invoice and proposing matches for '+t.vendor+'…');
+  await runInvoiceMatchExtraction(t.vendor,t.prop,f,null);
 }
 function bulkDragOver(ev){ev.preventDefault();if(SELECTED.size)ev.currentTarget.style.background='var(--tone-warn-soft-bg)';}
 function bulkDragLeave(ev){ev.currentTarget.style.background='';}
-// One invoice almost always belongs to a single property — bulk-attaching a file to whatever's
-// checked in SELECTED has no idea which properties those tickets actually belong to, so without
-// this check it will silently apply the same invoice across every property in the selection
-// (this is exactly what happened when 3 tickets for 3 different properties got one invoice
-// attached to all of them). Confirms once, naming the properties, before proceeding.
-function confirmInvoiceAcrossSelectedProperties(){
-  const names=[];
-  TICKETS.forEach(t=>{if(SELECTED.has(t.id)){const n=propById(t.prop).name;if(!names.includes(n))names.push(n);}});
-  if(names.length<=1)return true;
-  return confirm('The '+SELECTED.size+' selected tickets span '+names.length+' different properties ('+names.join(', ')+'). One invoice is normally for a single property — attaching this file will apply the same invoice to tickets across all '+names.length+' of them.\n\nContinue anyway?');
+// The selected tickets only need to agree on vendor — KodaRE matches by vendor (and reads the
+// invoice for description/property), so it's fine if they span several properties for that
+// same vendor; it's the vendor itself that has to be unambiguous, since that's what scopes
+// which candidate tickets get sent to the extraction endpoint at all.
+function selectedTicketsVendor(){
+  let v=null;
+  for(const t of TICKETS){
+    if(!SELECTED.has(t.id))continue;
+    if(!t.vendor)return null;
+    if(v===null)v=t.vendor;
+    else if(v!==t.vendor)return null;
+  }
+  return v;
 }
 async function dropInvoiceOnSelected(ev){
   ev.preventDefault();ev.currentTarget.style.background='';
   if(SELECTED.size===0){toast('Select tickets first, then drop the invoice');return;}
-  if(!confirmInvoiceAcrossSelectedProperties())return;
   const files=ev.dataTransfer&&ev.dataTransfer.files;const f=files&&files[0];
   if(!f){toast('No file detected in drop');return;}
-  const total=promptInvoiceTotal();
-  let n=0,anyLocal=false;
-  for(const t of TICKETS){if(SELECTED.has(t.id)){const ok=await attachInvoiceFile(t,f,total);if(ok){n++;if(t._backend!=='supabase')anyLocal=true;}}}
-  if(anyLocal)saveState();
-  toast('Invoice attached to '+n+' selected ticket(s) — status set to Match Proposed, review and confirm'+(total!=null?'. Invoice total: '+money(total):''));
-  refreshTickets();
+  const vendorName=selectedTicketsVendor();
+  if(!vendorName){toast('The selected tickets aren\'t all the same vendor (or one has no vendor assigned) — KodaRE matches invoices by vendor. Select tickets for a single vendor, or use "🤖 Upload vendor invoice" above and pick the vendor directly.');return;}
+  toast('Reading invoice and proposing matches for '+vendorName+'…');
+  await runInvoiceMatchExtraction(vendorName,null,f,null);
 }
 async function pickInvoiceForTicket(id,input){
   const f=input.files&&input.files[0];if(!f)return;
-  const t=TICKETS.find(x=>x.id===id);if(!t)return;
-  const total=promptInvoiceTotal();
-  const ok=await attachInvoiceFile(t,f,total);
-  if(!ok){input.value='';return;}
-  if(total!=null&&t.cost==null){t.cost=total;if(t._backend==='supabase')await dbUpdateTicket(id,{cost:total});}
-  if(t._backend!=='supabase')saveState();
-  toast('Invoice attached to '+id+' — status set to Match Proposed, review and confirm');
+  const t=TICKETS.find(x=>x.id===id);if(!t){input.value='';return;}
+  if(!t.vendor){toast('This ticket has no vendor assigned yet — KodaRE matches invoices by vendor. Assign a vendor first, or use "🤖 Upload vendor invoice" above and pick one there.');input.value='';return;}
+  toast('Reading invoice and proposing matches for '+t.vendor+'…');
+  await runInvoiceMatchExtraction(t.vendor,t.prop,f,null);
   input.value='';
-  refreshTickets();
 }
 async function pickInvoiceForSelected(input){
   const f=input.files&&input.files[0];if(!f)return;
   if(SELECTED.size===0){toast('Select tickets first, then choose an invoice');input.value='';return;}
-  if(!confirmInvoiceAcrossSelectedProperties()){input.value='';return;}
-  const total=promptInvoiceTotal();
-  let n=0,anyLocal=false;
-  for(const t of TICKETS){if(SELECTED.has(t.id)){const ok=await attachInvoiceFile(t,f,total);if(ok){n++;if(t._backend!=='supabase')anyLocal=true;}}}
-  if(anyLocal)saveState();
-  toast('Invoice attached to '+n+' selected ticket(s) — status set to Match Proposed, review and confirm'+(total!=null?'. Invoice total: '+money(total):''));
+  const vendorName=selectedTicketsVendor();
+  if(!vendorName){toast('The selected tickets aren\'t all the same vendor (or one has no vendor assigned) — KodaRE matches invoices by vendor. Select tickets for a single vendor, or use "🤖 Upload vendor invoice" above and pick the vendor directly.');input.value='';return;}
+  toast('Reading invoice and proposing matches for '+vendorName+'…');
+  await runInvoiceMatchExtraction(vendorName,null,f,null);
   input.value='';
-  refreshTickets();
 }
 function viewInvoiceFile(id){const t=TICKETS.find(x=>x.id===id);if(t&&t.invoiceFileUrl){window.open(t.invoiceFileUrl,'_blank');}else{toast('No file attached — invoice number entered manually');}}
 async function removeInvoiceFile(id){
@@ -1975,7 +1950,7 @@ async function removeInvoiceFile(id){
   refreshTickets();
 }
 /* ===== AI-matched vendor invoice - Scope Section 4.10 "Invoice matching" (the "Read"/"Match"
-   steps) ===== Extends the manual attach flow above: instead of a human pre-selecting tickets
+   steps) ===== Shares its matching pipeline with the drag-and-drop attach flow above: instead of a human pre-selecting tickets
    and typing one total, staff pick a vendor (and optionally a property) and upload the
    invoice file; KodaRE reads it, proposes which of that vendor's Completed/Closed,
    not-yet-invoiced tickets it covers, and drafts a cost + invoice number per matched ticket.
@@ -2008,12 +1983,44 @@ async function uploadInvoiceFileToStorage(file){
   const {data:signed}=await sb.storage.from('invoices').createSignedUrl(path,60*60*24*7);
   return {path,url:signed?signed.signedUrl:null,name:file.name};
 }
+// A ticket only qualifies as a match candidate when the work is done (Completed/Closed) AND
+// nothing has already been decided about paying it -- Payment must still be blank ("--"), not
+// just "no invoice number yet". A ticket already marked Ready for Payment/Paid/Match Proposed/
+// No Cost has already been through this decision (or explicitly opted out of it via No Cost),
+// so matching a new invoice against it would relitigate something already settled.
 function invoiceCandidateTickets(vendorName,propId){
   return TICKETS.filter(t=>t.vendor===vendorName
     && (t.status==='Completed'||t.status==='Closed')
     && !t.invoice
+    && !t.payment
     && (!propId||t.prop===propId)
   ).map(t=>({id:t.id,ref:ticketRef(t),title:t.title,desc:t.desc||t.notes||t.title}));
+}
+// Shared by both the "🤖 Upload vendor invoice" modal and every drag-and-drop/file-picker
+// entry point on the Maintenance list — reads the uploaded file, sends this vendor's (and
+// optionally one property's) open candidate tickets to the extraction endpoint, and opens the
+// review screen with whatever it proposes. Nothing is written to any ticket here; that only
+// happens if a human reviews and confirms via confirmInvoiceMatches().
+async function runInvoiceMatchExtraction(vendorName,propId,file,btn){
+  const candidates=invoiceCandidateTickets(vendorName,propId);
+  if(!candidates.length){const propName=propId?((propById(propId)||{}).name||''):'';toast('No Completed/Closed, not-yet-invoiced tickets found for '+vendorName+(propName?' at '+propName:'')+' — nothing to match against.');return false;}
+  if(btn){btn.disabled=true;btn.textContent='🤖 Reading…';}
+  try{
+    const uploaded=await uploadInvoiceFileToStorage(file);
+    if(!uploaded)return false;
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session){toast('Your session has expired — please sign in again.');return false;}
+    const resp=await fetch('/api/extract-invoice',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({path:uploaded.path,candidates})});
+    const result=await resp.json().catch(()=>({}));
+    if(!resp.ok||!result.ok){toast('Could not read invoice: '+(result.error||resp.statusText||'unknown error'));return false;}
+    openInvoiceMatchReview(result,uploaded);
+    return true;
+  }catch(e){
+    toast('Could not reach the extraction service: '+e.message);
+    return false;
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='🤖 Read & propose matches';}
+  }
 }
 async function startInvoiceMatchExtraction(){
   const vendorName=(document.getElementById('invModalVendor')||{}).value;
@@ -2022,24 +2029,8 @@ async function startInvoiceMatchExtraction(){
   const file=fileInput&&fileInput.files&&fileInput.files[0];
   if(!vendorName){toast('Pick a vendor first');return;}
   if(!file){toast('Choose an invoice file');return;}
-  const candidates=invoiceCandidateTickets(vendorName,propId);
-  if(!candidates.length){const propName=propId?((propById(propId)||{}).name||''):'';toast('No Completed/Closed, not-yet-invoiced tickets found for '+vendorName+(propName?' at '+propName:'')+' — nothing to match against.');return;}
   const btn=document.getElementById('invModalGoBtn');
-  if(btn){btn.disabled=true;btn.textContent='🤖 Reading…';}
-  try{
-    const uploaded=await uploadInvoiceFileToStorage(file);
-    if(!uploaded)return;
-    const {data:{session}}=await sb.auth.getSession();
-    if(!session){toast('Your session has expired — please sign in again.');return;}
-    const resp=await fetch('/api/extract-invoice',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:JSON.stringify({path:uploaded.path,candidates})});
-    const result=await resp.json().catch(()=>({}));
-    if(!resp.ok||!result.ok){toast('Could not read invoice: '+(result.error||resp.statusText||'unknown error'));return;}
-    openInvoiceMatchReview(result,uploaded);
-  }catch(e){
-    toast('Could not reach the extraction service: '+e.message);
-  }finally{
-    if(btn){btn.disabled=false;btn.textContent='🤖 Read & propose matches';}
-  }
+  await runInvoiceMatchExtraction(vendorName,propId,file,btn);
 }
 function openInvoiceMatchReview(result,uploaded){
   const items=(result.items||[]).map((it,ix)=>Object.assign({_ix:ix},it));
@@ -2702,7 +2693,7 @@ function renderTickets(el){
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
     ${ROLE==='admin'?`<button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
     <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" style="border:2px dashed var(--line);border-radius:9px;padding:6px 12px;font-size:12px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:8px">
-      <span>📎 ${SELECTED.size?`Drop an invoice here to apply to ${SELECTED.size} selected`:'Select tickets, then drop an invoice here'}</span>
+      <span>📎 ${SELECTED.size?`Drop an invoice here — KodaRE will read it and propose which of these ${SELECTED.size} selected tickets' vendor it matches (review before anything's saved)`:'Select tickets (or drop straight on a row below) — KodaRE reads the invoice and proposes matches by vendor, no need to pick the ticket yourself'}</span>
       <input type="file" id="bulkInvFile" style="display:none" onchange="pickInvoiceForSelected(this)">
       <a onclick="document.getElementById('bulkInvFile').click()">or choose file</a>
     </div></div>
@@ -2774,7 +2765,7 @@ function filtered(){
   const ct=parseMDYY(FILTER.createdTo);
   return TICKETS.filter(t=>(FILTER.status==='all'||t.status===FILTER.status)&&(FILTER.urgency==='all'||t.urgency===FILTER.urgency)&&(FILTER.prop==='all'||t.prop===FILTER.prop)&&(FILTER.svc==='all'||t.svc===FILTER.svc)&&(FILTER.vendor==='all'||t.vendor===FILTER.vendor)&&(FILTER.payment==='all'||(FILTER.payment==='__blank__'?!t.payment:t.payment===FILTER.payment))&&(FILTER.invoice==='all'||(FILTER.invoice==='__blank__'?!t.invoice:t.invoice===FILTER.invoice))&&(FILTER.metro==='all'||(FILTER.metro==='__blank__'?!propById(t.prop).metro:propById(t.prop).metro===FILTER.metro))&&(FILTER.cc==='all'||(FILTER.cc==='yes'?!!t.ccPayment:!t.ccPayment))&&(!FILTER.selectedOnly||SELECTED.has(t.id))&&(!cf||(t.created&&new Date(t.created)>=cf))&&(!ct||(t.created&&new Date(t.created)<=new Date(ct.getTime()+86399999)))&&(!FILTER.descQuery||((t.title||'')+' '+(t.desc||'')).toLowerCase().includes(FILTER.descQuery.toLowerCase()))&&(!FILTER.notesQuery||(t.notes||'').toLowerCase().includes(FILTER.notesQuery.toLowerCase()))&&(FILTER.costMin===''||FILTER.costMin==null||(t.cost!=null&&t.cost>=Number(FILTER.costMin)))&&(FILTER.costMax===''||FILTER.costMax==null||(t.cost!=null&&t.cost<=Number(FILTER.costMax)))).sort(rankSort);
 }
-function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here to attach it to this ticket">
+function trow(t){const age=ageDays(t);return `<tr class="clickable" onclick="openTicket('${t.id}')" ondragover="rowDragOver(event)" ondragleave="rowDragLeave(event)" ondrop="dropInvoiceOnTicket('${t.id}',event)" title="Drag an invoice file here — KodaRE reads it and proposes which ticket(s) for this vendor it matches, for you to review before anything's saved">
   <td class="hide-below-md" onclick="event.stopPropagation()"><input type="checkbox" ${SELECTED.has(t.id)?'checked':''} onchange="toggleSelect('${t.id}',this.checked)" style="width:18px;height:18px;cursor:pointer"></td>
   <td class="b trunc hide-below-sm col-frozen" style="max-width:130px">${propById(t.prop).name}</td>
   <td onclick="event.stopPropagation()">${statusSelect(t)}</td>
