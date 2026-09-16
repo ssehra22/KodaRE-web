@@ -2617,7 +2617,7 @@ function renderAuditLog(el){
   ${AUDIT_LOG.length?AUDIT_LOG.map(auditRow).join(''):'<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No audited changes yet.</td></tr>'}
   </tbody></table></div>`;
 }
-function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};return (U[a.urgency]-U[b.urgency])||(new Date(b.created)-new Date(a.created));}
+function rankSort(a,b){const U={Emergency:0,Urgent:1,High:1,Normal:2,Low:3};return (U[a.urgency]-U[b.urgency])||(new Date(a.created)-new Date(b.created));}
 
 /* ===== dashboard ===== */
 function renderDashboard(el){
@@ -2702,14 +2702,15 @@ function renderTickets(el){
     <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
     <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
-    ${ROLE==='admin'?`<button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
-    <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets\' vendor — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches by vendor'}" style="border:2px dashed var(--line);border-radius:9px;padding:7px 14px;font-size:12px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:10px">
+    <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches automatically'}" style="border:2px dashed var(--line);border-radius:9px;padding:7px 14px;font-size:12px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:10px">
       <span style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em">📎 Auto invoice matching</span>
       <span class="faint">·</span>
       <span style="font-size:12px">Drag &amp; drop</span>
       <input type="file" id="bulkInvFile" style="display:none" onchange="pickInvoiceForSelected(this)">
       <a onclick="document.getElementById('bulkInvFile').click()" style="font-size:12px;font-weight:600">or upload file</a>
-    </div></div>
+    </div>
+    ${ROLE==='admin'?`<button class="btn sec sm" style="border-color:var(--red);color:var(--red);margin-left:14px" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
+    </div>
   ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
   <div class="card" style="overflow-x:auto"><table style="min-width:1500px"><thead><tr>
     <th class="hide-below-md" style="width:34px;vertical-align:top;padding-top:8px"><input type="checkbox" ${rows.length&&rows.every(t=>SELECTED.has(t.id))?'checked':''} onchange="toggleSelectAll(this.checked)" title="Select all filtered rows" style="width:18px;height:18px;cursor:pointer"></th>
