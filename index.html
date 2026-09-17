@@ -304,6 +304,12 @@
   .dash-head h2{font-size:16px;font-weight:800;margin:0;letter-spacing:-.01em}
   .dash-head .sub{font-size:12.5px;color:var(--ink-400)}
 
+  /* ---- dashboard column -- capped and centered so KPI tiles/cards read like a designed
+     page instead of stretching edge-to-edge on a wide monitor. Scoped to the dashboard
+     only: .content's own wider max-width still applies everywhere else (Tickets,
+     Properties, etc. need the extra room for their tables). ---- */
+  .dash-wrap{max-width:1100px;margin:0 auto}
+
   /* ---- dashboard composition bars (Properties section) -- a label, a track, a count,
      nothing fancier. Reuses the same tone tokens as everywhere else. ---- */
   .barlist{display:flex;flex-direction:column;gap:9px}
@@ -2669,7 +2675,7 @@ function renderDashboard(el){
   const metroCounts={};PROPS.forEach(p=>{const k=p.metro||'Unspecified';metroCounts[k]=(metroCounts[k]||0)+1;});
   const metroPalette=['var(--accent-dark)','var(--role-admin)','var(--blue)','var(--role-external)','var(--ink-500)'];
   const metroSegs=Object.keys(metroCounts).sort((a,b)=>metroCounts[b]-metroCounts[a]).map((k,i)=>({label:k,count:metroCounts[k],color:metroPalette[i%metroPalette.length]}));
-  el.innerHTML=`${pageHeader('dashboard')}
+  el.innerHTML=`<div class="dash-wrap">${pageHeader('dashboard')}
   <div class="dash-head"><h2>Maintenance</h2><span class="sub">Ticket volume and the active priority queue</span></div>
   <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
     <div class="kpi"><div class="lab">Open items</div><div class="val">${open.length}</div><div class="sub">${TICKETS.length} total tracked</div></div>
@@ -2699,6 +2705,7 @@ function renderDashboard(el){
       ${pieSVG(metroSegs)}
       <div class="faint" style="font-size:12px">${PROPS.length} propert${PROPS.length===1?'y':'ies'} total</div>
     </div></div>
+  </div>
   </div>`;
 }
 
