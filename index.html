@@ -2184,7 +2184,14 @@ function cumulativeOpenDays(t){
 }
 function spendFor(id){return TICKETS.filter(t=>t.prop===id&&t.cost).reduce((s,t)=>s+t.cost,0);}
 function isClosingStage(p,st){return st===(p.own==='owned'?'Owned':'Leased')||st==='Licensed';}
+/* Maps a property's health/status to the CSS color-token suffix used for its badges --
+   one place so Sold's neutral color stays consistent everywhere it's shown. */
+function healthColorToken(p){return p.health==='green'?'green':p.health==='red'?'red':p.health==='sold'?'ink-400':'amber';}
 function computeHealth(){PROPS.forEach(p=>{
+  if(propStage(p)==='Sold'){
+    if(p.status!=='Sold'){p.status='Sold';p.health='sold';if(p._backend==='supabase')dbUpdateProperty(p.id,{status:'Sold'});}
+    return;
+  }
   if(p.status==='New Transaction'){
     if(!isClosingStage(p,propStage(p)))return;
     p.status='Active';p.health='green';
@@ -2450,7 +2457,7 @@ const NAV=[
   {id:'properties',ic:'🏠',label:'Properties',count:()=>PROPS.length,group:'Portfolio'},
   {id:'vendors',ic:'🧰',label:'Vendor Directory',count:()=>VENDORS.length,group:'Portfolio'},
   {id:'leases',ic:'📄',label:'Leases & Rent',count:()=>LEASES.length,group:'Finance'},
-  {id:'reserves',ic:'💰',label:'Capital Reserves',count:()=>PROPS.reduce((n,p)=>n+propertyReserveSummary(p).overdueN,0),group:'Finance'},
+  {id:'reserves',ic:'💰',label:'Capital Reserves',count:()=>PROPS.filter(p=>propStage(p)!=='Sold').reduce((n,p)=>n+propertyReserveSummary(p).overdueN,0),group:'Finance'},
   {id:'reports',ic:'📊',label:'Reports',group:'Finance'},
   {id:'approvals',ic:'✅',label:'Needs Review',count:()=>approvalItems().length,group:'Administration',adminOnly:true},
   {id:'users',ic:'👤',label:'User Management',count:()=>USER_ROLES.length,group:'Administration',adminOnly:true},
@@ -2704,7 +2711,9 @@ function renderDashboard(el){
   const ownedN=closedProps.filter(p=>p.own==='owned').length,leasedN=closedN-ownedN;
   const isAtRisk=p=>p.health==='red'||propertyReserveSummary(p).overdueN>0;
   const atRiskN=closedProps.filter(isAtRisk).length,healthyN=closedN-atRiskN;
-  const metroCounts={};PROPS.forEach(p=>{const k=p.metro||'Unspecified';metroCounts[k]=(metroCounts[k]||0)+1;});
+  /* Metro pie reflects the active, in-use portfolio -- a sold property isn't utilized
+     anywhere anymore, so it's dropped here too (same activeProps used above). */
+  const metroCounts={};activeProps.forEach(p=>{const k=p.metro||'Unspecified';metroCounts[k]=(metroCounts[k]||0)+1;});
   const metroPalette=['var(--accent-dark)','var(--role-admin)','var(--blue)','var(--role-external)','var(--ink-500)'];
   const metroSegs=Object.keys(metroCounts).sort((a,b)=>metroCounts[b]-metroCounts[a]).map((k,i)=>({label:k,count:metroCounts[k],color:metroPalette[i%metroPalette.length]}));
   el.innerHTML=`<div class="dash-wrap">${pageHeader('dashboard')}
@@ -2741,7 +2750,7 @@ function renderDashboard(el){
     </div></div>
     <div class="card"><h3>📍 Properties by metro</h3><div class="body" style="display:flex;flex-direction:column;align-items:center;gap:10px">
       ${pieSVG(metroSegs)}
-      <div class="faint" style="font-size:12px">${PROPS.length} propert${PROPS.length===1?'y':'ies'} total</div>
+      <div class="faint" style="font-size:12px">${activeProps.length} propert${activeProps.length===1?'y':'ies'} total</div>
     </div></div>
   </div>
   </div>`;
@@ -3061,15 +3070,19 @@ function propStage(p){
 function setPF(key,val){PFILTER[key]=val;if(VIEW==='properties')renderProperties(document.getElementById('view'));}
 function renderProperties(el){
   const metroOpts=REF_LISTS.metro.values;
-  const list=[...PROPS].filter(p=>PFILTER.metro==='all'||p.metro===PFILTER.metro).sort((a,b)=>a.name.localeCompare(b.name));
+  const list=[...PROPS].filter(p=>PFILTER.metro==='all'||p.metro===PFILTER.metro).sort((a,b)=>{
+    const soldA=propStage(a)==='Sold',soldB=propStage(b)==='Sold';
+    if(soldA!==soldB)return soldA?1:-1;
+    return a.name.localeCompare(b.name);
+  });
   el.innerHTML=`${pageHeader('properties')}<div class="toolbar"><span class="b">${list.length} of ${PROPS.length} properties</span>
     <span class="pill"><span class="dotc" style="background:var(--sys)"></span> Owned</span><span class="pill"><span class="dotc" style="background:var(--ten)"></span> Leased</span>
     <span style="margin-left:auto"></span><button class="btn sec sm" id="propsRefreshBtn" onclick="refreshPropertiesFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
     ${ROLE==='admin'?'<button class="btn sec sm" onclick="startOnboard()">+ New property</button>':''}</div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-sm">Type</th><th title="Driven by open maintenance tickets: Active, Emergency (open emergency item), or New Transaction (mid-purchase/mid-lease)">Maint. Status</th><th class="hide-below-md" title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="hide-below-md">Stage</th><th class="hide-below-sm">Open</th><th class="hide-below-lg">Total items</th><th class="hide-below-lg right">YTD Spend</th><th class="hide-below-lg" style="text-align:left;min-width:130px">Metro
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="hide-below-sm">Type</th><th title="Driven by open maintenance tickets: Active, Emergency (open emergency item), New Transaction (mid-purchase/mid-lease), or Sold (Disposition Stage = Sold — frozen, no longer tracked for maintenance)">Maint. Status</th><th class="hide-below-md" title="Critical certs/licenses vs. their expiration dates — Scope §4.2.4. Definitions in Assumptions → Compliance Reminders.">Compliance</th><th class="hide-below-md">Stage</th><th class="hide-below-sm">Open</th><th class="hide-below-lg">Total items</th><th class="hide-below-lg right">YTD Spend</th><th class="hide-below-lg" style="text-align:left;min-width:130px">Metro
     <select onchange="setPF('metro',this.value)" style="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer;margin-top:4px" title="Filter by Metro"><option value="all"${PFILTER.metro==='all'?' selected':''}>All</option>${metroOpts.map(m=>`<option value="${esc(m)}"${PFILTER.metro===m?' selected':''}>${esc(m)}</option>`).join('')}</select>
   </th></tr></thead><tbody>
-  ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=p.health==='green'?'green':(p.health==='red'?'red':'amber');return `<tr class="clickable" onclick="openProperty('${p.id}')">
+  ${list.map(p=>{const openN=TICKETS.filter(t=>t.prop===p.id&&isOpen(t)).length,total=TICKETS.filter(t=>t.prop===p.id).length;const col=healthColorToken(p);return `<tr class="clickable" onclick="openProperty('${p.id}')">
     <td><span class="dotc" style="background:var(--${col})"></span> <span class="b">${p.name}</span><div class="faint addr-city" style="font-size:11.5px">${p.metro||p.addr||'—'}</div><div class="faint addr-full trunc" style="font-size:11.5px;max-width:220px">${p.addr||'—'}</div></td>
     <td class="hide-below-sm"><span class="pill">${p.own==='owned'?'Owned':'Leased'}</span></td>
     <td><span class="pill" style="border-color:var(--${col});color:var(--${col})">${p.status}</span></td>
@@ -3083,7 +3096,7 @@ function renderProperties(el){
 }
 function openProperty(id){const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
   const tabList=p.own==='owned'?['Overview','Details','Acquisition','Disposition','Compliance','Licensing','Loan','Components','Documents','Maintenance']:['Overview','Details','Acquisition','Compliance','Licensing','Components','Documents','Maintenance'];const tabsHtml=tabList.map((t,i)=>`<button class="tab ${i===0?'active':''}" onclick="propTab(this,'${id}','${t}')">${t}</button>`).join('');
-  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${p.own==='owned'?'Owned · '+(p.llc||'LLC'):'Leased · '+(p.landlord||'—')}</div><div style="font-size:19px;font-weight:800;margin-top:2px">${p.name}</div><div class="faint" style="font-size:12.5px">${p.addr||'—'}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill" title="Maint. Status — driven by open maintenance tickets" style="border-color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'});color:var(--${p.health==='green'?'green':p.health==='red'?'red':'amber'})">● ${p.status}</span></div></div>`,
+  drawer(`<div style="flex:1"><div class="faint" style="font-size:12px">${p.own==='owned'?'Owned · '+(p.llc||'LLC'):'Leased · '+(p.landlord||'—')}</div><div style="font-size:19px;font-weight:800;margin-top:2px">${p.name}</div><div class="faint" style="font-size:12.5px">${p.addr||'—'}</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><span class="pill" title="Maint. Status — driven by open maintenance tickets, or Sold once the Disposition Stage reaches Sold" style="border-color:var(--${healthColorToken(p)});color:var(--${healthColorToken(p)})">● ${p.status}</span></div></div>`,
     `<div class="tabs">${tabsHtml}</div><div id="propTabBody">${propOverview(p,tks)}</div>${ROLE==='admin'?`<div style="margin-top:14px"><button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteProperty('${id}')">🗑️ Delete property</button></div>`:''}`);
 }
 function propTab(btn,id,name){document.querySelectorAll('.drawer .tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');const p=propById(id);const tks=TICKETS.filter(t=>t.prop===id);
@@ -3266,7 +3279,8 @@ function propDisposition(p){
   return out;
 }
 function cycleDispChk(pid,ix){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.dispositionChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('disposition_checklists',p.id,p.dispositionChk);else saveState();document.getElementById('propTabBody').innerHTML=propDisposition(p);}
-function setDispChkText(pid,ix,val){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});cur.t=val;p.dispositionChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('disposition_checklists',p.id,p.dispositionChk);else saveState();}
+function refreshPropertiesListIfOpen(){computeHealth();if(VIEW==='properties')renderProperties(document.getElementById('view'));}
+function setDispChkText(pid,ix,val){const p=propById(pid);const it=DISPOSITION_CHECKLIST[ix];p.dispositionChk=p.dispositionChk||{};const cur=(p.dispositionChk[it]||{s:'pending',t:''});cur.t=val;p.dispositionChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('disposition_checklists',p.id,p.dispositionChk);else saveState();if(it==='Stage')refreshPropertiesListIfOpen();}
 function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licensingChk||{};
   const countable=items.filter(i=>!CHK_NO_TOGGLE.includes(i));
   const done=countable.filter(i=>(p.licensingChk[i]||{}).s==='done').length;const pct=Math.round(done/countable.length*100);
@@ -3785,7 +3799,8 @@ function setComponentAgeSource(pid,name,val){
    Read-only list; all editing (install year, actual/estimated) still only happens on each
    property's own Components tab, reached here by clicking a row. */
 function renderReserves(el){
-  const list=[...PROPS].sort((a,b)=>a.name.localeCompare(b.name));
+  const soldExcluded=PROPS.filter(p=>propStage(p)==='Sold');
+  const list=[...PROPS].filter(p=>propStage(p)!=='Sold').sort((a,b)=>a.name.localeCompare(b.name));
   let portfolioTotal=0,portfolioOverdue=0,portfolioAging=0,portfolioMissing=0;
   const rows=list.map(p=>{
     const s=propertyReserveSummary(p);
@@ -3809,7 +3824,8 @@ function renderReserves(el){
     <td class="hide-below-md">${s.missingN?`<span class="badge b-progress"><span class="dot"></span>${s.missingN}</span>`:'<span class="faint">—</span>'}</td>
   </tr>`).join('')}
   </tbody></table></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Per-component detail — including which items are overdue and editable install years — lives on each property's Components tab. Click a row to jump there.</div>`;
+  <div class="muted" style="font-size:12px;margin-top:8px">Per-component detail — including which items are overdue and editable install years — lives on each property's Components tab. Click a row to jump there.</div>
+  ${soldExcluded.length?`<div class="muted" style="font-size:12px;margin-top:6px">${soldExcluded.length} sold propert${soldExcluded.length===1?'y':'ies'} excluded from the reserve forecast above — no longer accruing cash-flow need. Component history is still on each property's own Components tab.</div>`:''}`;
 }
 function openReservesProperty(id){
   navigate('properties');
@@ -3953,7 +3969,8 @@ function setChkText(pid,ix,val){const p=propById(pid);const it=chkListFor(p)[ix]
       if(p._backend==='supabase')dbUpdateProperty(p.id,{status:'Active'});
     }
   }
-  if(p._backend==='supabase')dbUpsertChecklist('purchase_checklists',p.id,p.checklist);else saveState();}
+  if(p._backend==='supabase')dbUpsertChecklist('purchase_checklists',p.id,p.checklist);else saveState();
+  if(it==='Stage')refreshPropertiesListIfOpen();}
 
 function propLoan(p){
   if(p.own!=='owned') return '<div class="card"><div class="body muted">Loans apply to owned properties only.</div></div>';
