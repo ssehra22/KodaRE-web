@@ -308,7 +308,7 @@
      page instead of stretching edge-to-edge on a wide monitor. Scoped to the dashboard
      only: .content's own wider max-width still applies everywhere else (Tickets,
      Properties, etc. need the extra room for their tables). ---- */
-  .dash-wrap{max-width:1100px;margin:0 auto}
+  .dash-wrap{max-width:1280px;margin:0 auto}
 
   /* ---- dashboard composition bars (Properties section) -- a label, a track, a count,
      nothing fancier. Reuses the same tone tokens as everywhere else. ---- */
@@ -2670,8 +2670,11 @@ function renderDashboard(el){
   const open=TICKETS.filter(isOpen);const inProg=open.filter(t=>t.status==='In progress');const emerg=open.filter(t=>t.urgency==='Emergency');
   const spend=TICKETS.filter(t=>t.cost&&t.payment==='Paid'&&new Date(t.created)>=fyStart()).reduce((s,t)=>s+t.cost,0);
   const ownedN=PROPS.filter(p=>p.own==='owned').length,leasedN=PROPS.length-ownedN;
-  const readinessVerdicts=PROPS.map(p=>computeReadiness(p).verdict);
-  const readyN=readinessVerdicts.filter(v=>v==='ready').length,warnN=readinessVerdicts.filter(v=>v==='warn').length,failN=readinessVerdicts.filter(v=>v==='fail').length;
+  const licCountable=LICENSING_CHECKLIST.filter(i=>!CHK_NO_TOGGLE.includes(i));
+  const isLicensed=p=>{const chk=p.licensingChk||{};return licCountable.length>0&&licCountable.every(i=>(chk[i]||{}).s==='done');};
+  const licensedN=PROPS.filter(isLicensed).length,awaitingLicN=PROPS.length-licensedN;
+  const isAtRisk=p=>p.health==='red'||propertyReserveSummary(p).overdueN>0;
+  const atRiskN=PROPS.filter(isAtRisk).length,healthyN=PROPS.length-atRiskN;
   const metroCounts={};PROPS.forEach(p=>{const k=p.metro||'Unspecified';metroCounts[k]=(metroCounts[k]||0)+1;});
   const metroPalette=['var(--accent-dark)','var(--role-admin)','var(--blue)','var(--role-external)','var(--ink-500)'];
   const metroSegs=Object.keys(metroCounts).sort((a,b)=>metroCounts[b]-metroCounts[a]).map((k,i)=>({label:k,count:metroCounts[k],color:metroPalette[i%metroPalette.length]}));
@@ -2683,9 +2686,9 @@ function renderDashboard(el){
     <div class="kpi red"><div class="lab">Emergencies</div><div class="val">${emerg.length}</div><div class="sub">need action now</div></div>
     <div class="kpi"><div class="lab">YTD Spend</div><div class="val">${money(spend)}</div><div class="sub">this fiscal year</div></div>
   </div>
-  <div class="card" style="margin-top:14px"><h3>🎫 Maintenance priority queue<a class="link" onclick="navigate('tickets')">View all →</a></h3>
+  <div class="card" style="margin-top:14px"><h3>🎫 Emergency queue — open &amp; in progress<a class="link" onclick="navigate('tickets')">View all →</a></h3>
     <table><thead><tr><th>Item</th><th>Property</th><th>Priority</th><th>Status</th><th>Age</th></tr></thead><tbody>
-    ${open.sort(rankSort).slice(0,7).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b trunc2" style="max-width:280px">${ticketDescCell(t)}</div><div class="faint" style="font-size:11.5px">${svcLabel(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono" title="Cumulative time open, excluding any Completed/Closed period">${cumulativeOpenDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open items 🎉</td></tr>'}
+    ${emerg.sort(rankSort).map(t=>`<tr class="clickable" onclick="openTicket('${t.id}')"><td><div class="b trunc2" style="max-width:280px">${ticketDescCell(t)}</div><div class="faint" style="font-size:11.5px">${svcLabel(t)}</div></td><td>${propById(t.prop).name}</td><td>${ubadge(t.urgency)}</td><td>${badge(t)}</td><td class="muted mono" title="Cumulative time open, excluding any Completed/Closed period">${cumulativeOpenDays(t)}d</td></tr>`).join('')||'<tr><td colspan="5" class="muted" style="text-align:center;padding:20px">No open emergencies 🎉</td></tr>'}
     </tbody></table></div>
   <div class="dash-head"><h2>Properties</h2><span class="sub">Ownership, compliance, and metro distribution across the portfolio</span></div>
   <div class="grid2">
@@ -2695,11 +2698,14 @@ function renderDashboard(el){
         <div class="brow"><span class="bname">Leased</span><div class="btrack"><div class="bfill" style="width:${dashPct(leasedN,PROPS.length)}%;background:var(--ten)"></div></div><span class="bn">${leasedN}</span></div>
       </div>
       <div class="barlist">
-        <div class="brow"><span class="bname">${READINESS_LABEL.ready}</span><div class="btrack"><div class="bfill" style="width:${dashPct(readyN,PROPS.length)}%;background:var(--green)"></div></div><span class="bn">${readyN}</span></div>
-        <div class="brow"><span class="bname">${READINESS_LABEL.warn}</span><div class="btrack"><div class="bfill" style="width:${dashPct(warnN,PROPS.length)}%;background:var(--amber)"></div></div><span class="bn">${warnN}</span></div>
-        <div class="brow"><span class="bname">${READINESS_LABEL.fail}</span><div class="btrack"><div class="bfill" style="width:${dashPct(failN,PROPS.length)}%;background:var(--red)"></div></div><span class="bn">${failN}</span></div>
+        <div class="brow"><span class="bname">Licensed</span><div class="btrack"><div class="bfill" style="width:${dashPct(licensedN,PROPS.length)}%;background:var(--green)"></div></div><span class="bn">${licensedN}</span></div>
+        <div class="brow"><span class="bname">Awaiting license</span><div class="btrack"><div class="bfill" style="width:${dashPct(awaitingLicN,PROPS.length)}%;background:var(--amber)"></div></div><span class="bn">${awaitingLicN}</span></div>
       </div>
-      <div class="faint" style="font-size:11.5px;margin-top:2px">Compliance reflects certificates and inspections on file today -- same check as the Compliance column on Properties.</div>
+      <div class="barlist">
+        <div class="brow"><span class="bname">Healthy</span><div class="btrack"><div class="bfill" style="width:${dashPct(healthyN,PROPS.length)}%;background:var(--green)"></div></div><span class="bn">${healthyN}</span></div>
+        <div class="brow"><span class="bname">At risk</span><div class="btrack"><div class="bfill" style="width:${dashPct(atRiskN,PROPS.length)}%;background:var(--red)"></div></div><span class="bn">${atRiskN}</span></div>
+      </div>
+      <div class="faint" style="font-size:11.5px;margin-top:2px">Licensed = every licensing checklist item done. At risk = an active emergency ticket, or a capital component overdue for replacement.</div>
     </div></div>
     <div class="card"><h3>📍 Properties by metro</h3><div class="body" style="display:flex;flex-direction:column;align-items:center;gap:10px">
       ${pieSVG(metroSegs)}
