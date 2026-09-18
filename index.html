@@ -2810,7 +2810,7 @@ function renderTickets(el){
     <span class="faint" style="font-size:11.5px;margin-left:4px">— filter to your area first; different Metros are used by different regional teams</span>
   </div>`;
   el.innerHTML=pageHeader('tickets')+MT+metroBar+`
-  <div class="toolbar"><button class="btn sm" onclick="openAddTicket()">+ Submit ticket</button>
+  <div class="toolbar" style="flex-wrap:nowrap;overflow-x:auto"><button class="btn sm" onclick="openAddTicket()">+ Submit ticket</button>
     <div class="dropwrap">
       <button class="btn sec sm" onclick="toggleDropMenu('addMenu_bulk',event)">📋 Bulk add tickets ▾</button>
       <div class="dropmenu hidden" id="addMenu_bulk">
@@ -2831,7 +2831,7 @@ function renderTickets(el){
     <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
       ${ROLE==='admin'?`<button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
     </span></div>
-  <div class="toolbar"><span class="b">Selection:</span>
+  <div class="toolbar" style="flex-wrap:nowrap;overflow-x:auto"><span class="b">Selection:</span>
     <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
     <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
