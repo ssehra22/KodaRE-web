@@ -95,7 +95,7 @@
   body{background:var(--page-bg);color:var(--ink-900);
     font:var(--fs-base)/1.5 var(--font-sans);
     -webkit-font-smoothing:antialiased}
-  button{font:inherit;cursor:pointer}
+  button{font:inherit;cursor:pointer;-webkit-appearance:none;appearance:none}
   a{color:var(--accent-dark);text-decoration:none}
   .hidden{display:none !important}
 
@@ -2828,18 +2828,15 @@ function renderTickets(el){
     <input type="file" id="bulkTicketFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleBulkUploadFile(this)">
     <input type="file" id="financeImportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFinanceImportFile(this)">
     ${ROLE!=='caregiver'&&SUPA_CONFIGURED?`<button class="btn sec sm" onclick="openInvoiceUploadModal()">🤖 Upload vendor invoice</button>`:''}
-    <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
-      ${ROLE==='admin'?`<button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
-    </span></div>
+    ${ROLE==='admin'?`<button class="btn sec sm" style="margin-left:auto;border-color:var(--red);color:var(--red)" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
+    </div>
   <div class="toolbar" style="flex-wrap:nowrap;overflow-x:auto"><span class="b">Selection:</span>
     <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
     <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
-    <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
-      <button class="btn sec sm" id="ticketsRefreshBtn" onclick="refreshTicketsFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
-      ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
-      <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
-    </span>
+    <button class="btn sec sm" id="ticketsRefreshBtn" style="margin-left:auto" onclick="refreshTicketsFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
+    ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
+    <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
     </div>
   <div class="toolbar" style="margin-top:-14px">
     <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches automatically'}" style="border:2px solid var(--tone-accent-soft-border);background:var(--tone-accent-soft-bg);border-radius:10px;padding:14px 20px;font-size:13px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:12px">
