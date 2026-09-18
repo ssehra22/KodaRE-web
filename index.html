@@ -2711,9 +2711,11 @@ function renderDashboard(el){
   const ownedN=closedProps.filter(p=>p.own==='owned').length,leasedN=closedN-ownedN;
   const isAtRisk=p=>p.health==='red'||propertyReserveSummary(p).overdueN>0;
   const atRiskN=closedProps.filter(isAtRisk).length,healthyN=closedN-atRiskN;
-  /* Metro pie reflects the active, in-use portfolio -- a sold property isn't utilized
-     anywhere anymore, so it's dropped here too (same activeProps used above). */
-  const metroCounts={};activeProps.forEach(p=>{const k=p.metro||'Unspecified';metroCounts[k]=(metroCounts[k]||0)+1;});
+  /* Metro pie reflects the in-use portfolio only -- Owned/Leased/Licensed (closedProps),
+     same set as the Owned/Leased and Healthy/At-risk bars above. Sold properties are gone,
+     and a property still mid-acquisition/mid-lease (Transaction pending/other) isn't
+     actually in use at a metro yet either, so it's excluded here too. */
+  const metroCounts={};closedProps.forEach(p=>{const k=p.metro||'Unspecified';metroCounts[k]=(metroCounts[k]||0)+1;});
   const metroPalette=['var(--accent-dark)','var(--role-admin)','var(--blue)','var(--role-external)','var(--ink-500)'];
   const metroSegs=Object.keys(metroCounts).sort((a,b)=>metroCounts[b]-metroCounts[a]).map((k,i)=>({label:k,count:metroCounts[k],color:metroPalette[i%metroPalette.length]}));
   el.innerHTML=`<div class="dash-wrap">${pageHeader('dashboard')}
@@ -2745,12 +2747,12 @@ function renderDashboard(el){
         <div class="brow"><span class="bname">At risk</span><div class="btrack"><div class="bfill" style="width:${dashPct(atRiskN,closedN)}%;background:var(--red)"></div></div><span class="bn">${atRiskN}</span></div>
       </div>
       <div class="faint" style="font-size:11.5px;margin-top:2px">At risk = an active emergency ticket, or a capital component overdue for replacement.</div>
-      ${inProgProps.length?`<div class="faint" style="font-size:11.5px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">➕ ${inProgProps.length} propert${inProgProps.length===1?'y':'ies'} still in acquisition/lease process (not counted above)<a class="link" onclick="navigate('properties')" style="margin-left:6px">View properties →</a></div>`:''}
+      ${inProgProps.length?`<div class="faint" style="font-size:11.5px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">➕ ${inProgProps.length} propert${inProgProps.length===1?'y':'ies'} still in transaction/lease process (not counted above)<a class="link" onclick="navigate('properties')" style="margin-left:6px">View properties →</a></div>`:''}
       ${soldProps.length?`<div class="faint" style="font-size:11.5px;margin-top:6px">${soldProps.length} sold, excluded from portfolio composition</div>`:''}
     </div></div>
     <div class="card"><h3>📍 Properties by metro</h3><div class="body" style="display:flex;flex-direction:column;align-items:center;gap:10px">
       ${pieSVG(metroSegs)}
-      <div class="faint" style="font-size:12px">${activeProps.length} propert${activeProps.length===1?'y':'ies'} total</div>
+      <div class="faint" style="font-size:12px">${closedProps.length} propert${closedProps.length===1?'y':'ies'} total</div>
     </div></div>
   </div>
   </div>`;
@@ -4795,9 +4797,11 @@ function globalSearch(q){q=q.trim().toLowerCase();if(!q){navigate(VIEW);return;}
 /* ===== drawer ===== */
 function drawer(head,body){document.getElementById('drawerRoot').innerHTML=`<div class="scrim" onclick="if(event.target===this)closeDrawer()"><div class="drawer"><div class="dhead">${head}<button class="x" onclick="closeDrawer()">✕</button></div><div class="dbody">${body}</div></div></div>`;}
 function closeDrawer(){document.getElementById('drawerRoot').innerHTML='';}
+let NT_FILES=[];
 function openAddTicket(){
   const plist=SUPA_CONFIGURED?PROPS.filter(p=>p._backend==='supabase'):PROPS;
   const todayStr=toISODate(new Date());
+  NT_FILES=[];
   // Property, Priority, and Description come first — the same order as the mobile report
   // flow. Service category/type aren't asked here at all: which vendor to send is a dispatch
   // decision, made during triage (see svcSelect/svcTypeSelect in the ticket drawer), not
@@ -4821,6 +4825,13 @@ function openAddTicket(){
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Description</label>
       <textarea id="nt_desc" style="width:100%;min-height:70px" placeholder="What's the issue?"></textarea>
+    </div>
+    <div class="field" style="margin-top:10px"><label class="f">Photos / files (optional)</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <label class="btn sec sm" style="cursor:pointer">📷 Take a photo<input type="file" accept="image/*" capture="environment" style="display:none" onchange="ntAddFile(this,'photo')"></label>
+        <label class="btn sec sm" style="cursor:pointer">📎 Attach a file<input type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" multiple style="display:none" onchange="ntAddFile(this,'file')"></label>
+      </div>
+      <div id="nt_files_list"></div>
     </div>
     <div class="field" style="margin-top:10px"><label class="f">Status</label>
       <select id="nt_status" style="width:100%">
@@ -4865,6 +4876,21 @@ function openAddTicket(){
     <button class="btn" style="width:100%;margin-top:14px" onclick="submitNewTicket()">Create ticket</button>`
   );
 }
+// Staged files picked before the ticket exists -- same {file,kind} shape uploadTicketAttachment()
+// already expects from the mobile report flow, just fed from a plain list here instead of a
+// multi-step wizard's draft object.
+function ntAddFile(input,kind){
+  const files=input.files;if(!files||!files.length)return;
+  NT_FILES=NT_FILES||[];
+  Array.from(files).forEach(f=>NT_FILES.push({file:f,kind}));
+  input.value='';
+  renderNtFilesList();
+}
+function ntRemoveFile(i){if(!NT_FILES)return;NT_FILES.splice(i,1);renderNtFilesList();}
+function renderNtFilesList(){
+  const el=document.getElementById('nt_files_list');if(!el)return;
+  el.innerHTML=(NT_FILES&&NT_FILES.length)?NT_FILES.map((f,i)=>`<div class="mrow" style="padding:6px 0"><span style="font-size:12.5px">${f.kind==='photo'?'📷':'📄'} ${esc(f.file.name)}</span><a onclick="ntRemoveFile(${i})" style="color:var(--red);font-size:12px;cursor:pointer">Remove</a></div>`).join(''):'';
+}
 async function submitNewTicket(){
   const propEl=document.getElementById('nt_prop');
   const propId=propEl?propEl.value:'';
@@ -4902,6 +4928,8 @@ async function submitNewTicket(){
     await dbLogActivity(data.id,'Logged','Entered in maintenance tracker');
     const t=rowToTicket(Object.assign({},data,{maintenance_ticket_activity:[{action:'Logged',detail:'Entered in maintenance tracker',created_at:new Date().toISOString()}]}));
     TICKETS.unshift(t);
+    if(NT_FILES&&NT_FILES.length){for(const f of NT_FILES){await uploadTicketAttachment(data.id,f.file,f.kind);}}
+    NT_FILES=[];
     closeDrawer();
     toast('Ticket '+t.id+' created');
     refreshTickets();
@@ -4909,6 +4937,8 @@ async function submitNewTicket(){
   }
   const t=mkTicket({prop:propId,title,desc,notes,svc:null,svctype:null,urgency,status,vendor:vendor||null,cost,invoice:invoice||null,payment:payment||null,targetCompletion:targetRaw?parseFlexDate(targetRaw):null,created,reporter,log:[['Logged','Entered in maintenance tracker',0]]});
   TICKETS.push(t);saveState();
+  if(NT_FILES&&NT_FILES.length){for(const f of NT_FILES){await uploadTicketAttachment(t.id,f.file,f.kind);}}
+  NT_FILES=[];
   closeDrawer();
   toast('Ticket '+t.id+' created');
   refreshTickets();
