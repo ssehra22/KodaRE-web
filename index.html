@@ -2841,7 +2841,7 @@ function renderTickets(el){
       <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
     </span>
     </div>
-  <div class="toolbar">
+  <div class="toolbar" style="margin-top:-14px">
     <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches automatically'}" style="border:2px solid var(--tone-accent-soft-border);background:var(--tone-accent-soft-bg);border-radius:10px;padding:14px 20px;font-size:13px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:12px">
       <span style="font-weight:800;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--tone-accent-soft-text)">📎 Auto invoice matching</span>
       <span class="faint">·</span>
