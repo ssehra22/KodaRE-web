@@ -2383,6 +2383,24 @@ async function refreshPropertiesFromServer(){
     if(btn2){btn2.disabled=false;btn2.textContent='🔄 Refresh';}
   }
 }
+async function refreshTicketsFromServer(){
+  const btn=document.getElementById('ticketsRefreshBtn');
+  if(btn){btn.disabled=true;btn.textContent='🔄 Refreshing…';}
+  try{
+    if(SUPA_CONFIGURED){
+      await loadRealTickets(); // already calls computeHealth()+refreshTickets() internally
+      toast('Maintenance refreshed');
+    } else {
+      toast('Refreshed (demo mode — no server to sync with)');
+    }
+  } catch(e){
+    toast('Refresh failed: '+(e&&e.message?e.message:'unknown error'));
+  } finally {
+    if(VIEW==='tickets'&&MAINT_TAB==='items')renderTickets(document.getElementById('view'));
+    const btn2=document.getElementById('ticketsRefreshBtn');
+    if(btn2){btn2.disabled=false;btn2.textContent='🔄 Refresh';}
+  }
+}
 
 function updatePropHoaCondo(pid,value){
   const p=propById(pid);if(!p)return;
@@ -2811,21 +2829,26 @@ function renderTickets(el){
     <input type="file" id="financeImportFile" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleFinanceImportFile(this)">
     ${ROLE!=='caregiver'&&SUPA_CONFIGURED?`<button class="btn sec sm" onclick="openInvoiceUploadModal()">🤖 Upload vendor invoice</button>`:''}
     <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
-      ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
-      <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
+      ${ROLE==='admin'?`<button class="btn sec sm" style="border-color:var(--red);color:var(--red)" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
     </span></div>
   <div class="toolbar"><span class="b">Selection:</span>
     <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
     <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
-    <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches automatically'}" style="border:2px dashed var(--line);border-radius:9px;padding:7px 14px;font-size:12px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:10px">
-      <span style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.03em">📎 Auto invoice matching</span>
-      <span class="faint">·</span>
-      <span style="font-size:12px">Drag &amp; drop</span>
-      <input type="file" id="bulkInvFile" style="display:none" onchange="pickInvoiceForSelected(this)">
-      <a onclick="document.getElementById('bulkInvFile').click()" style="font-size:12px;font-weight:600">or upload file</a>
+    <span style="margin-left:auto;display:flex;align-items:center;gap:10px">
+      <button class="btn sec sm" id="ticketsRefreshBtn" onclick="refreshTicketsFromServer()" title="Reload the latest data — useful right after an edit, or if another user changed something">🔄 Refresh</button>
+      ${activeFilterCount?`<span class="pill">${activeFilterCount} filter${activeFilterCount===1?'':'s'} active</span>`:''}
+      <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
+    </span>
     </div>
-    ${ROLE==='admin'?`<button class="btn sec sm" style="border-color:var(--red);color:var(--red);margin-left:14px" onclick="deleteSelectedTickets()">🗑️ Delete selected</button>`:''}
+  <div class="toolbar">
+    <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches automatically'}" style="border:2px solid var(--tone-accent-soft-border);background:var(--tone-accent-soft-bg);border-radius:10px;padding:14px 20px;font-size:13px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:12px">
+      <span style="font-weight:800;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--tone-accent-soft-text)">📎 Auto invoice matching</span>
+      <span class="faint">·</span>
+      <span style="font-size:13px">Drag &amp; drop</span>
+      <input type="file" id="bulkInvFile" style="display:none" onchange="pickInvoiceForSelected(this)">
+      <a onclick="document.getElementById('bulkInvFile').click()" style="font-size:13px;font-weight:700">or upload file</a>
+    </div>
     </div>
   ${groups.length?`<div class="toolbar">${groups.map(g=>`<span class="pill" style="border-color:var(--red);color:var(--red)">⚠ ${esc(g.invoice)}: tickets ${money(g.sum)} vs invoice ${money(g.total)} (off by ${money(Math.abs(g.diff))})</span>`).join('')}</div>`:''}
   <div class="card" style="overflow-x:auto"><table style="min-width:1500px"><thead><tr>
