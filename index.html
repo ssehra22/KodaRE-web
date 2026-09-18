@@ -2362,7 +2362,14 @@ async function refreshPropertiesFromServer(){
   if(btn){btn.disabled=true;btn.textContent='🔄 Refreshing…';}
   try{
     if(SUPA_CONFIGURED){
-      await Promise.all([loadRealProperties(),loadRealTickets()]);
+      // loadRealProperties() rebuilds PROPS with brand-new property objects (fresh from the
+      // properties table), which don't carry the .checklist / .dispositionChk / .licensingChk
+      // data those checklist loaders attach by property id. Reload properties FIRST, then the
+      // checklists (same order as the app's initial load sequence) so propStage() -- and
+      // everything the dashboard derives from it (Stage column, Owned/Leased, Healthy/At-risk,
+      // licensing buckets, metro pie) -- doesn't silently reset to blank/zero after a refresh.
+      await loadRealProperties();
+      await Promise.all([loadRealTickets(),loadRealPurchaseChecklists(),loadRealDispositionChecklists(),loadRealLicensingChecklists()]);
       computeHealth();
       toast('Properties refreshed');
     } else {
