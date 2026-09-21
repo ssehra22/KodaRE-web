@@ -707,7 +707,7 @@ function rowToProperty(row){
     loanTermMo:row.loan_term_mo!=null?Number(row.loan_term_mo):null, loanMaturity:row.loan_maturity,
     loanPayment:row.loan_payment!=null?Number(row.loan_payment):null, loanEscrow:row.loan_escrow!=null?Number(row.loan_escrow):null,
     loanLien:row.loan_lien, loanPrepay:row.loan_prepay,
-    status:row.status||'Active', health:row.status==='New Transaction'?'amber':'green', compliance:null
+    status:row.status||'New Transaction', health:row.status==='New Transaction'||!row.status?'amber':'green', compliance:null
   };
 }
 const PROP_FIELD_TO_COLUMN={addr:'addr',own:'own',beds:'beds',bedrooms:'bedrooms',bathrooms:'bathrooms',sqft:'sqft',
@@ -2187,15 +2187,30 @@ function isClosingStage(p,st){return st===(p.own==='owned'?'Owned':'Leased')||st
 /* Maps a property's health/status to the CSS color-token suffix used for its badges --
    one place so Sold's neutral color stays consistent everywhere it's shown. */
 function healthColorToken(p){return p.health==='green'?'green':p.health==='red'?'red':p.health==='sold'?'ink-400':'amber';}
+// Has this property ever actually closed (Owned/Leased/Licensed)? Deliberately reads the
+// ACQUISITION checklist's Stage field directly, not propStage(p) -- propStage() prefers the
+// disposition Stage once a sale is underway (e.g. "Listed"/"Under Contract" to sell), and a
+// property being sold is by definition already closed, so it must stay Active/Emergency
+// (ticket-driven) all the way through disposition until it actually reaches Sold.
+function hasClosedAcquisition(p){
+  const acqStage=(p.checklist&&p.checklist['Stage']&&p.checklist['Stage'].t)||'';
+  return isClosingStage(p,acqStage);
+}
 function computeHealth(){PROPS.forEach(p=>{
   if(propStage(p)==='Sold'){
     if(p.status!=='Sold'){p.status='Sold';p.health='sold';if(p._backend==='supabase')dbUpdateProperty(p.id,{status:'Sold'});}
     return;
   }
-  if(p.status==='New Transaction'){
-    if(!isClosingStage(p,propStage(p)))return;
-    p.status='Active';p.health='green';
-    if(p._backend==='supabase')dbUpdateProperty(p.id,{status:'Active'});
+  // Maint. Status can only be Active/Emergency once the property has actually closed —
+  // Owned, Leased, or Licensed. This is derived from the live acquisition Stage field every
+  // time computeHealth runs, not just checked once at creation, so a property loaded with a
+  // stale/blank status (e.g. an older Supabase row with no status column set) still gets
+  // correctly frozen at "New Transaction" while it's still at a pre-closing acquisition
+  // stage like Identified or Under Contract. Tickets can still be filed against a New
+  // Transaction property — this only affects the status badge/health color.
+  if(!hasClosedAcquisition(p)){
+    if(p.status!=='New Transaction'){p.status='New Transaction';p.health='amber';if(p._backend==='supabase')dbUpdateProperty(p.id,{status:'New Transaction'});}
+    return;
   }
   const ts=TICKETS.filter(t=>t.prop===p.id&&isOpen(t));p.health=ts.some(t=>t.urgency==='Emergency')?'red':(ts.length?'amber':'green');p.status=p.health==='red'?'Emergency':'Active';
 });}
