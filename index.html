@@ -4651,7 +4651,8 @@ const TICKET_EXPORT_COLUMNS=[
   {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
   {label:'Description',key:'desc'},{label:'Category',key:'svc'},{label:'Urgency',key:'urgency'},
   {label:'Status',key:'status'},{label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},
-  {label:'Payment status',key:'payment'},{label:'Target completion',get:t=>t.targetCompletion},{label:'Created',get:t=>t.created}];
+  {label:'Payment status',key:'payment'},{label:'Target completion',get:t=>t.targetCompletion},{label:'Created',get:t=>t.created},
+  {label:'Comments',key:'notes'}];
 // Exports the checkbox-selected tickets on the Maintenance page (SELECTED) to .xlsx,
 // reusing the same column spec as the full Reports > Export tickets dump.
 function exportSelectedTickets(){
