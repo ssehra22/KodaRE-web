@@ -4535,6 +4535,16 @@ function downloadXLSX(filename,sheetName,columns,rows){
     const v=typeof c.get==='function'?c.get(r):r[c.key];return v==null?'':v;
   }))];
   const ws=XLSX.utils.aoa_to_sheet(aoa);
+  // Auto-size every column to its longest cell (header included) so text like a ticket
+  // description isn't visually clipped by Excel's default ~8-char column width. Capped at
+  // 60 chars wide so one long description doesn't blow out the whole sheet -- the SheetJS
+  // community build loaded here can't write cell styles (wrap text is a Pro-only feature),
+  // so width is the only lever available, but it's enough to fix the clipped-looking cells.
+  ws['!cols']=columns.map((c,i)=>{
+    let max=String(c.label||'').length;
+    for(const row of aoa.slice(1)){const len=String(row[i]==null?'':row[i]).length;if(len>max)max=len;}
+    return {wch:Math.min(Math.max(max+2,10),60)};
+  });
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,(sheetName||'Sheet1').replace(/[\[\]:\\/?*]/g,' ').slice(0,31)||'Sheet1');
   XLSX.writeFile(wb,filename);
@@ -4562,7 +4572,7 @@ function downloadPDFTable(filename,title,columns,rows){
 }
 const TICKET_EXPORT_COLUMNS=[
   {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
-  {label:'Title',key:'title'},{label:'Category',key:'svc'},{label:'Urgency',key:'urgency'},
+  {label:'Description',key:'desc'},{label:'Category',key:'svc'},{label:'Urgency',key:'urgency'},
   {label:'Status',key:'status'},{label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},
   {label:'Payment status',key:'payment'},{label:'Target completion',get:t=>t.targetCompletion},{label:'Created',get:t=>t.created}];
 // Exports the checkbox-selected tickets on the Maintenance page (SELECTED) to .xlsx,
