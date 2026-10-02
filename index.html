@@ -2852,6 +2852,7 @@ function renderTickets(el){
     <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
     <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
+    <button class="btn sec sm" onclick="exportSelectedTickets()" title="Download the checked tickets above as an Excel file">⬇ Download to Excel</button>
     <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches automatically'}" style="border:2px solid var(--tone-accent-soft-border);background:var(--tone-accent-soft-bg);border-radius:10px;padding:14px 20px;font-size:13px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:12px">
       <span style="font-weight:800;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--tone-accent-soft-text)">📎 Auto invoice matching</span>
       <span class="faint">·</span>
@@ -4559,6 +4560,18 @@ function downloadPDFTable(filename,title,columns,rows){
   doc.save(filename);
   toast('Downloaded '+filename);
 }
+const TICKET_EXPORT_COLUMNS=[
+  {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
+  {label:'Title',key:'title'},{label:'Category',key:'svc'},{label:'Urgency',key:'urgency'},
+  {label:'Status',key:'status'},{label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},
+  {label:'Payment status',key:'payment'},{label:'Target completion',get:t=>t.targetCompletion},{label:'Created',get:t=>t.created}];
+// Exports the checkbox-selected tickets on the Maintenance page (SELECTED) to .xlsx,
+// reusing the same column spec as the full Reports > Export tickets dump.
+function exportSelectedTickets(){
+  if(!SELECTED.size){toast('Select tickets first, then Download to Excel');return;}
+  const rows=TICKETS.filter(t=>SELECTED.has(t.id));
+  downloadXLSX('maintenance_tickets_selected.xlsx','Maintenance tickets',TICKET_EXPORT_COLUMNS,rows);
+}
 function exportDataset(kind,format){
   const sets={
     properties:{filename:'properties.csv',rows:PROPS,columns:[
@@ -4566,11 +4579,7 @@ function exportDataset(kind,format){
       {label:'Status',key:'status'},{label:'Metro',key:'metro'},{label:'Bedrooms',key:'bedrooms'},
       {label:'Bathrooms',key:'bathrooms'},{label:'Sq Ft',key:'sqft'},{label:'Rent',key:'rent'},
       {label:'Loan lender',key:'loanLender'},{label:'Loan balance',key:'loanRemaining'}]},
-    tickets:{filename:'maintenance_tickets.csv',rows:TICKETS,columns:[
-      {label:'Ref',get:t=>ticketRef(t)},{label:'Property',get:t=>(propById(t.prop)||{}).name||''},
-      {label:'Title',key:'title'},{label:'Category',key:'svc'},{label:'Urgency',key:'urgency'},
-      {label:'Status',key:'status'},{label:'Vendor',key:'vendor'},{label:'Cost',key:'cost'},
-      {label:'Payment status',key:'payment'},{label:'Target completion',get:t=>t.targetCompletion},{label:'Created',get:t=>t.created}]},
+    tickets:{filename:'maintenance_tickets.csv',rows:TICKETS,columns:TICKET_EXPORT_COLUMNS},
     vendors:{filename:'vendors.csv',rows:VENDORS,columns:[
       {label:'Name',key:'name'},{label:'Service category',key:'trade'},{label:'Contact',key:'contact'},
       {label:'Phone',key:'phone'},{label:'Email',key:'email'},{label:'Metro',get:v=>(v.metro||[]).join('; ')},
