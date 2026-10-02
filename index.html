@@ -154,6 +154,10 @@
   .fmenu-row:hover{background:var(--surface-sunken)}
   .fmenu-row input{width:15px;height:15px;cursor:pointer;flex-shrink:0}
   .fmenu-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Column filter inputs (Created/Description/Cost/Comments, etc.) -- the browser's default
+     placeholder color is lighter than our --muted token, making "From MM/DD", "Search...",
+     "Min"/"Max" etc. harder to read than intended; match them to --muted instead. */
+  th input::placeholder{color:var(--muted);opacity:1}
 
   /* ---- desktop app shell — dark sidebar, light content area ---- */
   #desktop{display:grid;grid-template-columns:188px 1fr;min-height:calc(100vh - 56px)}
@@ -2553,7 +2557,22 @@ function toggleNavDrawer(){const open=document.getElementById('sideNav').classLi
 /* Top-bar account menu — sign-out lives here instead of its own always-visible button. */
 function toggleUserMenu(e){if(e)e.stopPropagation();const m=document.getElementById('userMenu');if(m)m.classList.toggle('hidden');}
 function closeUserMenu(){const m=document.getElementById('userMenu');if(m)m.classList.add('hidden');}
-function toggleDropMenu(id,e){if(e)e.stopPropagation();document.querySelectorAll('.dropmenu').forEach(m=>{if(m.id!==id)m.classList.add('hidden');});const m=document.getElementById(id);if(m)m.classList.toggle('hidden');}
+// Positions an open dropdown with position:fixed, computed from its trigger button's own
+// on-screen location, instead of relying on the CSS default (position:absolute, anchored to
+// its .dropwrap parent). That default gets silently clipped whenever a .dropmenu lives inside
+// an overflow:auto/hidden ancestor -- e.g. a toolbar row with overflow-x:auto for horizontal
+// scrolling (menu opens but renders invisible, cut off at the row's own height) or this
+// table's overflow-x:auto wrapper. Fixed positioning is relative to the viewport, so it
+// escapes that clipping regardless of which ancestor scrolls.
+function positionDropMenu(m){
+  const trigger=m.previousElementSibling;if(!trigger)return;
+  const r=trigger.getBoundingClientRect();
+  m.style.position='fixed';
+  m.style.top=(r.bottom+6)+'px';
+  m.style.left=r.left+'px';
+  m.style.minWidth=Math.max(r.width,parseFloat(getComputedStyle(m).minWidth)||0)+'px';
+}
+function toggleDropMenu(id,e){if(e)e.stopPropagation();document.querySelectorAll('.dropmenu').forEach(m=>{if(m.id!==id)m.classList.add('hidden');});const m=document.getElementById(id);if(!m)return;const willOpen=m.classList.contains('hidden');m.classList.toggle('hidden');if(willOpen)positionDropMenu(m);}
 function closeDropMenus(){document.querySelectorAll('.dropmenu').forEach(m=>m.classList.add('hidden'));}
 document.addEventListener('click',e=>{if(!e.target.closest('.dropwrap'))closeDropMenus();});
 document.addEventListener('click',e=>{if(!e.target.closest('#liveRoleBadge'))closeUserMenu();});
@@ -2831,7 +2850,7 @@ function renderTickets(el){
   const thSel=(key,label,opts,cls,minW)=>{const sel=FILTER[key];return `<th class="${cls||''}" style="text-align:left;min-width:${minW||118}px;vertical-align:top">
     ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
     <div class="dropwrap" style="width:100%;display:block">
-      <button type="button" id="fbtn_${key}" onclick="toggleDropMenu('fmenu_${key}',event)" style="${fSel};width:100%;display:flex;align-items:center;justify-content:space-between;padding:0;gap:4px" title="Filter by ${label}"><span>${sel.length?sel.length+' selected':'All'}</span><span style="flex-shrink:0">▾</span></button>
+      <button type="button" id="fbtn_${key}" onclick="toggleDropMenu('fmenu_${key}',event)" style="${fSel};width:100%;display:flex;align-items:center;justify-content:space-between;padding:0;gap:4px" title="Filter by ${label}"><span>${sel.length?sel.length+' selected':'All'}</span><span style="flex-shrink:0;font-size:15px;color:var(--ink-700)">▾</span></button>
       <div class="dropmenu fmenu hidden" id="fmenu_${key}">
         <div class="fmenu-all${sel.length?'':' active'}" onclick="setFAll('${key}')">${sel.length?'':'✓ '}All</div>
         <div class="fmenu-sep"></div>
