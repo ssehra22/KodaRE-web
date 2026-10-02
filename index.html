@@ -158,6 +158,10 @@
      placeholder color is lighter than our --muted token, making "From MM/DD", "Search...",
      "Min"/"Max" etc. harder to read than intended; match them to --muted instead. */
   th input::placeholder{color:var(--muted);opacity:1}
+  /* Column header labels (Property, Status, Created, ...) -- bolder and darker than the
+     table's default th styling (font-weight inherited from the browser default, color
+     --ink-500) so they stand out clearly above their filter controls. */
+  .thtitle>span:first-child{font-weight:800;color:var(--ink-700)}
 
   /* ---- desktop app shell — dark sidebar, light content area ---- */
   #desktop{display:grid;grid-template-columns:188px 1fr;min-height:calc(100vh - 56px)}
@@ -2843,14 +2847,14 @@ function renderTickets(el){
   const invOpts=[...new Set(TICKETS.map(t=>t.invoice).filter(Boolean))].sort();
   const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
   const clearX=(key,label)=>`<a onclick="event.stopPropagation();clearFilter('${key}')" title="Clear ${label} filter" style="font-size:13px;color:var(--faint);cursor:pointer;flex-shrink:0;text-transform:none;letter-spacing:0;font-weight:700;padding:4px 6px;margin:-4px -6px;display:inline-block;line-height:1">✕</a>`;
-  const thTitle=(inner)=>`<div style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px;white-space:normal;text-align:left;min-height:28px">${inner}</div>`;
+  const thTitle=(inner)=>`<div class="thtitle" style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px;white-space:normal;text-align:left;min-height:28px">${inner}</div>`;
   // Multi-select: FILTER[key] is an array of chosen values, empty = no restriction ("All").
   // Reads the picked value via this.value (not interpolated into the onchange string) so
   // values containing an apostrophe (a vendor or property name, say) can't break the handler.
   const thSel=(key,label,opts,cls,minW)=>{const sel=FILTER[key];return `<th class="${cls||''}" style="text-align:left;min-width:${minW||118}px;vertical-align:top">
     ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
     <div class="dropwrap" style="width:100%;display:block">
-      <button type="button" id="fbtn_${key}" onclick="toggleDropMenu('fmenu_${key}',event)" style="${fSel};width:100%;display:flex;align-items:center;justify-content:space-between;padding:0;gap:4px" title="Filter by ${label}"><span>${sel.length?sel.length+' selected':'All'}</span><span style="flex-shrink:0;font-size:15px;color:var(--ink-700)">▾</span></button>
+      <button type="button" id="fbtn_${key}" onclick="toggleDropMenu('fmenu_${key}',event)" style="${fSel};width:100%;display:flex;align-items:center;justify-content:space-between;padding:0;gap:4px" title="Filter by ${label}"><span>${sel.length?sel.length+' selected':'All'}</span><span style="flex-shrink:0;font-size:20px;font-weight:900;color:var(--ink-700);line-height:1">▾</span></button>
       <div class="dropmenu fmenu hidden" id="fmenu_${key}">
         <div class="fmenu-all${sel.length?'':' active'}" onclick="setFAll('${key}')">${sel.length?'':'✓ '}All</div>
         <div class="fmenu-sep"></div>
@@ -4396,7 +4400,7 @@ function renderVendors(el){
   const metroOpts=REF_LISTS.metro.values.slice();
   const fSel="width:100%;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border:0;background:transparent;color:var(--muted);cursor:pointer";
   const clearX=(key,label)=>`<a onclick="event.stopPropagation();clearVFilter('${key}')" title="Clear ${label} filter" style="font-size:13px;color:var(--faint);cursor:pointer;flex-shrink:0;text-transform:none;letter-spacing:0;font-weight:700;padding:4px 6px;margin:-4px -6px;display:inline-block;line-height:1">✕</a>`;
-  const thTitle=(inner)=>`<div style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px;white-space:normal;text-align:left;min-height:28px">${inner}</div>`;
+  const thTitle=(inner)=>`<div class="thtitle" style="display:flex;align-items:flex-start;gap:4px;margin-bottom:4px;white-space:normal;text-align:left;min-height:28px">${inner}</div>`;
   const thSel=(key,label,opts,cls)=>`<th class="${cls||''}" style="text-align:left;min-width:130px;vertical-align:top">
     ${thTitle(`<span>${label}</span>${clearX(key,label)}`)}
     <select onchange="setVF('${key}',this.value)" style="${fSel};width:100%" title="Filter by ${label}"><option value="all"${VFILTER[key]==='all'?' selected':''}>All</option>${opts.map(o=>`<option value="${esc(String(o.v))}"${VFILTER[key]===o.v?' selected':''}>${esc(o.l)}</option>`).join('')}</select>
