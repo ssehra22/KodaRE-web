@@ -2896,8 +2896,7 @@ function renderTickets(el){
     <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
     </div>
   <div class="toolbar" style="flex-wrap:nowrap;overflow-x:auto"><span class="b">Selection:</span>
-    <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()">${FILTER.selectedOnly?'✓ ':''}Show selected only</span>
-    <span class="pill" id="selCount">${SELECTED.size?SELECTED.size+' selected':'0 selected'}</span>
+    <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()" id="selOnlyChip">${FILTER.selectedOnly?'✓ ':''}Show ${SELECTED.size} selected only</span>
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
     <button class="btn sec sm" onclick="exportSelectedTickets()" title="Download the checked tickets above as an Excel file">⬇ Download to Excel</button>
     <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches automatically'}" style="border:2px solid var(--tone-accent-soft-border);background:var(--tone-accent-soft-bg);border-radius:10px;padding:14px 20px;font-size:13px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:12px">
@@ -2970,7 +2969,7 @@ function updateFilterChrome(key){
 function toggleSelectedOnly(){FILTER.selectedOnly=!FILTER.selectedOnly;renderTickets(document.getElementById('view'));}
 function toggleSelect(id,checked){if(checked)SELECTED.add(id);else SELECTED.delete(id);
   if(FILTER.selectedOnly&&SELECTED.size===0){FILTER.selectedOnly=false;renderTickets(document.getElementById('view'));return;}
-  const c=document.getElementById('selCount');if(c)c.textContent=(SELECTED.size?SELECTED.size+' selected':'0 selected');if(FILTER.selectedOnly)drawTickets();}
+  const c=document.getElementById('selOnlyChip');if(c)c.textContent=(FILTER.selectedOnly?'✓ ':'')+'Show '+SELECTED.size+' selected only';if(FILTER.selectedOnly)drawTickets();}
 function toggleSelectAll(checked){filtered().forEach(t=>{if(checked)SELECTED.add(t.id);else SELECTED.delete(t.id);});if(!checked&&FILTER.selectedOnly&&SELECTED.size===0)FILTER.selectedOnly=false;renderTickets(document.getElementById('view'));}
 function clearSelection(){SELECTED.clear();FILTER.selectedOnly=false;renderTickets(document.getElementById('view'));}
 async function deleteSelectedTickets(){
