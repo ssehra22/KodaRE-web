@@ -2896,7 +2896,7 @@ function renderTickets(el){
     <button class="btn sec sm" onclick="clearAllFilters()">Clear all filters</button>
     </div>
   <div class="toolbar" style="flex-wrap:nowrap;overflow-x:auto"><span class="b">Selection:</span>
-    <span class="chip ${FILTER.selectedOnly?'active':''}" onclick="toggleSelectedOnly()" id="selOnlyChip">${FILTER.selectedOnly?'✓ ':''}Show ${SELECTED.size} selected only</span>
+    <span class="chip" onclick="toggleSelectedOnly()" id="selOnlyChip" style="border:2px solid var(--tone-accent-soft-border);background:${FILTER.selectedOnly?'var(--tone-accent-solid-bg)':'var(--tone-accent-soft-bg)'};color:${FILTER.selectedOnly?'var(--tone-accent-solid-text)':'var(--tone-accent-soft-text)'};font-weight:800">${FILTER.selectedOnly?'✓ ':''}Show ${SELECTED.size} selected only</span>
     <button class="btn sec sm" onclick="clearSelection()">Clear selection</button>
     <button class="btn sec sm" onclick="exportSelectedTickets()" title="Download the checked tickets above as an Excel file">⬇ Download to Excel</button>
     <div ondragover="bulkDragOver(event)" ondragleave="bulkDragLeave(event)" ondrop="dropInvoiceOnSelected(event)" title="${SELECTED.size?`Reads this invoice and proposes matches from the ${SELECTED.size} selected tickets — nothing saved until you review and confirm`:'Select tickets first, or drop straight on a row below — KodaRE reads the invoice and proposes matches automatically'}" style="border:2px solid var(--tone-accent-soft-border);background:var(--tone-accent-soft-bg);border-radius:10px;padding:14px 20px;font-size:13px;color:${SELECTED.size?'var(--ink)':'var(--faint)'};margin-left:auto;display:flex;align-items:center;gap:12px">
