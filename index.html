@@ -3310,6 +3310,8 @@ function propDetails(p){
       <div class="k">Construction</div><div>${propTxt(p,'constructionMaterial','—',190)}</div>
       <div class="k">Zoning</div><div>${propTxt(p,'zoning','—',190)}</div>
       <div class="k">Property type</div><div>${propTxt(p,'propertyType','—',190)}</div>
+      <div class="k">Municipality</div><div>${propTxt(p,'municipality','—',210)}</div>
+      <div class="k">School district</div><div>${propTxt(p,'schoolDistrict','—',230)}</div>
       <div class="k">HOA / Condo</div><div>${ROLE==='admin'?`<select style="width:110px;font-size:13px" onchange="updatePropHoaCondo('${p.id}',this.value)">
         <option value="No" ${p.hoaCondo!=='Yes'?'selected':''}>No</option>
         <option value="Yes" ${p.hoaCondo==='Yes'?'selected':''}>Yes</option>
@@ -3326,8 +3328,6 @@ function propDetails(p){
       <div class="k">Management Portal/Website</div><div>${propTxt(p,'mgmtPortal','—',230)}</div>
       <div class="k">Management Portal Login</div><div>${propTxt(p,'mgmtPortalLogin','—',190)}</div>
       `:''}
-      <div class="k">Municipality</div><div>${propTxt(p,'municipality','—',210)}</div>
-      <div class="k">School district</div><div>${propTxt(p,'schoolDistrict','—',230)}</div>
       <div class="k">Tax ID #</div><div>${propTxt(p,'taxId','—',170)}</div>
       <div class="k">MLS #</div><div>${propTxt(p,'mls','—',170)}</div>
       <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update comments…" onchange="updatePropField('${p.id}','comments',this.value)">${esc(p.comments||'')}</textarea></div>
