@@ -3312,7 +3312,7 @@ function propDetails(p){
       <div class="k">Property type</div><div>${propTxt(p,'propertyType','—',190)}</div>
       <div class="k">Municipality</div><div>${propTxt(p,'municipality','—',210)}</div>
       <div class="k">School district</div><div>${propTxt(p,'schoolDistrict','—',230)}</div>
-      <div class="k">HOA / Condo</div><div>${ROLE==='admin'?`<select style="width:110px;font-size:13px" onchange="updatePropHoaCondo('${p.id}',this.value)">
+      <div class="k">HOA / Condo</div><div>${ROLE==='admin'?`<select style="width:140px;font-size:13px" onchange="updatePropHoaCondo('${p.id}',this.value)">
         <option value="No" ${p.hoaCondo!=='Yes'?'selected':''}>No</option>
         <option value="Yes" ${p.hoaCondo==='Yes'?'selected':''}>Yes</option>
       </select>`:(p.hoaCondo==='Yes'?'Yes':'No')}</div>
