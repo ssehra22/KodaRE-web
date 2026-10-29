@@ -1180,7 +1180,19 @@ async function dbUpdateUserName(userId,name){
   if(!data||!data.length){toast('Name update did not apply — check the update policy on user_roles.');return false;}
   return true;
 }
-async function dbUpsertChecklist(table,propertyId,items){
+// Saves for the same checklist are queued one after another, each sending a snapshot of the
+// data as it was at click time -- otherwise two quick clicks fire two overlapping requests that
+// can land out of order, leaving the OLDER state saved last (which then shows up on the next
+// load as boxes you'd already changed "going back").
+const _chkSaveQ={};
+function dbUpsertChecklist(table,propertyId,items){
+  const k=table+':'+propertyId;
+  const snapshot=JSON.parse(JSON.stringify(items||{}));
+  const next=(_chkSaveQ[k]||Promise.resolve()).then(()=>_dbUpsertChecklistNow(table,propertyId,snapshot));
+  _chkSaveQ[k]=next.catch(()=>{});
+  return next;
+}
+async function _dbUpsertChecklistNow(table,propertyId,items){
   const {error}=await sb.from(table).upsert({property_id:propertyId,items},{onConflict:'property_id'});
   if(error){toast('Save failed: '+error.message);return false;}
   return true;
@@ -3411,16 +3423,17 @@ function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licen
   return `${live?'':'<div class="pill" style="border-color:var(--amber);color:var(--amber);margin-bottom:12px;display:inline-flex">🚧 Sample data — sign in to Supabase for real tracking</div>'}
   <div class="mrow" style="margin-bottom:10px"><div class="b">Licensing Checklist</div><div class="pill">${done}/${countable.length} complete</div></div>
   <div class="progress" style="margin-bottom:12px"><i style="width:${pct}%;background:var(--green)"></i></div>
-  <div class="muted" style="font-size:12px;margin-bottom:12px">All fields optional (blanks allowed) · statuses can be overridden. Click a status chip to cycle Pending → Done → N/A.</div>
+  <div class="muted" style="font-size:12px;margin-bottom:12px">All fields optional (blanks allowed) · statuses can be overridden. Each step is independent — pick Pending, Done or N/A from its status dropdown.</div>
   <div class="card"><div class="body" style="padding:2px 0">
   ${items.map((it,ix)=>{const c=p.licensingChk[it]||{s:'pending',t:''};const cls=c.s==='done'?'b-resolved':c.s==='na'?'b-closed':'b-new';const lbl=c.s==='done'?'✓ Done':c.s==='na'?'— N/A':'▢ Pending';
     const wideNote=it==='Comments'||it==='User Notes';const fw=wideNote?280:190;
     const visTag=it==='User Notes'?'<span class="faint" style="font-size:10.5px;margin-left:6px">🔒 Private — only you</span>':it==='Comments'?'<span class="faint" style="font-size:10.5px;margin-left:6px">👥 Visible to other users</span>':'';
-    const toggle=wideNote?'':`<span class="badge ${cls}" style="cursor:pointer;min-width:80px;justify-content:center" onclick="cycleLicChk('${p.id}',${ix})">${lbl}</span>`;
+    const toggle=wideNote?'':`<select class="badge ${cls}" style="cursor:pointer;min-width:100px;font-size:12px;font-weight:700;border-radius:999px;padding:4px 8px" title="Set this step's status" onchange="setLicChkStatus('${p.id}',${ix},this.value)"><option value="pending"${c.s!=='done'&&c.s!=='na'?' selected':''}>▢ Pending</option><option value="done"${c.s==='done'?' selected':''}>✓ Done</option><option value="na"${c.s==='na'?' selected':''}>— N/A</option></select>`;
     return `<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--line)"><div style="flex:1;font-size:13px">${it}${visTag}</div><input type="text" value="${(c.t||'').replace(/"/g,'&quot;')}" placeholder="${wideNote?'add / update '+(it==='Comments'?'comments':'notes')+'…':'notes / date…'}" style="width:${fw}px;font-size:12.5px" onchange="setLicChkText('${p.id}',${ix},this.value)">${toggle}</div>`;}).join('')}
   </div></div>
   <div class="muted" style="font-size:12px;margin:10px 0">Initial Licensing Checklist &amp; Monitoring: reflects the ODP licensing workflow from non-contiguous approval through move-in. Consistent with Scope §4.3.</div>`;}
 function cycleLicChk(pid,ix){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();document.getElementById('propTabBody').innerHTML=propLicensing(p);}
+function setLicChkStatus(pid,ix,val){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];if(!p||!it||!['pending','done','na'].includes(val))return;p.licensingChk=p.licensingChk||{};const cur=Object.assign({s:'pending',t:''},p.licensingChk[it]);cur.s=val;p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();document.getElementById('propTabBody').innerHTML=propLicensing(p);}
 function setLicChkText(pid,ix,val){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});cur.t=val;p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();}
 const LIFE_TABLE={'HVAC':[25,10000],'Furnace':[20,6000],'Water heater':[15,2000],'Refrigerator':[10,1200],'Gas/electric range':[15,1200],'Oven':[15,1200],'Dishwasher':[10,800],'Microwave':[8,600],'Washing machine':[12,800],'Dryer':[12,800],'Carpeting':[10,0],'Roof':[25,11000]};
 /* Per-property capital reserve tracking (Aug 2026) — Properties > Components, plus the
@@ -3453,21 +3466,18 @@ function getComponentAge(pid,name){
 /* "Other" components (per property): two slots per property for things not in
    LIFE_TABLE -- e.g. a deck. The user types the name, expected life and today's replacement cost
    for that specific property. Stored alongside install years in COMPONENT_AGES under the keys
-   below as {label,life,cost,year,actual,na}. A component marked N/A (doesn't exist at this
-   property -- e.g. no furnace when there's a heat pump) is left out of every count and total.
-   A component with no install year gets NO reserve and is left out of totals (flagged as missing
-   instead) -- a guessed figure would mix unsupported numbers in with real ones. */
+   below as {label,life,cost,year,actual}. A component with no install year is treated as not
+   applicable at that property (e.g. no furnace when there's a heat pump): no reserve, no flag,
+   left out of every count and total -- no guessed figure is ever substituted. */
 const OTHER_SLOTS=['Other 1','Other 2'];
 function otherOvr(info){return {life:Number(info&&info.life)||0,cost:Number(info&&info.cost)||0};}
-function otherTouched(info){return !!(info&&(info.label||info.life||info.cost||info.year));}
 function componentReserveCalc(name,ageInfo,ovr){
   let life,cost;
   if(ovr){life=ovr.life;cost=ovr.cost;}else{[life,cost]=LIFE_TABLE[name];}
   const yearNow=new Date(today).getFullYear();
   const pct=(ASSUMPTIONS.capitalReserveInflationPct||0)/100;
-  const na=!!(ageInfo&&ageInfo.na);
-  let ageYears=null,remaining=null,overdueYears=0,statusKey=na?'na':'unknown',inflatedCost=null,annualReserve=null;
-  if(!na&&ageInfo&&ageInfo.year&&life>0&&cost>0){
+  let ageYears=null,remaining=null,overdueYears=0,statusKey='unknown',inflatedCost=null,annualReserve=null;
+  if(ageInfo&&ageInfo.year&&life>0&&cost>0){
     ageYears=yearNow-ageInfo.year;
     remaining=life-ageYears;
     if(remaining>=0){
@@ -3484,15 +3494,14 @@ function componentReserveCalc(name,ageInfo,ovr){
   return {life,cost,inflatedCost,annualReserve,ageYears,remaining,overdueYears,statusKey};
 }
 function propertyReserveSummary(p){
-  let total=0,overdueN=0,agingN=0,missingN=0;
-  const tally=(r,countMissing)=>{
-    if(r.statusKey==='na')return;
+  let total=0,overdueN=0,agingN=0;
+  const tally=r=>{
     if(r.annualReserve!=null)total+=r.annualReserve;
-    if(r.statusKey==='overdue')overdueN++;else if(r.statusKey==='aging')agingN++;else if(r.statusKey==='unknown'&&countMissing)missingN++;
+    if(r.statusKey==='overdue')overdueN++;else if(r.statusKey==='aging')agingN++;
   };
-  Object.keys(LIFE_TABLE).forEach(n=>tally(componentReserveCalc(n,getComponentAge(p.id,n)),true));
-  OTHER_SLOTS.forEach(n=>{const info=getComponentAge(p.id,n);tally(componentReserveCalc(n,info,otherOvr(info)),otherTouched(info));});
-  return {total,overdueN,agingN,missingN};
+  Object.keys(LIFE_TABLE).forEach(n=>tally(componentReserveCalc(n,getComponentAge(p.id,n))));
+  OTHER_SLOTS.forEach(n=>{const info=getComponentAge(p.id,n);tally(componentReserveCalc(n,info,otherOvr(info)));});
+  return {total,overdueN,agingN};
 }
 let ASSUMPTIONS_TAB='capitalreserves';
 // Additional dropdown lists documented in Scope v0.7 that aren't wired to a live field yet
@@ -3562,7 +3571,7 @@ function capitalReservesSection(){
         <li style="margin-bottom:6px"><b>Expected replacement year</b> = install year + the expected life from the Life of Appliances table below.</li>
         <li style="margin-bottom:6px"><b>Inflation-adjusted cost</b> — today's replacement cost from the table below is escalated at the inflation rate above, compounded out to that expected replacement year. Once a component runs past its expected life without being replaced, the same rate keeps compounding for however many years it's now overdue instead — so the estimate keeps rising the longer replacement is delayed, rather than freezing at the original figure.</li>
         <li style="margin-bottom:6px"><b>Annual reserve</b> = inflation-adjusted cost ÷ years actually remaining before it's due (not the full expected life). Properties are bought with components already at whatever age they're at, not brand new, so there's no assumption anything's been saved for them yet — a component with 20 years left needs a small, gentle figure; the same component with 1 year left needs to catch up fast, so its figure is much larger. Once a component is overdue, the figure is simply the full inflated replacement cost, since it could be needed at any time.</li>
-        <li>Without a year installed, a component can't be inflation-adjusted, age-weighted, or flagged Healthy/Plan ahead/Overdue — so it gets <b>no reserve</b> and is left out of the totals, and shows as missing data on the property's Components tab and on Finance → Capital Reserves. Components marked N/A (item doesn't exist at that property) are ignored entirely. Each property also has two <b>Other</b> rows for items outside this table (e.g. a deck), with their own expected life and replacement cost.</li>
+        <li>Without a year installed, a component is treated as not applicable at that property (e.g. no furnace when there's a heat pump) — it gets no reserve, no flag, and is left out of the totals. Each property also has two <b>Other</b> rows for items outside this table (e.g. a deck), with their own expected life and replacement cost.</li>
       </ol>
       This is a planning estimate, not a running account balance — it doesn't track actual dollars saved anywhere, so correcting a life or cost value below simply updates the recommendation going forward for every property; it doesn't try to reconcile against what would have been recommended before.
     </div>
@@ -3864,34 +3873,29 @@ function propComponents(p){
   let totalCost=0;
   const esc2=s=>String(s).replace(/'/g,"\\'");
   const yearCell=(n,info,r,isOther)=>{
-    const na=!!(info&&info.na);
     const ph=isOther?`e.g. ${yearNow-5}`:`e.g. ${yearNow-Math.round(r.life/2)}`;
     return `<td>
-        <input type="number" inputmode="numeric" min="1900" max="${yearNow}" value="${info&&info.year?info.year:''}" ${na?'disabled':''} placeholder="${na?'N/A':ph}" style="width:100px;font-size:12.5px" title="Year installed — exact if known, or an estimate from the purchase inspection report" onchange="setComponentAgeYear('${p.id}','${esc2(n)}',this.value)">
-        ${!na&&info&&info.year?`<select style="width:100px;font-size:10.5px;margin-top:3px;color:var(--ink-500)" onchange="setComponentAgeSource('${p.id}','${esc2(n)}',this.value)" title="Is this year from an actual record (invoice/receipt), or an estimate?"><option value="estimated"${!info.actual?' selected':''}>Estimated</option><option value="actual"${info.actual?' selected':''}>Actual</option></select>`:''}
-        <label style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--ink-500);margin-top:3px;cursor:pointer" title="Tick if this item doesn't exist at this property (e.g. no furnace when there is a heat pump) — it's left out of all counts and totals"><input type="checkbox" ${na?'checked':''} onchange="setComponentNA('${p.id}','${esc2(n)}',this.checked)" style="width:13px;height:13px"> N/A</label>
+        <input type="number" inputmode="numeric" min="1900" max="${yearNow}" value="${info&&info.year?info.year:''}" placeholder="${ph}" style="width:100px;font-size:12.5px" title="Year installed — exact if known, or an estimate from the purchase inspection report. Leave blank if this item doesn't exist at this property." onchange="setComponentAgeYear('${p.id}','${esc2(n)}',this.value)">
+        ${info&&info.year?`<select style="width:100px;font-size:10.5px;margin-top:3px;color:var(--ink-500)" onchange="setComponentAgeSource('${p.id}','${esc2(n)}',this.value)" title="Is this year from an actual record (invoice/receipt), or an estimate?"><option value="estimated"${!info.actual?' selected':''}>Estimated</option><option value="actual"${info.actual?' selected':''}>Actual</option></select>`:''}
       </td>`;
   };
   const statusOf=r=>{
-    if(r.statusKey==='na')return '<span class="faint">N/A</span>';
     if(r.statusKey==='overdue')return '<span class="badge b-red"><span class="dot"></span>Overdue</span>';
     if(r.statusKey==='aging')return '<span class="badge b-progress"><span class="dot"></span>Plan ahead</span>';
     if(r.statusKey==='healthy')return '<span class="badge b-resolved"><span class="dot"></span>Healthy</span>';
-    return '<span class="faint">Unknown</span>';
+    return '<span class="faint">—</span>';
   };
   const remainingOf=r=>r.remaining==null?'<span class="faint">—</span>':(r.remaining>=0?`${r.remaining} yr`:`<span style="color:var(--red);font-weight:700">${r.overdueYears} yr overdue</span>`);
   const costOf=r=>{
-    if(r.statusKey==='na')return '<span class="faint">N/A</span>';
-    if(r.inflatedCost==null)return `<span class="muted">${r.cost?money(r.cost):'—'}</span>${r.cost?'<div class="faint" style="font-size:10.5px">today\'s cost — needs install year</div>':''}`;
+    if(r.inflatedCost==null)return '<span class="faint">—</span>';
     return Math.round(r.inflatedCost)!==r.cost?`${money(Math.round(r.inflatedCost))}<div class="faint" style="font-size:10.5px">today: ${money(r.cost)}</div>`:money(r.cost);
   };
-  const reserveOf=r=>r.statusKey==='na'?'<span class="faint">N/A</span>':(r.annualReserve==null?'<span class="faint">—</span>':`${money(Math.round(r.annualReserve))}/yr`);
-  const rowStyle=r=>r.statusKey==='na'?' style="opacity:.55"':'';
+  const reserveOf=r=>(r.annualReserve==null?'<span class="faint">—</span>':`${money(Math.round(r.annualReserve))}/yr`);
   const stdRows=names.map(n=>{
     const info=getComponentAge(p.id,n);
     const r=componentReserveCalc(n,info);
     if(r.inflatedCost!=null)totalCost+=r.inflatedCost;
-    return `<tr${rowStyle(r)}>
+    return `<tr>
       <td class="b">${esc(n)}</td>
       ${yearCell(n,info,r,false)}
       <td class="mono">${r.ageYears!=null?r.ageYears+' yr':'<span class="faint">—</span>'}</td>
@@ -3906,12 +3910,12 @@ function propComponents(p){
     const info=getComponentAge(p.id,n)||{};
     const r=componentReserveCalc(n,info,otherOvr(info));
     if(r.inflatedCost!=null)totalCost+=r.inflatedCost;
-    const costInput=r.statusKey==='na'?'<span class="faint">N/A</span>':`<input type="number" inputmode="decimal" min="0" value="${info.cost||''}" placeholder="today's $" style="width:100px;font-size:12.5px;text-align:right" title="Today's replacement cost for this item at this property" onchange="setOtherField('${p.id}','${n}','cost',this.value)">${r.inflatedCost!=null&&Math.round(r.inflatedCost)!==r.cost?`<div class="mono" style="font-size:12px;margin-top:3px">${money(Math.round(r.inflatedCost))}<span class="faint" style="font-size:10.5px"> inflated</span></div>`:''}`;
-    return `<tr${rowStyle(r)}>
+    const costInput=`<input type="number" inputmode="decimal" min="0" value="${info.cost||''}" placeholder="today's $" style="width:100px;font-size:12.5px;text-align:right" title="Today's replacement cost for this item at this property" onchange="setOtherField('${p.id}','${n}','cost',this.value)">${r.inflatedCost!=null&&Math.round(r.inflatedCost)!==r.cost?`<div class="mono" style="font-size:12px;margin-top:3px">${money(Math.round(r.inflatedCost))}<span class="faint" style="font-size:10.5px"> inflated</span></div>`:''}`;
+    return `<tr>
       <td><span class="badge b-closed" style="margin-bottom:4px">Other</span><input type="text" value="${esc(info.label||'')}" placeholder="Name, e.g. Deck" style="width:130px;font-size:12.5px;display:block" onchange="setOtherField('${p.id}','${n}','label',this.value)"></td>
       ${yearCell(n,info,r,true)}
       <td class="mono">${r.ageYears!=null?r.ageYears+' yr':'<span class="faint">—</span>'}</td>
-      <td>${r.statusKey==='na'?'<span class="faint">N/A</span>':`<input type="number" inputmode="numeric" min="1" value="${info.life||''}" placeholder="yrs" style="width:70px;font-size:12.5px" title="Expected life in years for this item" onchange="setOtherField('${p.id}','${n}','life',this.value)">`}</td>
+      <td><input type="number" inputmode="numeric" min="1" value="${info.life||''}" placeholder="yrs" style="width:70px;font-size:12.5px" title="Expected life in years for this item" onchange="setOtherField('${p.id}','${n}','life',this.value)"></td>
       <td class="mono">${remainingOf(r)}</td>
       <td>${statusOf(r)}</td>
       <td class="right mono">${costInput}</td>
@@ -3919,21 +3923,20 @@ function propComponents(p){
     </tr>`;
   }).join('');
   return `<div class="card" style="margin-bottom:14px"><div class="body mrow" style="flex-wrap:wrap;gap:12px">
-    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em">Recommended annual reserve</div><div style="font-size:22px;font-weight:800">${money(Math.round(summary.total))}/yr</div><div class="faint" style="font-size:11px;margin-top:2px">Counts only components with an install year (incl. ${ASSUMPTIONS.capitalReserveInflationPct}%/yr inflation)${summary.missingN?` — <b style="color:var(--amber)">excludes ${summary.missingN} missing install year</b>`:''}</div></div>
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em">Recommended annual reserve</div><div style="font-size:22px;font-weight:800">${money(Math.round(summary.total))}/yr</div><div class="faint" style="font-size:11px;margin-top:2px">Components with a year installed (incl. ${ASSUMPTIONS.capitalReserveInflationPct}%/yr inflation)</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;align-items:flex-start">
       ${summary.overdueN?`<span class="badge b-red"><span class="dot"></span>${summary.overdueN} overdue</span>`:''}
       ${summary.agingN?`<span class="badge b-progress"><span class="dot"></span>${summary.agingN} plan ahead</span>`:''}
-      ${summary.missingN?`<span class="pill">${summary.missingN} missing install year</span>`:''}
     </div>
   </div></div>
-  <div class="card" style="overflow-x:auto"><table style="min-width:820px"><thead><tr><th>Component</th><th>Year installed</th><th>Age</th><th>Expected life</th><th>Remaining</th><th>Status</th><th class="right">Replacement cost</th><th class="right">Annual reserve</th></tr></thead><tbody>${stdRows}${otherRows}</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)"><td colspan="6" style="text-align:right">Total${summary.missingN?` <span class="faint" style="font-weight:400;font-size:11px">(excludes ${summary.missingN} missing install year)</span>`:''}</td><td class="right mono">${money(Math.round(totalCost))}</td><td class="right mono">${money(Math.round(summary.total))}/yr</td></tr></tfoot></table></div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:820px"><thead><tr><th>Component</th><th>Year installed</th><th>Age</th><th>Expected life</th><th>Remaining</th><th>Status</th><th class="right">Replacement cost</th><th class="right">Annual reserve</th></tr></thead><tbody>${stdRows}${otherRows}</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)"><td colspan="6" style="text-align:right">Total</td><td class="right mono">${money(Math.round(totalCost))}</td><td class="right mono">${money(Math.round(summary.total))}/yr</td></tr></tfoot></table></div>
   <div class="card" style="margin-top:14px"><div class="body">
     <div class="kv">
       <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update comments…" onchange="updatePropField('${p.id}','comments',this.value)">${esc(p.comments||'')}</textarea></div>
       <div class="k">User Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update notes…" onchange="updatePropField('${p.id}','userNotes',this.value)">${esc(p.userNotes||'')}</textarea></div>
     </div>
   </div></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = inflation-adjusted replacement cost ÷ years remaining before it's due (full inflated cost once overdue) — this rises as a component gets closer to end of life, since a purchased property's components start at whatever age they're already at, with nothing assumed saved for them yet. <b>A component with no year installed gets no reserve and is left out of the totals</b> (today's cost is shown for reference only) — enter a year (exact, or an estimate from the purchase inspection report; tag it Actual once you have a real record) to include it. Tick <b>N/A</b> if the item doesn't exist at this property (e.g. no furnace when there's a heat pump) and it's ignored entirely. Use the <b>Other</b> rows for anything not in the standard list (e.g. a deck): type a name, then this property's own expected life and today's replacement cost. Standard expected life &amp; cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves.</div>`;
+  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = inflation-adjusted replacement cost ÷ years remaining before it's due (full inflated cost once overdue) — this rises as a component gets closer to end of life, since a purchased property's components start at whatever age they're already at, with nothing assumed saved for them yet. <b>Leave Year installed blank if the item doesn't exist at this property</b> (e.g. no furnace when there's a heat pump) — it's ignored: no reserve, no flag, and left out of the totals. Enter a year (exact, or an estimate from the purchase inspection report; tag it Actual once you have a real record) to include it. Use the <b>Other</b> rows for anything not in the standard list (e.g. a deck): type a name, then this property's own expected life and today's replacement cost. Standard expected life &amp; cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves.</div>`;
 }
 /* Merge a patch into one component's saved record; undefined/''/false values are dropped, and an
    empty record is removed entirely so nothing stale lingers. */
@@ -3963,10 +3966,6 @@ function setComponentAgeSource(pid,name,val){
   if(!existing||!existing.year)return;
   patchComponent(pid,name,{actual:val==='actual'});
 }
-function setComponentNA(pid,name,checked){
-  // Marking N/A clears any install year/source so it can't be mistaken for real data later.
-  patchComponent(pid,name,checked?{na:true,year:undefined,actual:undefined}:{na:false});
-}
 function setOtherField(pid,name,field,val){
   if(!OTHER_SLOTS.includes(name))return;
   if(field==='label')patchComponent(pid,name,{label:String(val).trim()});
@@ -3982,30 +3981,27 @@ function setOtherField(pid,name,field,val){
 function renderReserves(el){
   const soldExcluded=PROPS.filter(p=>propStage(p)==='Sold');
   const list=[...PROPS].filter(p=>propStage(p)!=='Sold').sort((a,b)=>a.name.localeCompare(b.name));
-  let portfolioTotal=0,portfolioOverdue=0,portfolioAging=0,portfolioMissing=0;
+  let portfolioTotal=0,portfolioOverdue=0,portfolioAging=0;
   const rows=list.map(p=>{
     const s=propertyReserveSummary(p);
-    portfolioTotal+=s.total;portfolioOverdue+=s.overdueN;portfolioAging+=s.agingN;portfolioMissing+=s.missingN;
+    portfolioTotal+=s.total;portfolioOverdue+=s.overdueN;portfolioAging+=s.agingN;
     return {p,s};
   });
   el.innerHTML=`${pageHeader('reserves')}
-  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+  <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
     <div class="kpi"><div class="lab">Portfolio annual reserve</div><div class="val">${money(Math.round(portfolioTotal))}</div></div>
     <div class="kpi ${portfolioOverdue?'red':'green'}"><div class="lab">Components overdue</div><div class="val">${portfolioOverdue}</div></div>
     <div class="kpi ${portfolioAging?'amber':'green'}"><div class="lab">Plan ahead soon</div><div class="val">${portfolioAging}</div></div>
-    <div class="kpi ${portfolioMissing?'amber':'green'}"><div class="lab">Missing install year</div><div class="val">${portfolioMissing}</div></div>
   </div>
-  ${portfolioMissing?`<div class="card" style="margin-bottom:14px;border-color:var(--amber)"><div class="body" style="display:flex;gap:10px;align-items:flex-start"><span style="font-size:16px">⚠</span><div style="font-size:12.5px;line-height:1.5"><b>${portfolioMissing} component${portfolioMissing===1?'':'s'} across the portfolio ${portfolioMissing===1?'has':'have'} no install year on file.</b> Those components are <b>left out of the reserve totals</b> (no figure is guessed) and can't be flagged Healthy / Plan ahead / Overdue, so the reserve shown for any property marked incomplete is understated and may be missing overdue items. Add install years on each property's Components tab — or mark an item N/A if it doesn't exist there — to complete it.</div></div></div>`:''}
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="right">Annual reserve</th><th>Overdue</th><th>Plan ahead</th><th class="hide-below-md">Missing data</th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="right">Annual reserve</th><th>Overdue</th><th>Plan ahead</th></tr></thead><tbody>
   ${rows.map(({p,s})=>`<tr class="clickable" onclick="openReservesProperty('${p.id}')">
     <td class="b">${esc(p.name)}</td>
-    <td class="right mono">${money(Math.round(s.total))}/yr${s.missingN?`<div style="color:var(--amber);font-size:10.5px;font-weight:700;margin-top:2px">⚠ incomplete — missing data</div>`:''}</td>
+    <td class="right mono">${money(Math.round(s.total))}/yr</td>
     <td>${s.overdueN?`<span class="badge b-red"><span class="dot"></span>${s.overdueN}</span>`:'<span class="faint">—</span>'}</td>
     <td>${s.agingN?`<span class="badge b-progress"><span class="dot"></span>${s.agingN}</span>`:'<span class="faint">—</span>'}</td>
-    <td class="hide-below-md">${s.missingN?`<span class="badge b-progress"><span class="dot"></span>${s.missingN}</span>`:'<span class="faint">—</span>'}</td>
   </tr>`).join('')}
   </tbody></table></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Per-component detail — including which items are overdue and editable install years — lives on each property's Components tab. Click a row to jump there.</div>
+  <div class="muted" style="font-size:12px;margin-top:8px">Per-component detail — including which items are overdue and editable install years (leave blank for items that don't exist at a property) — lives on each property's Components tab. Click a row to jump there.</div>
   ${soldExcluded.length?`<div class="muted" style="font-size:12px;margin-top:6px">${soldExcluded.length} sold propert${soldExcluded.length===1?'y':'ies'} excluded from the reserve forecast above — no longer accruing cash-flow need. Component history is still on each property's own Components tab.</div>`:''}`;
 }
 function openReservesProperty(id){
