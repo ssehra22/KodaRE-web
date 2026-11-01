@@ -628,7 +628,19 @@
    GO_LIVE_INSTRUCTIONS.md for setup. */
 const SUPA_CONFIGURED = typeof SUPABASE_URL!=='undefined' && SUPABASE_URL && !SUPABASE_URL.includes('YOUR_')
   && typeof SUPABASE_ANON_KEY!=='undefined' && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.includes('YOUR_');
-const sb = SUPA_CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+// Deployment settings from config.js (both optional — the defaults are the original stand-alone
+// KodaRE). KODARE_DB_SCHEMA = which database section (Postgres schema) holds KodaRE's tables,
+// e.g. 'kodare' inside the corporate ERP database. KODARE_BUCKET_PREFIX = prefix on the three
+// storage bucket names, e.g. 'kodare_' so they can't collide with other ERP modules' buckets.
+const KODARE_SCHEMA = (typeof KODARE_DB_SCHEMA!=='undefined' && KODARE_DB_SCHEMA) ? KODARE_DB_SCHEMA : 'public';
+const KODARE_BKT_PREFIX = (typeof KODARE_BUCKET_PREFIX!=='undefined' && KODARE_BUCKET_PREFIX) ? KODARE_BUCKET_PREFIX : '';
+function kBucket(name){return KODARE_BKT_PREFIX+name;}
+// KODARE_SELF_REGISTER (config.js, default true): true = anyone who can sign in becomes Office
+// Staff on first sign-in (original KodaRE). false = invite-only: a Senior Admin must give each
+// person access in User Management first — required when KodaRE shares logins with the
+// corporate ERP, so ERP users don't get KodaRE access just by signing in.
+const KODARE_INVITE_ONLY = (typeof KODARE_SELF_REGISTER!=='undefined' && KODARE_SELF_REGISTER===false);
+const sb = SUPA_CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {db:{schema:KODARE_SCHEMA}}) : null;
 
 function daysAgoLabel(ts){const d=Math.max(0,Math.round((new Date()-new Date(ts))/864e5));return d===0?'today':d+'d ago';}
 function logAge(l){return typeof l[2]==='number' ? (l[2]===0?'today':l[2]+'d ago') : daysAgoLabel(l[2]);}
@@ -940,7 +952,7 @@ async function dbInsertDocument(propertyId,docType,fileName,filePath,fileSize){
 async function dbDeleteDocument(id,path){
   const {error}=await sb.from('documents').delete().eq('id',id);
   if(error){toast('Delete failed: '+error.message);return false;}
-  if(path){const {error:rmErr}=await sb.storage.from('documents').remove([path]);if(rmErr)console.error('storage cleanup failed',rmErr);}
+  if(path){const {error:rmErr}=await sb.storage.from(kBucket('documents')).remove([path]);if(rmErr)console.error('storage cleanup failed',rmErr);}
   return true;
 }
 async function dbUpdateDocument(id,patch){
@@ -978,7 +990,7 @@ async function dbInsertTicketAttachment(ticketId,kind,fileName,filePath,fileSize
 async function dbDeleteTicketAttachment(id,path){
   const {error}=await sb.from('ticket_attachments').delete().eq('id',id);
   if(error){toast('Delete failed: '+error.message);return false;}
-  if(path){const {error:rmErr}=await sb.storage.from('ticket_attachments').remove([path]);if(rmErr)console.error('storage cleanup failed',rmErr);}
+  if(path){const {error:rmErr}=await sb.storage.from(kBucket('ticket_attachments')).remove([path]);if(rmErr)console.error('storage cleanup failed',rmErr);}
   return true;
 }
 // Shared upload path for both the desktop ticket drawer and the mobile report flow.
@@ -987,10 +999,10 @@ async function uploadTicketAttachment(ticketId,file,kind){
   kind=kind==='photo'?'photo':'file';
   if(SUPA_CONFIGURED){
     const path=`${ticketId}/${Date.now()}_${file.name}`;
-    const {error:upErr}=await sb.storage.from('ticket_attachments').upload(path,file,{upsert:true});
+    const {error:upErr}=await sb.storage.from(kBucket('ticket_attachments')).upload(path,file,{upsert:true});
     if(upErr){toast('Upload failed: '+upErr.message);return false;}
     const row=await dbInsertTicketAttachment(ticketId,kind,file.name,path,file.size);
-    if(!row){await sb.storage.from('ticket_attachments').remove([path]);return false;}
+    if(!row){await sb.storage.from(kBucket('ticket_attachments')).remove([path]);return false;}
     TICKET_ATTACHMENTS.unshift(rowToTicketAttachment(row));
     return true;
   }
@@ -1258,14 +1270,43 @@ async function loadRealReferenceLists(){
       REF_LISTS[key].values=merged;
     }
   });
-  const lifeRow=rows.find(r=>r.key==='LIFE_TABLE');
+  const lifeRow=rows.find(r=>r.key==='LIFE_TABLE_V2');
   if(lifeRow&&lifeRow.data&&typeof lifeRow.data==='object'){
-    Object.keys(lifeRow.data).forEach(k=>{if(Array.isArray(lifeRow.data[k]))LIFE_TABLE[k]=lifeRow.data[k];});
+    Object.keys(lifeRow.data).forEach(k=>{if(k in LIFE_TABLE&&Array.isArray(lifeRow.data[k]))LIFE_TABLE[k]=lifeRow.data[k];});
   }
 }
 // FINANCE_MAP's three tables reuse the same reference_lists table as REF_LISTS (key/data
 // jsonb) under three dedicated keys, rather than a separate table -- same storage shape,
 // same admin-only RLS, no schema migration needed for this.
+// Capital-reserve inputs shared across users/devices: the Assumptions values (inflation %, session
+// timeouts, etc.) live under reference_lists key 'ASSUMPTIONS'; each property's component install
+// years and Other-row entries live under 'COMPONENTS:<propertyId>'. Same reference_lists table and
+// admin-only write policy as LIFE_TABLE. Database wins where a row exists; anything that exists
+// only in this browser's saved state is copied up once (admin only) so nothing already entered is lost.
+async function loadRealComponentsAndAssumptions(){
+  if(!SUPA_CONFIGURED)return;
+  const {data,error}=await sb.from('reference_lists').select('key,data').or('key.eq.ASSUMPTIONS,key.like.COMPONENTS:*');
+  if(error){toast('Could not load capital reserve data: '+error.message);return;}
+  const rows=data||[];
+  const aRow=rows.find(r=>r.key==='ASSUMPTIONS');
+  if(aRow&&aRow.data&&typeof aRow.data==='object'){
+    Object.keys(aRow.data).forEach(k=>{if(k in ASSUMPTIONS)ASSUMPTIONS[k]=aRow.data[k];});
+  }else if(ROLE==='admin'){await dbUpsertReferenceList('ASSUMPTIONS',ASSUMPTIONS);}
+  const inDb={};
+  rows.forEach(r=>{
+    if(r.key.indexOf('COMPONENTS:')!==0||!r.data||typeof r.data!=='object')return;
+    const pid=r.key.slice('COMPONENTS:'.length);
+    inDb[pid]=true;COMPONENT_AGES[pid]=r.data;
+  });
+  const renamed=migrateComponentNames();
+  if(ROLE==='admin'){
+    renamed.forEach(pid=>{inDb[pid]=false;});
+    for(const pid of Object.keys(COMPONENT_AGES)){
+      if(!inDb[pid]&&Object.keys(COMPONENT_AGES[pid]||{}).length)await dbUpsertReferenceList('COMPONENTS:'+pid,COMPONENT_AGES[pid]);
+    }
+  }
+  saveState();
+}
 async function loadRealFinanceMappings(){
   if(!SUPA_CONFIGURED)return;
   const {data,error}=await sb.from('reference_lists').select('*').in('key',['FINANCE_PROP_CODES','FINANCE_VENDOR_NAMES','FINANCE_CC_ACCOUNTS']);
@@ -1288,6 +1329,30 @@ async function authSignIn(){
   await enterLiveApp();
 }
 async function authSignOut(){if(sb){await sb.auth.signOut();}location.reload();}
+// Invite-only mode (KODARE_SELF_REGISTER=false): the login worked but no Senior Admin has given
+// this person KodaRE access yet — show who they are signed in as and nothing else.
+function showNoAccessGate(email){
+  const g=document.getElementById('authGate');
+  g.innerHTML=`<div style="background:var(--surface);border-radius:14px;padding:32px;width:380px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+    <div style="font-size:19px;font-weight:800;margin-bottom:6px">KodaRE</div>
+    <div style="font-size:14px;font-weight:700;margin-bottom:8px">You don't have KodaRE access yet</div>
+    <div class="muted" style="font-size:12.5px;line-height:1.55;margin-bottom:16px">You're signed in as <b>${esc(email||'')}</b>, but a KodaRE Senior Admin hasn't given this account access. Ask them to add you in KodaRE → User Management, then sign in again.</div>
+    <button class="btn sec" style="width:100%" onclick="authSignOut()">Sign out</button>
+  </div>`;
+  g.classList.remove('hidden');
+}
+// Invite-only mode: Senior Admin gives an existing login (ERP / Supabase Auth user) a KodaRE role.
+// Goes through the grant_kodare_access() database function, which re-checks Senior Admin.
+async function grantKodareAccess(){
+  const em=(document.getElementById('grantEmail')||{}).value||'';
+  const role=(document.getElementById('grantRole')||{}).value||'office';
+  const email=em.trim();
+  if(!email||!email.includes('@')){toast('Enter the person\'s login email.');return;}
+  const {error}=await sb.rpc('grant_kodare_access',{p_email:email,p_role:role});
+  if(error){toast('Could not give access: '+error.message);return;}
+  toast('Access given to '+email);
+  await refreshUserRoles();
+}
 // ===== display name resolution — one place that decides what counts as "a real name" =====
 // An email address is an identifier, not a name. looksLikeEmail() is how every consumer here
 // agrees on whether a stored "name" is actually usable, or just an email that ended up in the
@@ -1317,6 +1382,7 @@ async function dbResolveMyRole(){
   const {data,error}=await sb.from('user_roles').select('*').eq('user_id',user.id).maybeSingle();
   if(error){toast('Could not load your role — defaulted to Office Staff: '+error.message);return {role:'office',name:'',email:user.email,userId:user.id,namePromptDismissed:false};}
   if(data)return {role:data.role,name:data.name||'',email:data.email,userId:user.id,namePromptDismissed:!!data.name_prompt_dismissed};
+  if(KODARE_INVITE_ONLY)return {role:null,noAccess:true,name:'',email:user.email,userId:user.id,namePromptDismissed:true};
   // First-ever sign-in: self-register as Office Staff. name is left null rather than being
   // set to the email address — writing the email into the name column just relocates the
   // "email instead of a name" problem into the database instead of fixing it.
@@ -1382,6 +1448,7 @@ async function enterLiveApp(){
   const foot=document.getElementById('footStatus');
   if(foot)foot.innerHTML='KodaRE — Property Management Platform<br>🟢 Live · Properties, Maintenance, Vendors, Leases, Compliance, Acquisition, Disposition, Licensing Checklists, Reference Lists, Documents & Notes are real <a style="cursor:pointer;text-decoration:underline" onclick="authSignOut()">Sign out</a>';
   const me=await dbResolveMyRole();
+  if(me.noAccess){showNoAccessGate(me.email);return;}
   applyLiveRole(me.role,resolveDisplayName(me.name,me.email));
   MY_UID=me.userId;
   maybeShowNameGate(me);
@@ -1395,6 +1462,7 @@ async function enterLiveApp(){
   await loadRealLicensingChecklists();
   await loadRealReferenceLists();
   await loadRealFinanceMappings();
+  await loadRealComponentsAndAssumptions();
   await loadRealDocuments();
   await loadRealTicketAttachments();
   await loadRealTicketUserNotes();
@@ -1609,8 +1677,12 @@ function renderUserManagement(el){
   if(ROLE!=='admin'){el.innerHTML=pageHeader('users')+'<div class="muted" style="text-align:center;padding:26px">Only Senior Admin can view User Management.</div>';return;}
   const roleOpts=[['admin','Senior Admin'],['office','Office Staff'],['caregiver','Field Staff']];
   el.innerHTML=`${pageHeader('users')}<div class="uroles-head">
-    <div class="uroles-headtext">Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.</div>
+    <div class="uroles-headtext">${KODARE_INVITE_ONLY?`Logins are created by your ERP / Supabase → Authentication → Users. Signing in alone gives no KodaRE access — add the person below with their login email and a role (Scope §3.2).`:`Creating a login still happens in Supabase → Authentication → Users. This screen only assigns each person's KodaRE role (Scope §3.2) — they'll appear here automatically the first time they sign in.`}</div>
     <button class="uroles-refresh" onclick="refreshUserRoles()">🔄 Refresh</button></div>
+  ${KODARE_INVITE_ONLY?`<div class="card" style="margin-bottom:14px"><div class="body" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <div class="field" style="flex:1;min-width:200px;margin:0"><label class="f">Give access — login email</label><input type="text" inputmode="email" id="grantEmail" placeholder="name@company.com" style="width:100%" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+    <div class="field" style="margin:0"><label class="f">Role</label><select id="grantRole">${roleOpts.map(([v,l])=>`<option value="${v}"${v==='office'?' selected':''}>${l}</option>`).join('')}</select></div>
+    <button class="btn sm" onclick="grantKodareAccess()">Give access</button></div></div>`:''}
   <div class="card uroles-card" style="overflow-x:auto"><div class="body" style="padding:0">${USER_ROLES.length?`<table class="uroles-table"><thead><tr>
     <th>Name</th><th class="hide-below-md">Email</th><th>Role</th><th class="hide-below-lg">Property access</th><th class="hide-below-md">Since</th>
   </tr></thead><tbody>${USER_ROLES.map(u=>{
@@ -1622,7 +1694,7 @@ function renderUserManagement(el){
     <td><select class="uroles-rolepill r-${u.role}" onchange="this.className='uroles-rolepill r-'+this.value;setUserRole('${u.user_id}',this.value,'${esc(u.email)}')">${roleOpts.map(([v,l])=>`<option value="${v}"${u.role===v?' selected':''}>${l}</option>`).join('')}</select></td>
     <td class="hide-below-lg">${u.role==='caregiver'?`<span class="uroles-access${names.length?'':' none'}">${names.length?esc(names.join(', ')):'None assigned yet'}</span><a class="uroles-edit" onclick="openPropertyAssignments('${u.user_id}','${esc(u.email)}')">Edit</a>`:'<span class="uroles-access-all">All properties</span>'}</td>
     <td class="hide-below-md muted mono" style="white-space:nowrap;font-size:12px">${fdate(new Date(u.created_at))}</td>
-  </tr>`;}).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">No one has signed in yet — once someone logs in for the first time, they'll appear here as Office Staff by default.</div>`}</div></div>
+  </tr>`;}).join('')}</tbody></table>`:`<div class="muted" style="text-align:center;padding:26px">${KODARE_INVITE_ONLY?'No one has KodaRE access yet — add people above.':'No one has signed in yet — once someone logs in for the first time, they\'ll appear here as Office Staff by default.'}</div>`}</div></div>
   <div class="uroles-foot">Maps to Scope §3.2 Permissions Matrix — "User management (add/remove, role changes)" and "Property assignment to caregivers" are Senior Admin read/write only. Field Staff only ever see data for properties assigned here — everyone else sees everything.</div>
   ${permissionsMatrixHtml()}
   ${dangerZoneHtml()}`;
@@ -2039,9 +2111,9 @@ function openInvoiceUploadModal(){
 }
 async function uploadInvoiceFileToStorage(file){
   const path=`_pending/${Date.now()}_${file.name}`;
-  const {error:upErr}=await sb.storage.from('invoices').upload(path,file,{upsert:true});
+  const {error:upErr}=await sb.storage.from(kBucket('invoices')).upload(path,file,{upsert:true});
   if(upErr){toast('Upload failed: '+upErr.message);return null;}
-  const {data:signed}=await sb.storage.from('invoices').createSignedUrl(path,60*60*24*7);
+  const {data:signed}=await sb.storage.from(kBucket('invoices')).createSignedUrl(path,60*60*24*7);
   return {path,url:signed?signed.signedUrl:null,name:file.name};
 }
 // A ticket only qualifies as a match candidate when the work is done (Completed/Closed) AND
@@ -2385,10 +2457,10 @@ async function uploadDoc(pid){
   if(!docTypesFor(p).includes(type)){toast(type+' doesn\'t apply to '+(p.own==='owned'?'an owned':'a leased')+' property like '+p.name);return;}
   if(SUPA_CONFIGURED){
     const path=`${pid}/${Date.now()}_${picked.name}`;
-    const {error:upErr}=await sb.storage.from('documents').upload(path,picked,{upsert:true});
+    const {error:upErr}=await sb.storage.from(kBucket('documents')).upload(path,picked,{upsert:true});
     if(upErr){toast('Upload failed: '+upErr.message);return;}
     const row=await dbInsertDocument(pid,type,picked.name,path,picked.size);
-    if(!row){await sb.storage.from('documents').remove([path]);return;}
+    if(!row){await sb.storage.from(kBucket('documents')).remove([path]);return;}
     DOCS.unshift(rowToDocument(row));
     toast('Document uploaded and filed under '+p.name);
   } else {
@@ -3434,12 +3506,27 @@ function propLicensing(p){const items=LICENSING_CHECKLIST;p.licensingChk=p.licen
   <div class="muted" style="font-size:12px;margin:10px 0">Initial Licensing Checklist &amp; Monitoring: reflects the ODP licensing workflow from non-contiguous approval through move-in. Consistent with Scope §4.3.</div>`;}
 function cycleLicChk(pid,ix){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});const order=['pending','done','na'];cur.s=order[(order.indexOf(cur.s)+1)%3];p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();document.getElementById('propTabBody').innerHTML=propLicensing(p);}
 function setLicChkText(pid,ix,val){const p=propById(pid);const it=LICENSING_CHECKLIST[ix];p.licensingChk=p.licensingChk||{};const cur=(p.licensingChk[it]||{s:'pending',t:''});cur.t=val;p.licensingChk[it]=cur;if(p._backend==='supabase')dbUpsertChecklist('licensing_checklists',p.id,p.licensingChk);else saveState();}
-const LIFE_TABLE={'HVAC':[25,10000],'Furnace':[20,6000],'Air conditioner':[15,5500],'Water heater':[15,2000],'Refrigerator':[10,1200],'Gas/electric range':[15,1200],'Oven':[15,1200],'Dishwasher':[10,800],'Microwave':[8,600],'Washing machine':[12,800],'Dryer':[12,800],'Carpeting':[10,0],'Roof':[25,11000]};
+const LIFE_TABLE={'HVAC (central heat & AC)':[20,12000],'Furnace (central heat)':[20,6000],'Air conditioner (central AC)':[20,6000],'Water heater':[13,1800],'Refrigerator':[13,1200],'Gas/electric range':[13,1200],'Oven':[13,1200],'Dishwasher':[13,800],'Microwave':[8,500],'Washing machine':[13,800],'Dryer':[13,800],'Carpeting (1200 sq ft)':[13,6000],'Roof':[25,12000],'Ductless mini-splits (3)':[18,12000]};
+/* 2026-10-31: defaults replaced with the business's own figures (Sonia's sheet) and a few rows renamed.
+   Older saved values (browser state / reference_lists 'LIFE_TABLE') belong to the previous list and are
+   deliberately ignored; edits now save under 'LIFE_TABLE_V2' (see loadRealReferenceLists). COMPONENT_RENAMES
+   carries any install years already entered under an old name over to the new one. */
+const COMPONENT_RENAMES={'HVAC':'HVAC (central heat & AC)','Furnace':'Furnace (central heat)','Air conditioner':'Air conditioner (central AC)','Carpeting':'Carpeting (1200 sq ft)'};
+function migrateComponentNames(){
+  const changed=[];
+  Object.keys(COMPONENT_AGES).forEach(pid=>{
+    const m=COMPONENT_AGES[pid];if(!m)return;let hit=false;
+    Object.keys(COMPONENT_RENAMES).forEach(o=>{if(o in m){if(!(COMPONENT_RENAMES[o] in m))m[COMPONENT_RENAMES[o]]=m[o];delete m[o];hit=true;}});
+    if(hit)changed.push(pid);
+  });
+  return changed;
+}
 /* Per-property capital reserve tracking (Aug 2026) — Properties > Components, plus the
    Finance > Capital Reserves rollup (both read the same two helpers below). Stores an install
    year + actual/estimated tag per property per component; life/cost always come from the shared
    LIFE_TABLE above (no per-property override, kept simple). Local state only for now
-   (saveState/loadState, like NOTES/ASSUMPTIONS) — not wired to Supabase yet.
+   (saveState/loadState) and, when Supabase is configured, shared via reference_lists
+   key 'COMPONENTS:<propertyId>' (see loadRealComponentsAndAssumptions).
    Shape: {[propertyId]:{[componentName]:{year, actual}}}. getComponentAge() also accepts the
    older plain-number-year shape from before the Actual/Estimated tag existed, so nothing already
    saved breaks. */
@@ -3553,6 +3640,7 @@ function updateAssumption(key,val){
   if(isNaN(n)||n<0){toast('Enter a valid number');renderAssumptions(document.getElementById('view'));return;}
   ASSUMPTIONS[key]=n;
   saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('ASSUMPTIONS',ASSUMPTIONS);
   toast('Assumption updated');
   renderAssumptions(document.getElementById('view'));
 }
@@ -3569,10 +3657,10 @@ function capitalReservesSection(){
       <ol style="margin:8px 0 8px 18px;padding:0">
         <li style="margin-bottom:6px"><b>Expected replacement year</b> = install year + the expected life from the Life of Appliances table below.</li>
         <li style="margin-bottom:6px"><b>Inflation-adjusted cost</b> — today's replacement cost from the table below is escalated at the inflation rate above, compounded out to that expected replacement year. Once a component runs past its expected life without being replaced, the same rate keeps compounding for however many years it's now overdue instead — so the estimate keeps rising the longer replacement is delayed, rather than freezing at the original figure.</li>
-        <li style="margin-bottom:6px"><b>Annual reserve</b> = inflation-adjusted cost ÷ years actually remaining before it's due (not the full expected life). Properties are bought with components already at whatever age they're at, not brand new, so there's no assumption anything's been saved for them yet — a component with 20 years left needs a small, gentle figure; the same component with 1 year left needs to catch up fast, so its figure is much larger. Once a component is overdue, the figure is simply the full inflated replacement cost, since it could be needed at any time.</li>
+        <li style="margin-bottom:6px"><b>Annual reserve</b> = inflation-adjusted cost ÷ years actually remaining before it's due (not the full expected life). The calculation always assumes <b>nothing has been set aside yet</b> — it spreads the entire cost over the years still ahead. A component with 20 years left gets a small, gentle figure; the same component with 1 year left gets a much larger one. Once a component is overdue, the figure is simply the full inflated replacement cost, since it could be needed at any time.</li>
         <li>Without a year installed, a component is treated as not applicable at that property (e.g. no furnace when there's a heat pump) — it gets no reserve, no flag, and is left out of the totals. Each property also has two <b>Other</b> rows for items outside this table (e.g. a deck), with their own expected life and replacement cost.</li>
       </ol>
-      This is a planning estimate, not a running account balance — it doesn't track actual dollars saved anywhere, so correcting a life or cost value below simply updates the recommendation going forward for every property; it doesn't try to reconcile against what would have been recommended before.
+      <b>What happens when you change a value below.</b> Every figure is recalculated from scratch each time, using only the current life, cost and inflation rate plus the years remaining. Nothing records what the recommendation used to be or how much you have actually reserved. So if you raise a cost (say HVAC by $2,000), the extra amount (inflated) is spread across the years <i>still remaining</i> and each property's annual reserve rises from now on. Past years are never restated or re-charged, and there is no separate "catch-up" amount. Because money already set aside is not credited, the annual figure is accurate for a component with nothing saved and overstates the need for one you have been funding. This is a forward-looking planning estimate, not a running reserve balance.
     </div>
   </div></div>
   <div class="card"><table><thead><tr><th>Component</th><th>Avg. life (years)</th><th>Replacement cost (parts &amp; labor, today's dollars)</th></tr></thead><tbody>
@@ -3584,7 +3672,7 @@ function updateLifeTable(name,idx,val){
   const n=Number(val);
   if(isNaN(n)||n<0){toast('Enter a valid number');renderAssumptions(document.getElementById('view'));return;}
   LIFE_TABLE[name][idx]=n;
-  if(SUPA_CONFIGURED)dbUpsertReferenceList('LIFE_TABLE',LIFE_TABLE);else saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('LIFE_TABLE_V2',LIFE_TABLE);else saveState();
   toast('Assumption updated');
 }
 function valuationSection(){
@@ -3947,6 +4035,7 @@ function patchComponent(pid,name,patch){
   Object.keys(cur).forEach(k=>{if(cur[k]===undefined||cur[k]===''||cur[k]===false||(typeof cur[k]==='number'&&isNaN(cur[k])))delete cur[k];});
   if(Object.keys(cur).length)COMPONENT_AGES[pid][name]=cur;else delete COMPONENT_AGES[pid][name];
   saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('COMPONENTS:'+pid,COMPONENT_AGES[pid]||{});
   const p=propById(pid),body=document.getElementById('propTabBody');
   if(p&&body)body.innerHTML=propComponents(p);
 }
@@ -4037,7 +4126,7 @@ function fmtBytes(n){if(n==null)return '';if(n<1024)return n+' B';if(n<1024*1024
 async function viewDoc(id){
   const d=DOCS.find(x=>x.id===id);if(!d)return;
   if(d._backend==='supabase'&&d.path){
-    const {data,error}=await sb.storage.from('documents').createSignedUrl(d.path,60*60);
+    const {data,error}=await sb.storage.from(kBucket('documents')).createSignedUrl(d.path,60*60);
     if(error||!data){toast('Could not open file: '+(error?error.message:'unknown error'));return;}
     window.open(data.signedUrl,'_blank');
     return;
@@ -4104,7 +4193,7 @@ async function pickTicketAttachment(ticketId,input){
 async function viewTicketAttachment(id){
   const a=TICKET_ATTACHMENTS.find(x=>String(x.id)===String(id));if(!a)return;
   if(a._backend==='supabase'&&a.path){
-    const {data,error}=await sb.storage.from('ticket_attachments').createSignedUrl(a.path,60*60);
+    const {data,error}=await sb.storage.from(kBucket('ticket_attachments')).createSignedUrl(a.path,60*60);
     if(error||!data){toast('Could not open file: '+(error?error.message:'unknown error'));return;}
     window.open(data.signedUrl,'_blank');
     return;
@@ -5836,7 +5925,7 @@ async function mSubmit(){
 
 /* ===== persistence ===== */
 const LSKEY='kodare_proto_v03_r1';
-function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES,FINANCE_MAP};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
+function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,LIFE_V:2,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES,FINANCE_MAP};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
 function mergeById(defaults,saved,idKey){const map={};defaults.forEach(d=>map[d[idKey]]=Object.assign({},d));
   saved.forEach(s=>{const k=s[idKey];if(map[k])Object.assign(map[k],s);else map[k]=s;});
   return Object.values(map);}
@@ -5859,11 +5948,12 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
   if(s.DOC_ID)DOC_ID=s.DOC_ID;
   if(s.RECON){RECON.weekly=s.RECON.weekly;RECON.monthly=s.RECON.monthly;}if(s.NOTES)NOTES=s.NOTES;if(s.NOTEID)NOTEID=s.NOTEID;
   if(s.TID)TID=s.TID;
-  if(s.LIFE_TABLE)Object.keys(s.LIFE_TABLE).forEach(k=>{if(LIFE_TABLE[k])LIFE_TABLE[k]=s.LIFE_TABLE[k];});
+  if(s.LIFE_TABLE&&s.LIFE_V===2)Object.keys(s.LIFE_TABLE).forEach(k=>{if(LIFE_TABLE[k])LIFE_TABLE[k]=s.LIFE_TABLE[k];});
   if(s.ASSUMPTIONS)Object.keys(s.ASSUMPTIONS).forEach(k=>{if(k in ASSUMPTIONS)ASSUMPTIONS[k]=s.ASSUMPTIONS[k];});
   // Per-property component install years (Properties > Components reserve tracking) — keyed by
   // property id, so a plain merge is fine; no fixed default keys to protect like LIFE_TABLE above.
   if(s.COMPONENT_AGES)COMPONENT_AGES=Object.assign({},COMPONENT_AGES,s.COMPONENT_AGES);
+  migrateComponentNames();
   // Additive merges (same convention as LIFE_TABLE/ASSUMPTIONS above): overlay saved custom
   // values on top of the current hardcoded defaults, never delete a hardcoded default just
   // because an older saved snapshot predates it — otherwise expanding these lists in source
