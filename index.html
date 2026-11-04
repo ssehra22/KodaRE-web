@@ -5213,7 +5213,7 @@ async function submitNewTicket(){
     if(NT_FILES&&NT_FILES.length){for(const f of NT_FILES){await uploadTicketAttachment(data.id,f.file,f.kind);}}
     NT_FILES=[];
     closeDrawer();
-    toast('Ticket '+t.id+' created');
+    toast('Ticket created');
     refreshTickets();
     return;
   }
@@ -5222,7 +5222,7 @@ async function submitNewTicket(){
   if(NT_FILES&&NT_FILES.length){for(const f of NT_FILES){await uploadTicketAttachment(t.id,f.file,f.kind);}}
   NT_FILES=[];
   closeDrawer();
-  toast('Ticket '+t.id+' created');
+  toast('Ticket created');
   refreshTickets();
 }
 
@@ -5888,7 +5888,7 @@ async function mSubmit(){
   const p=propById(d.prop);
   function showSuccess(displayId){
     document.querySelector('#mobile .mbody').innerHTML=`<div style="text-align:center;padding:30px 10px"><div style="font-size:60px">✅</div><div class="mtitle" style="margin-top:10px">Report submitted!</div><div class="muted" style="margin-bottom:6px">Ticket <b>${displayId}</b> created${d.urgency==='Emergency'?' — flagged Emergency':''}.</div><div class="muted" style="font-size:12.5px">${d.urgency==='Emergency'?'Call your office/admin directly for anything urgent — automatic paging isn\'t built yet. ':''}Office staff will triage and assign a vendor.</div><button class="bigbtn" style="margin-top:22px" onclick="mGo('reports')">View my reports</button><button class="opt" style="width:100%;margin-top:10px" onclick="mGo('home')">Done</button></div>`;
-    toast('Ticket '+displayId+' created');
+    toast('Ticket created');
   }
   // service_category/service_type stay null — nobody's picked one yet. Office Staff or
   // Senior Admin sets these during triage, alongside vendor assignment.
