@@ -314,6 +314,9 @@
   .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
   .chip{border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--ink-500)}
   .chip.active{background:var(--ink-900);color:var(--on-dark);border-color:var(--ink-900)}
+  .chipmenu{position:fixed;z-index:95;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:6px;min-width:150px}
+  .chipmenu-item{padding:6px 8px;border-radius:7px;cursor:pointer}
+  .chipmenu-item:hover{background:var(--ink-50)}
   select,input[type=text],textarea{font:inherit;border:1px solid var(--border);border-radius:9px;padding:8px 10px;background:var(--surface);color:var(--ink-900)}
 
   .sectitle{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-400);font-weight:800;margin:22px 0 10px}
@@ -1285,7 +1288,7 @@ async function loadRealReferenceLists(){
 // only in this browser's saved state is copied up once (admin only) so nothing already entered is lost.
 async function loadRealComponentsAndAssumptions(){
   if(!SUPA_CONFIGURED)return;
-  const {data,error}=await sb.from('reference_lists').select('key,data').or('key.eq.ASSUMPTIONS,key.like.COMPONENTS:*');
+  const {data,error}=await sb.from('reference_lists').select('key,data').or('key.eq.ASSUMPTIONS,key.like.COMPONENTS:*,key.like.RESERVE_FUND:*');
   if(error){toast('Could not load capital reserve data: '+error.message);return;}
   const rows=data||[];
   const aRow=rows.find(r=>r.key==='ASSUMPTIONS');
@@ -1294,6 +1297,7 @@ async function loadRealComponentsAndAssumptions(){
   }else if(ROLE==='admin'){await dbUpsertReferenceList('ASSUMPTIONS',ASSUMPTIONS);}
   const inDb={};
   rows.forEach(r=>{
+    if(r.key.indexOf('RESERVE_FUND:')===0&&r.data&&typeof r.data==='object'){const pid=r.key.slice('RESERVE_FUND:'.length);if(Object.keys(r.data).length)RESERVE_FUND[pid]=r.data;else delete RESERVE_FUND[pid];return;}
     if(r.key.indexOf('COMPONENTS:')!==0||!r.data||typeof r.data!=='object')return;
     const pid=r.key.slice('COMPONENTS:'.length);
     inDb[pid]=true;COMPONENT_AGES[pid]=r.data;
@@ -3557,37 +3561,509 @@ function getComponentAge(pid,name){
    left out of every count and total -- no guessed figure is ever substituted. */
 const OTHER_SLOTS=['Other 1','Other 2'];
 function otherOvr(info){return {life:Number(info&&info.life)||0,cost:Number(info&&info.cost)||0};}
+/* Nov 18 2026 (2): price-year basis. Costs in LIFE_TABLE and the "Other" rows are prices as of
+   ASSUMPTIONS.costPriceYear (the year they were last refreshed). Cost in any year = that price ×
+   (1+inflation)^(year − price year). So an item's cost keeps growing every year, including each year it
+   stays in service past its expected life, and refreshing the table later never double-counts inflation.
+   annualReserve here is the "nothing saved yet" figure; the figure shown everywhere credits the
+   property's reserve balance (reserveAllocation below). */
+function capPriceYear(){const v=Number(ASSUMPTIONS.costPriceYear);return v>=1900&&v<=2200?v:new Date(today).getFullYear();}
+function costAtYear(cost,year){const pct=(ASSUMPTIONS.capitalReserveInflationPct||0)/100;return cost*Math.pow(1+pct,year-capPriceYear());}
 function componentReserveCalc(name,ageInfo,ovr){
   let life,cost;
   if(ovr){life=ovr.life;cost=ovr.cost;}else{[life,cost]=LIFE_TABLE[name];}
   const yearNow=new Date(today).getFullYear();
-  const pct=(ASSUMPTIONS.capitalReserveInflationPct||0)/100;
-  let ageYears=null,remaining=null,overdueYears=0,statusKey='unknown',inflatedCost=null,annualReserve=null;
+  let ageYears=null,remaining=null,overdueYears=0,statusKey='unknown',inflatedCost=null,annualReserve=null,dueYear=null,condCapped=false;
   if(ageInfo&&ageInfo.year&&life>0&&cost>0){
     ageYears=yearNow-ageInfo.year;
     remaining=life-ageYears;
+    // A Poor/Failing condition rating pulls the replacement date forward (never later).
+    const cap=conditionCapYears(ageInfo.cond);
+    if(cap!=null&&remaining>cap){remaining=cap;condCapped=true;}
     if(remaining>=0){
-      inflatedCost=cost*Math.pow(1+pct,remaining);
+      dueYear=yearNow+remaining;
+      inflatedCost=costAtYear(cost,dueYear);
       statusKey=remaining<=Math.max(2,Math.round(life*0.2))?'aging':'healthy';
       annualReserve=inflatedCost/Math.max(remaining,1);
     } else {
       overdueYears=-remaining;
-      inflatedCost=cost*Math.pow(1+pct,overdueYears);
+      dueYear=yearNow;
+      inflatedCost=costAtYear(cost,yearNow); // overdue: this year's price, which rises every year it stays in service
       statusKey='overdue';
       annualReserve=inflatedCost;
     }
   }
-  return {life,cost,inflatedCost,annualReserve,ageYears,remaining,overdueYears,statusKey};
+  return {life,cost,inflatedCost,annualReserve,ageYears,remaining,overdueYears,statusKey,dueYear,condCapped};
 }
 function propertyReserveSummary(p){
+  const comps=propertyComponents(p),al=reserveAllocation(p,comps);
   let total=0,overdueN=0,agingN=0;
-  const tally=r=>{
-    if(r.annualReserve!=null)total+=r.annualReserve;
-    if(r.statusKey==='overdue')overdueN++;else if(r.statusKey==='aging')agingN++;
+  comps.forEach(c=>{const a=al.get(c.name);if(a)total+=a.annual;if(c.r.statusKey==='overdue')overdueN++;else if(c.r.statusKey==='aging')agingN++;});
+  return {total,overdueN,agingN,saved:al.total};
+}
+
+/* ===== Capital planning (Nov 2026) =====================================================
+   Adds to the per-property component model above — all stored in the SAME places as before,
+   so no database change is needed:
+   - cond   : condition rating (Excellent/Good/Fair/Poor/Failing). Poor/Failing pull the
+              replacement date forward (Assumptions → Capital Reserves → condition rules).
+   - unk    : true = "this item IS at the property but its install year is unknown". A blank
+              year without this flag still means "not at this property" (N/A), exactly as before.
+   - hist   : replacement history [{year,cost,est,prevYear,note,ticket,recorded,by}] — recording a
+              replacement resets the install year and keeps the old one here.
+   These ride along inside each component's record in COMPONENT_AGES (reference_lists
+   'COMPONENTS:<propertyId>'). Reserve fund balances live in RESERVE_FUND, saved per property
+   under reference_lists 'RESERVE_FUND:<propertyId>' (same admin-only table and rule).
+   Everything here is read by Reports → Capital planning, Finance → Capital Reserves and the
+   Components tab. */
+const CONDITION_LEVELS=['Excellent','Good','Fair','Poor','Failing'];
+/* "Already saved" (Nov 18 2026 fix). A property's reserve balance is credited to its components:
+   1) each component's on-plan amount = cost when due × share of its saving period already passed —
+      the period runs from when this property's reserve tracking started (RESERVE_FUND.since), or the
+      install year if later, to the due year; anything due now or overdue = its full cost;
+   2) the balance is shared in proportion to those amounts, and anything beyond them goes to the
+      components due soonest, up to each one's full cost.
+   Annual reserve = (cost when due − credited) ÷ years left, or the whole gap if due now. With no
+   balance this is exactly the "nothing saved" figure. Followed year after year it stays level for
+   each component and matches the reserve spreadsheet. items: [{key,C,D,install}] */
+function reserveSplit(items,B,Y,S){
+  const ideal=items.map(it=>{
+    if(it.D<=Y)return it.C;
+    const st=Math.max(S,it.install||S);
+    if(it.D<=st)return it.C;
+    return it.C*Math.min(Math.max((Y-st)/(it.D-st),0),1);
+  });
+  const sumI=ideal.reduce((a,b)=>a+b,0),alloc=items.map(()=>0);
+  let bal=Math.max(0,Number(B)||0);
+  if(bal>0){
+    if(sumI>=bal&&sumI>0){items.forEach((it,i)=>{alloc[i]=bal*ideal[i]/sumI;});bal=0;}
+    else{
+      items.forEach((it,i)=>{alloc[i]=ideal[i];});bal-=sumI;
+      items.map((it,i)=>i).sort((a,b)=>items[a].D-items[b].D).forEach(i=>{if(bal<=0)return;const add=Math.min(Math.max(items[i].C-alloc[i],0),bal);alloc[i]+=add;bal-=add;});
+    }
+  }
+  const out=new Map();
+  items.forEach((it,i)=>{const gap=Math.max(it.C-alloc[i],0);out.set(it.key,{alloc:alloc[i],annual:it.D<=Y?gap:gap/(it.D-Y),C:it.C,D:it.D});});
+  out.total=alloc.reduce((a,b)=>a+b,0);out.unallocated=bal;
+  return out;
+}
+function reserveAllocation(p,comps){
+  const Y=new Date(today).getFullYear(),f=RESERVE_FUND[p.id]||{};
+  const items=(comps||propertyComponents(p)).filter(c=>c.r.dueYear!=null).map(c=>({key:c.name,C:c.r.inflatedCost,D:c.r.dueYear,install:c.info&&c.info.year}));
+  return reserveSplit(items,Number(f.balance)||0,Y,Number(f.since)||Y);
+}
+/* Year-by-year reserve plan, if each year's annual reserve is set aside: start from the balances
+   entered today; in each year pay for what's due (from what was saved for it, topping up any gap),
+   restart those items' saving, then set aside the annual reserve for the rest. */
+function capitalPlan(props,H){
+  const y0=new Date(today).getFullYear();
+  const rows=Array.from({length:H},(_,k)=>({year:y0+k,start:0,savedFor:0,spend:0,setAside:0,end:0}));
+  let startBal=0,funded=0;
+  props.forEach(p=>{
+    const f=RESERVE_FUND[p.id]||{},S=Number(f.since)||y0;
+    let B=Number(f.balance)||0;startBal+=B;if(f.balance!=null)funded++;
+    const st=propertyComponents(p).filter(c=>c.r.dueYear!=null).map(c=>({key:c.name,cost:c.r.cost,life:c.r.life,install:c.info.year,D:c.r.dueYear}));
+    const at=Y=>st.map(x=>({key:x.key,C:costAtYear(x.cost,Math.max(x.D,Y)),D:Math.max(x.D,Y),install:x.install}));
+    for(let k=0;k<H;k++){
+      const Y=y0+k,row=rows[k];row.start+=B;
+      const due=st.filter(x=>x.D<=Y);
+      let gapDue=0;
+      if(due.length){
+        const pre=reserveSplit(at(Y),B,Y,S);
+        due.forEach(x=>{const a=pre.get(x.key);row.savedFor+=a.alloc;row.spend+=a.C;gapDue+=Math.max(a.C-a.alloc,0);B-=a.alloc;});
+        due.forEach(x=>{x.install=Y;x.D=Y+x.life;});
+      }
+      let rest=0;const post=reserveSplit(at(Y),B,Y,S);post.forEach(a=>{rest+=a.annual;});
+      B+=rest;
+      row.setAside+=gapDue+rest;row.end+=B;
+    }
+  });
+  rows.startBalance=startBal;rows.fundedProps=funded;
+  return rows;
+}
+let RESERVE_FUND={};        // {[propertyId]:{balance, contrib, asOf}}
+let CAP_H=10;               // forecast horizon (years) on the report
+let CAP_OWN='all';          // 'all' | 'owned' | 'leased'
+let CAP_DUE=3;              // "coming due" window (years)
+let CAP_REPL=null;          // {pid,name} while the "record a replacement" form is open
+function conditionCapYears(c){
+  if(c==='Failing'){const v=Number(ASSUMPTIONS.conditionFailingYears);return isNaN(v)?0:v;}
+  if(c==='Poor'){const v=Number(ASSUMPTIONS.conditionPoorYears);return isNaN(v)?2:v;}
+  return null;
+}
+function condBadge(c){
+  const cls={Excellent:'b-resolved',Good:'b-resolved',Fair:'b-closed',Poor:'b-progress',Failing:'b-red'}[c]||'b-closed';
+  return `<span class="badge ${cls}"><span class="dot"></span>${esc(c)}</span>`;
+}
+function capYearNow(){return new Date(today).getFullYear();}
+// Every component that applies to a property, with its calculation. Unused "Other" slots are skipped.
+function propertyComponents(p){
+  const out=[];
+  Object.keys(LIFE_TABLE).forEach(n=>{const info=getComponentAge(p.id,n);out.push({name:n,label:n,info,r:componentReserveCalc(n,info),isOther:false});});
+  OTHER_SLOTS.forEach(n=>{
+    const info=getComponentAge(p.id,n);
+    if(!info||!(info.label||info.year||info.unk))return;
+    out.push({name:n,label:info.label||n,info,r:componentReserveCalc(n,info,otherOvr(info)),isOther:true});
+  });
+  return out;
+}
+function compPresence(c){return c.info&&c.info.year?'known':(c.info&&c.info.unk?'unknown':'na');}
+function capitalProps(own){
+  return PROPS.filter(p=>propStage(p)!=='Sold'&&(own==='all'||p.own===own)).sort((a,b)=>a.name.localeCompare(b.name));
+}
+/* Year-by-year replacements over the horizon. First replacement = the component's due year
+   (overdue items land in the current year at their inflated cost, same figure as the Components
+   tab); later cycles repeat every expected life, at today's cost inflated to that year. */
+function capitalForecast(props,H){
+  const y0=capYearNow(),end=y0+H,pct=(ASSUMPTIONS.capitalReserveInflationPct||0)/100,items=[];
+  props.forEach(p=>propertyComponents(p).forEach(c=>{
+    const r=c.r;if(r.dueYear==null)return;
+    if(r.dueYear<end)items.push({p,c,year:r.dueYear,cost:r.inflatedCost,kind:r.statusKey==='overdue'?'overdue':'first'});
+    if(!(r.life>0))return;
+    for(let next=r.dueYear+r.life;next<end;next+=r.life)items.push({p,c,year:next,cost:costAtYear(r.cost,next),kind:'repeat'});
+  }));
+  return items;
+}
+/* "Fully funded balance": what should already be set aside if each component had been saved for
+   evenly since it was installed — today's cost × share of its (condition-adjusted) life used up. */
+function fullyFundedBalance(p){
+  let s=0;
+  propertyComponents(p).forEach(c=>{
+    const r=c.r;if(r.ageYears==null)return;
+    const effLife=r.ageYears+Math.max(r.remaining,0);
+    s+=r.cost*(effLife>0?Math.min(Math.max(r.ageYears,0)/effLife,1):1);
+  });
+  return s;
+}
+/* Cash flow of a reserve fund: start with the entered balance(s), add the planned yearly
+   contribution, subtract forecast replacements. levelNeeded = smallest equal yearly contribution
+   that keeps the balance from ever going below zero over the horizon. */
+function capitalCashFlow(props,H){
+  const y0=capYearNow(),spend=Array(H).fill(0);
+  capitalForecast(props,H).forEach(i=>{spend[i.year-y0]+=i.cost;});
+  let bal=0,contrib=0,hasFund=false;
+  props.forEach(p=>{const f=RESERVE_FUND[p.id];if(f&&(f.balance!=null||f.contrib!=null)){hasFund=true;bal+=Number(f.balance)||0;contrib+=Number(f.contrib)||0;}});
+  const rows=[];let b=bal,cum=0,need=0,firstShort=null;
+  for(let k=0;k<H;k++){
+    const start=b;b=b+contrib-spend[k];cum+=spend[k];
+    need=Math.max(need,(cum-bal)/(k+1));
+    if(b<0&&firstShort==null)firstShort=y0+k;
+    rows.push({year:y0+k,start,contrib,spend:spend[k],end:b});
+  }
+  return {rows,startBalance:bal,contrib,levelNeeded:Math.max(0,need),hasFund,firstShort};
+}
+const kfmt=n=>{if(!n)return '<span class="faint">—</span>';const a=Math.abs(n);const s=a>=1000?'$'+(a/1000).toFixed(a>=100000?0:1)+'k':money(Math.round(a));return n<0?'−'+s:s;};
+function capSeg(cur,opts,setter){
+  return `<span style="display:inline-flex;gap:6px;flex-wrap:wrap">${opts.map(([v,l])=>`<span class="chip ${cur===v?'active':''}" style="cursor:pointer" onclick="${setter}(${typeof v==='number'?v:`'${v}'`})">${l}</span>`).join('')}</span>`;
+}
+function setCapH(v){CAP_H=v;renderReports(document.getElementById('view'));}
+function setCapOwn(v){CAP_OWN=v;renderReports(document.getElementById('view'));}
+function setCapDue(v){CAP_DUE=v;renderReports(document.getElementById('view'));}
+
+/* ---------- Reports → Capital planning ---------- */
+function capitalReportHtml(){
+  const y0=capYearNow(),H=CAP_H,props=capitalProps(CAP_OWN);
+  const items=capitalForecast(props,H);
+  const years=Array.from({length:H},(_,k)=>y0+k);
+  const totalSpend=items.reduce((s,i)=>s+i.cost,0);
+  const annualNeed=props.reduce((s,p)=>s+propertyReserveSummary(p).total,0);
+  const overdue=items.filter(i=>i.kind==='overdue');
+  const dueWin=items.filter(i=>i.kind!=='repeat'&&i.year<y0+CAP_DUE);
+  const dueWinAll=items.filter(i=>i.kind!=='repeat'&&i.year<y0+3);
+  let known=0,unknown=0,emptyProps=0;
+  const compRows=props.map(p=>{
+    const cs=propertyComponents(p);
+    const k=cs.filter(c=>compPresence(c)==='known').length,u=cs.filter(c=>compPresence(c)==='unknown').length,na=cs.filter(c=>compPresence(c)==='na').length;
+    const act=cs.filter(c=>c.info&&c.info.year&&c.info.actual).length;
+    known+=k;unknown+=u;if(!k)emptyProps++;
+    return {p,k,u,na,act};
+  });
+  const knownPct=(known+unknown)?Math.round(known/(known+unknown)*100):0;
+  const cf=capitalCashFlow(props,H);
+  const ffbTotal=props.reduce((s,p)=>s+(RESERVE_FUND[p.id]&&RESERVE_FUND[p.id].balance!=null?fullyFundedBalance(p):0),0);
+  const fundPct=cf.hasFund&&ffbTotal>0?Math.round(cf.startBalance/ffbTotal*100):null;
+
+  // property × year matrix
+  const byProp={};props.forEach(p=>{byProp[p.id]=Array(H).fill(0);});
+  items.forEach(i=>{byProp[i.p.id][i.year-y0]+=i.cost;});
+  const colTot=years.map((_,k)=>props.reduce((s,p)=>s+byProp[p.id][k],0));
+  const matrixRows=props.map(p=>({p,vals:byProp[p.id],tot:byProp[p.id].reduce((a,b)=>a+b,0)})).sort((a,b)=>b.tot-a.tot);
+  const plan=capitalPlan(props,H);
+
+  // history (all properties, incl. sold)
+  const hist=[];
+  PROPS.forEach(p=>Object.keys(COMPONENT_AGES[p.id]||{}).forEach(n=>{
+    const info=getComponentAge(p.id,n);(info&&info.hist||[]).forEach(h=>hist.push({p,n,label:OTHER_SLOTS.includes(n)?(info.label||n):n,h}));
+  }));
+  hist.sort((a,b)=>(b.h.year-a.h.year)||String(b.h.recorded||'').localeCompare(String(a.h.recorded||'')));
+  const histEst=hist.reduce((s,x)=>s+(Number(x.h.est)||0),0),histAct=hist.reduce((s,x)=>s+(Number(x.h.cost)||0),0);
+
+  const controls=`<div class="card" style="margin-bottom:14px"><div class="body" style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">
+    <div style="display:flex;gap:8px;align-items:center"><span class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:700">Horizon</span>${capSeg(CAP_H,[[5,'5 yrs'],[10,'10 yrs'],[15,'15 yrs']],'setCapH')}</div>
+    <div style="display:flex;gap:8px;align-items:center"><span class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:700">Properties</span>${capSeg(CAP_OWN,[['all','All'],['owned','Owned'],['leased','Leased']],'setCapOwn')}</div>
+    <div class="faint" style="font-size:12px;margin-left:auto">${props.length} propert${props.length===1?'y':'ies'} · sold excluded · ${ASSUMPTIONS.capitalReserveInflationPct}%/yr inflation</div>
+  </div></div>`;
+
+  const totalBal=props.reduce((s,p)=>s+(RESERVE_FUND[p.id]&&RESERVE_FUND[p.id].balance!=null?Number(RESERVE_FUND[p.id].balance)||0:0),0);
+  const balProps=props.filter(p=>RESERVE_FUND[p.id]&&RESERVE_FUND[p.id].balance!=null).length;
+  const legend=`<div class="card" style="margin-bottom:14px"><div class="body" style="display:flex;gap:22px;flex-wrap:wrap;font-size:12.5px;line-height:1.55">
+    <div style="flex:1;min-width:260px"><span class="badge tone-info">Replacement cost</span> <span class="muted">= money <b>spent</b>: what replacing a component is expected to cost in the year it's due, with inflation.</span></div>
+    <div style="flex:1;min-width:260px"><span class="badge tone-ok">Reserve</span> <span class="muted">= money <b>set aside</b>: the annual reserve saved each year, and the balance built up to pay those replacement costs.</span></div>
+  </div></div>`;
+  const kpis=`<div class="sectitle" style="margin-top:2px"><span class="badge tone-info">Replacement cost</span> <span style="text-transform:none;letter-spacing:0;font-weight:600">money spent on replacements</span></div>
+  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kpi"><div class="lab">Replacement cost · next ${H} yrs</div><div class="val">${money(Math.round(totalSpend))}</div><div class="sub">${items.length} replacement${items.length===1?'':'s'}, inflation-adjusted</div></div>
+    <div class="kpi"><div class="lab">Replacement cost · avg per year</div><div class="val">${money(Math.round(totalSpend/H))}/yr</div><div class="sub">average over the next ${H} years</div></div>
+    <div class="kpi ${overdue.length?'red':'green'}"><div class="lab">Replacement cost · overdue now</div><div class="val">${money(Math.round(overdue.reduce((s,i)=>s+i.cost,0)))}</div><div class="sub">${overdue.length} component${overdue.length===1?'':'s'} past expected life</div></div>
+    <div class="kpi ${dueWinAll.length?'amber':'green'}"><div class="lab">Replacement cost · next 3 yrs</div><div class="val">${money(Math.round(dueWinAll.reduce((s,i)=>s+i.cost,0)))}</div><div class="sub">${dueWinAll.length} component${dueWinAll.length===1?'':'s'} incl. overdue</div></div>
+  </div>
+  <div class="sectitle"><span class="badge tone-ok">Reserve</span> <span style="text-transform:none;letter-spacing:0;font-weight:600">money set aside to pay for them</span></div>
+  <div class="kpis" style="grid-template-columns:repeat(4,1fr)">
+    <div class="kpi"><div class="lab">Annual reserve · this year</div><div class="val">${money(Math.round(annualNeed))}/yr</div><div class="sub">to set aside now (same as Finance → Capital Reserves)</div></div>
+    <div class="kpi"><div class="lab">Reserve balance · saved today</div><div class="val">${balProps?money(Math.round(totalBal)):'Not tracked'}</div><div class="sub">${balProps?`across ${balProps} propert${balProps===1?'y':'ies'} with a balance entered`:'Enter balances on a property\'s Components tab'}</div></div>
+    <div class="kpi ${fundPct==null?'':fundPct>=70?'green':fundPct>=30?'amber':'red'}"><div class="lab">Reserve funded</div><div class="val">${fundPct==null?'Not tracked':fundPct+'%'}</div><div class="sub">${fundPct==null?'reserve saved ÷ fully funded amount':`${money(Math.round(cf.startBalance))} saved of ${money(Math.round(ffbTotal))} fully funded`}</div></div>
+    <div class="kpi ${emptyProps>props.length/2?'red':(emptyProps||unknown)?'amber':'green'}"><div class="lab">Properties with install years</div><div class="val">${props.length-emptyProps} of ${props.length}</div><div class="sub">${emptyProps?`${emptyProps} with none entered (counted as $0)`:'every property has some entered'} · ${unknown} component${unknown===1?'':'s'} marked age unknown</div></div>
+  </div>`;
+  const chart=`<div class="sectitle"><span class="badge tone-info">Replacement cost</span> <span style="text-transform:none;letter-spacing:0;font-weight:600">by year — lumpy years are the ones to plan for</span></div>
+  <div class="card"><div class="body"><div style="height:300px"><canvas id="chartCapForecast"></canvas></div>
+  <div class="faint" style="font-size:11.5px;margin-top:6px">${y0} includes everything already overdue. Later bars include repeat replacements of short-life items (e.g. a microwave every ${LIFE_TABLE['Microwave']?LIFE_TABLE['Microwave'][0]:8} years).</div></div></div>`;
+
+  const matrix=`<div class="sectitle"><span class="badge tone-info">Replacement cost</span> <span style="text-transform:none;letter-spacing:0;font-weight:600">by property and year, with the</span> <span class="badge tone-ok">Reserve</span> <span style="text-transform:none;letter-spacing:0;font-weight:600">plan underneath</span></div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:${300+H*76}px"><thead><tr><th>Property</th>${years.map(y=>`<th class="right">${y}</th>`).join('')}<th class="right">Total</th></tr></thead><tbody>
+  ${matrixRows.map(({p,vals,tot})=>`<tr class="clickable" onclick="openReservesProperty('${p.id}')"><td class="b">${esc(p.name)}${p.own==='leased'?' <span class="faint" style="font-size:11px;font-weight:400">leased</span>':''}</td>${vals.map(v=>`<td class="right mono">${kfmt(v)}</td>`).join('')}<td class="right mono b">${kfmt(tot)}</td></tr>`).join('')}
+  </tbody><tfoot><tr style="font-weight:800;border-top:2px solid var(--line)"><td>Total replacement cost</td>${colTot.map(v=>`<td class="right mono">${kfmt(v)}</td>`).join('')}<td class="right mono">${kfmt(totalSpend)}</td></tr>
+  <tr style="background:var(--tone-ok-soft-bg)"><td colspan="${H+2}" style="padding-top:12px"><span class="badge tone-ok">Reserve</span> <span class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:700">plan — money set aside, if each year's annual reserve is saved</span></td></tr>
+  <tr style="background:var(--tone-ok-soft-bg)"><td>Reserve saved for this year's replacements</td>${plan.map(r=>`<td class="right mono">${kfmt(r.savedFor)}</td>`).join('')}<td class="right mono">${kfmt(plan.reduce((a,r)=>a+r.savedFor,0))}</td></tr>
+  <tr style="background:var(--tone-ok-soft-bg)"><td>Reserve set aside this year (annual reserve)</td>${plan.map(r=>`<td class="right mono">${kfmt(r.setAside)}</td>`).join('')}<td class="right mono">${kfmt(plan.reduce((a,r)=>a+r.setAside,0))}</td></tr>
+  <tr style="font-weight:800;background:var(--tone-ok-soft-bg)"><td>Reserve balance at end of year (accumulated)</td>${plan.map(r=>`<td class="right mono" style="${r.end<-0.5?'color:var(--red)':''}">${kfmt(r.end)}</td>`).join('')}<td></td></tr></tfoot></table></div>
+  <div class="faint" style="font-size:11.5px;margin-top:6px;line-height:1.5">Click a property to open its Components tab. Only components with an install year are forecast — see Data completeness below. <b>Reserve plan</b> rows (green) start from the reserve balances entered today (${money(Math.round(plan.startBalance))} across ${plan.fundedProps} propert${plan.fundedProps===1?'y':'ies'}), set aside each year's annual reserve, and pay each replacement in the year it's due. <i>Reserve saved for this year's replacements</i> equals that year's replacement cost except where an item is already overdue or underfunded — then the gap is set aside in that same year.</div>`;
+
+  const dueRows=dueWin.slice().sort((a,b)=>((b.kind==='overdue')-(a.kind==='overdue'))||(a.year-b.year)||(b.cost-a.cost));
+  const comingDue=`<div class="sectitle" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Coming due <span class="badge tone-info">Replacement cost</span> <span class="faint" style="text-transform:none;letter-spacing:0;font-weight:600">— your budgeting & quote list</span><span style="margin-left:auto;text-transform:none;letter-spacing:0">${capSeg(CAP_DUE,[[1,'This year'],[2,'2 yrs'],[3,'3 yrs'],[5,'5 yrs']],'setCapDue')}</span></div>
+  <div class="card" style="overflow-x:auto">${dueRows.length?`<table style="min-width:760px"><thead><tr><th>Due</th><th>Property</th><th>Component</th><th>Age / life</th><th>Condition</th><th>Status</th><th class="right">Replacement cost</th></tr></thead><tbody>
+  ${dueRows.map(i=>{const r=i.c.r;return `<tr class="clickable" onclick="openReservesProperty('${i.p.id}')"><td class="mono b">${i.kind==='overdue'?`<span style="color:var(--red)">Overdue</span>`:i.year}</td><td>${esc(i.p.name)}</td><td>${esc(i.c.label)}${i.c.isOther?' <span class="faint" style="font-size:11px">other</span>':''}</td><td class="mono">${r.ageYears} / ${r.life} yr</td><td>${i.c.info&&i.c.info.cond?condBadge(i.c.info.cond):'<span class="faint">—</span>'}</td><td>${r.statusKey==='overdue'?'<span class="badge b-red"><span class="dot"></span>Overdue</span>':r.statusKey==='aging'?'<span class="badge b-progress"><span class="dot"></span>Plan ahead</span>':'<span class="badge b-resolved"><span class="dot"></span>Healthy</span>'}</td><td class="right mono">${money(Math.round(i.cost))}</td></tr>`;}).join('')}
+  </tbody><tfoot><tr style="font-weight:800;border-top:2px solid var(--line)"><td colspan="6" style="text-align:right">Total</td><td class="right mono">${money(Math.round(dueRows.reduce((s,i)=>s+i.cost,0)))}</td></tr></tfoot></table>`:'<div class="body muted" style="text-align:center;padding:22px">Nothing coming due in this window.</div>'}</div>`;
+
+  const fundProps=props.filter(p=>RESERVE_FUND[p.id]&&(RESERVE_FUND[p.id].balance!=null||RESERVE_FUND[p.id].contrib!=null));
+  const funding=`<div class="sectitle"><span class="badge tone-ok">Reserve</span> <span style="text-transform:none;letter-spacing:0;font-weight:600">funding & cash flow</span></div>
+  ${cf.hasFund?`<div class="card" style="overflow-x:auto;margin-bottom:12px"><table style="min-width:820px"><thead><tr><th>Property</th><th class="right">Reserve balance</th><th>As of</th><th class="right">Reserve set aside / yr (planned)</th><th class="right">Fully funded</th><th class="right">% funded</th><th class="right">Reserve needed / yr to stay positive (${H} yrs)</th></tr></thead><tbody>
+    ${fundProps.map(p=>{const f=RESERVE_FUND[p.id],ffb=fullyFundedBalance(p),pc=ffb>0?Math.round((Number(f.balance)||0)/ffb*100):null,need=capitalCashFlow([p],H).levelNeeded,short=need>(Number(f.contrib)||0)+0.5;
+      return `<tr class="clickable" onclick="openReservesProperty('${p.id}')"><td class="b">${esc(p.name)}</td><td class="right mono">${f.balance!=null?money(f.balance):'<span class="faint">—</span>'}</td><td class="faint">${f.asOf?fdate(new Date(f.asOf+'T00:00:00')):'—'}</td><td class="right mono">${f.contrib!=null?money(f.contrib):'<span class="faint">—</span>'}</td><td class="right mono">${money(Math.round(ffb))}</td><td class="right mono">${pc==null?'—':`<span style="color:${pc>=70?'var(--green)':pc>=30?'var(--amber)':'var(--red)'};font-weight:700">${pc}%</span>`}</td><td class="right mono" style="${short?'color:var(--red);font-weight:700':''}">${money(Math.round(need))}</td></tr>`;}).join('')}
+  </tbody></table></div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:620px"><thead><tr><th>Year</th><th class="right">Reserve balance — start</th><th class="right">+ Reserve set aside</th><th class="right">− Replacement cost</th><th class="right">Reserve balance — end</th></tr></thead><tbody>
+    ${cf.rows.map(r=>`<tr><td class="mono b">${r.year}</td><td class="right mono" style="${r.start<0?'color:var(--red)':''}">${r.start<0?'−'+money(Math.round(-r.start)):money(Math.round(r.start))}</td><td class="right mono">${money(Math.round(r.contrib))}</td><td class="right mono">${money(Math.round(r.spend))}</td><td class="right mono" style="${r.end<0?'color:var(--red);font-weight:800':'font-weight:700'}">${r.end<0?'−'+money(Math.round(-r.end)):money(Math.round(r.end))}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.55">Cash flow for the ${fundProps.length} propert${fundProps.length===1?'y':'ies'} with a balance or planned contribution entered (${money(Math.round(cf.startBalance))} starting, ${money(Math.round(cf.contrib))}/yr planned). ${cf.firstShort?`<b style="color:var(--red)">Runs short in ${cf.firstShort}.</b> `:'<b>Stays positive for the whole horizon.</b> '}An equal contribution of <b>${money(Math.round(cf.levelNeeded))}/yr</b> would keep it above zero through ${y0+H-1}. <i>Fully funded</i> = what would be saved by now if each component had been set aside for evenly since it was installed; <i>% funded</i> = balance ÷ that amount.</div>`
+  :`<div class="card"><div class="body muted" style="line-height:1.6">No reserve balances entered yet. On any property's <b>Components</b> tab, enter the amount actually set aside and the planned yearly contribution — this section then shows % funded, a year-by-year cash flow (start balance + contributions − forecast replacements), the first year the fund would run short, and the equal yearly contribution needed to stay positive.</div></div>`}`;
+
+  const completeness=`<div class="sectitle">Data completeness <span class="faint" style="text-transform:none;letter-spacing:0;font-weight:600">— how much to trust the totals above</span></div>
+  <div class="card" style="overflow-x:auto"><table style="min-width:640px"><thead><tr><th>Property</th><th class="right">Year entered</th><th class="right">Of which actual</th><th class="right">Age unknown</th><th class="right">Blank (not at property)</th><th></th></tr></thead><tbody>
+  ${compRows.sort((a,b)=>(a.k-b.k)||(b.u-a.u)).map(r=>`<tr class="clickable" onclick="openReservesProperty('${r.p.id}')"><td class="b">${esc(r.p.name)}</td><td class="right mono">${r.k}</td><td class="right mono">${r.act}</td><td class="right mono" style="${r.u?'color:var(--amber);font-weight:700':''}">${r.u||'—'}</td><td class="right mono faint">${r.na}</td><td>${!r.k?'<span class="badge b-red"><span class="dot"></span>Nothing entered — shows $0</span>':r.u?'<span class="badge b-progress"><span class="dot"></span>Missing years</span>':'<span class="badge b-resolved"><span class="dot"></span>Complete</span>'}</td></tr>`).join('')}
+  </tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.55">A blank install year means "not at this property" and is left out of every total. If an item <i>is</i> there but you don't know its year, mark it <b>Age unknown</b> on the Components tab so it's counted here as missing data instead of silently dropping out. <i>Actual</i> = year confirmed by a record (invoice/receipt) rather than estimated.</div>`;
+
+  const history=`<div class="sectitle">Replacement history <span class="faint" style="text-transform:none;letter-spacing:0;font-weight:600">— actual cost vs. the estimate at the time</span></div>
+  <div class="card" style="overflow-x:auto">${hist.length?`<table style="min-width:760px"><thead><tr><th>Year</th><th>Property</th><th>Component</th><th>Replaced (was installed)</th><th class="right">Replacement cost — estimated</th><th class="right">Replacement cost — actual</th><th class="right">Difference</th><th>Note</th></tr></thead><tbody>
+  ${hist.map(({p,label,h})=>{const d=(h.cost!=null&&h.est!=null)?h.cost-h.est:null;return `<tr><td class="mono b">${h.year}</td><td>${esc(p.name)}</td><td>${esc(label)}</td><td class="faint mono">${h.prevYear||'—'}</td><td class="right mono">${h.est!=null?money(h.est):'—'}</td><td class="right mono">${h.cost!=null?money(h.cost):'—'}</td><td class="right mono" style="${d>0?'color:var(--red)':d<0?'color:var(--green)':''}">${d==null?'—':(d>0?'+':d<0?'−':'')+money(Math.abs(d))}</td><td class="muted" style="font-size:12px">${esc(h.note||'')}${h.ticket?` <span class="faint">· ${esc(ticketRefById(h.ticket))}</span>`:''}</td></tr>`;}).join('')}
+  </tbody><tfoot><tr style="font-weight:800;border-top:2px solid var(--line)"><td colspan="4" style="text-align:right">Total</td><td class="right mono">${money(histEst)}</td><td class="right mono">${money(histAct)}</td><td class="right mono">${histEst&&histAct?(histAct>=histEst?'+':'−')+money(Math.abs(histAct-histEst)):'—'}</td><td class="faint" style="font-size:11.5px">${histEst&&histAct?`actual ran ${Math.round((histAct/histEst-1)*100)}% ${histAct>=histEst?'over':'under'} estimate`:''}</td></tr></tfoot></table>`:'<div class="body muted" style="line-height:1.6">No replacements recorded yet. On a property\'s Components tab, click <b>Replaced…</b> next to a component to record when it was replaced and what it actually cost (optionally linked to its maintenance ticket). The install year resets automatically, and over time this table shows whether your replacement-cost assumptions run high or low.</div>'}</div>`;
+
+  const assumptions=`<div class="sectitle">Assumptions used</div>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Component</th><th>Avg. lifespan</th><th class="right">Replacement cost (${capPriceYear()} prices)</th></tr></thead><tbody>${Object.keys(LIFE_TABLE).map(n=>{const [life,cost]=LIFE_TABLE[n];return `<tr><td class="b">${esc(n)}</td><td class="mono">${life} yr</td><td class="right mono">${money(cost)}</td></tr>`;}).join('')}</tbody></table></div>
+  <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.55">Inflation ${ASSUMPTIONS.capitalReserveInflationPct}%/yr, applied from ${capPriceYear()} prices; an item still in service past its expected life is priced at each year's cost. Condition rules: <b>Poor</b> → replace within ${conditionCapYears('Poor')} yr${conditionCapYears('Poor')===1?'':'s'}, <b>Failing</b> → ${conditionCapYears('Failing')?'within '+conditionCapYears('Failing')+' yrs':'this year'}; other ratings don't change the date. Senior Admin edits all of these in Assumptions → Capital Reserves.</div>`;
+
+  return controls+legend+kpis+chart+matrix+comingDue+funding+completeness+history+assumptions+capitalMethodologyHtml();
+}
+/* Reserve calculation methodology — one wording, shown at the end of Reports → Capital planning,
+   at the end of Finance → Capital Reserves, and in the report's PDF / Excel / CSV downloads. */
+function capitalMethodologyItems(){
+  const P=capPriceYear(),i=ASSUMPTIONS.capitalReserveInflationPct,poor=conditionCapYears('Poor'),fail=conditionCapYears('Failing');
+  return [
+    ['Replacement year','install year + expected life (Assumptions → Capital Reserves). A Poor condition rating brings it forward to within '+poor+' year'+(poor===1?'':'s')+', and Failing to '+(fail?'within '+fail+' year'+(fail===1?'':'s'):'this year')+' — never later than its age alone suggests.'],
+    ['Replacement cost (money spent)','the table cost, at '+P+' prices, grown at '+i+'% a year to the replacement year. A component still in service past its expected life is priced at the current year\'s cost, so its cost keeps rising each year it is not replaced.'],
+    ['Already saved','the property\'s reserve balance (entered on its Components tab) is credited to its components: first in proportion to how far along each one\'s saving period is (from when reserve tracking started for the property, or the install year if later, to its replacement year), then any extra to the components due soonest. With no balance entered, nothing is assumed saved.'],
+    ['Annual reserve (money set aside)','(replacement cost − already saved) ÷ years left until the replacement year. Anything due now or overdue needs its whole remaining gap this year. The amount stays level while saving for an item and resets when the item is replaced ("Replaced…" on the Components tab).'],
+    ['Reserve plan','assumes each year\'s annual reserve is set aside, starting from the reserve balances entered today; each replacement is paid from the reserve in its replacement year and saving restarts for the next one (a new expected life). "Reserve saved for this year\'s replacements" therefore equals that year\'s replacement cost, except for items already overdue or underfunded.'],
+    ['Fully funded and % funded','fully funded = today\'s cost × the share of each component\'s (condition-adjusted) life already used — what would be saved by now if it had been set aside evenly since installation; % funded = reserve balance ÷ fully funded.'],
+    ['Not included','components with no install year (blank = not at the property; "Age unknown" is flagged in Data completeness but not counted), sold properties, and interest earned on the reserve.']
+  ];
+}
+function capitalMethodologyHtml(){
+  return `<div class="card" style="margin-top:18px"><div class="body">
+    <div class="b" style="margin-bottom:6px">How the reserve numbers are calculated</div>
+    <ol class="muted" style="font-size:12px;line-height:1.6;margin:0 0 0 18px;padding:0">${capitalMethodologyItems().map(([h,t])=>`<li style="margin-bottom:4px"><b>${esc(h)}</b> — ${esc(t)}</li>`).join('')}</ol>
+  </div></div>`;
+}
+function ticketRefById(id){const t=TICKETS.find(x=>x.id===id);return t?ticketRef(t):'ticket';}
+let CAPCHART=null;
+function renderCapitalCharts(){
+  if(typeof Chart==='undefined')return; // CDN unreachable — the table below still has every figure
+  const el=document.getElementById('chartCapForecast');if(!el)return;
+  if(CAPCHART){CAPCHART.destroy();CAPCHART=null;}
+  const y0=capYearNow(),H=CAP_H,props=capitalProps(CAP_OWN),items=capitalForecast(props,H);
+  const byProp={};items.forEach(i=>{byProp[i.p.id]=byProp[i.p.id]||Array(H).fill(0);byProp[i.p.id][i.year-y0]+=i.cost;});
+  const ranked=Object.keys(byProp).map(id=>({id,vals:byProp[id],tot:byProp[id].reduce((a,b)=>a+b,0)})).sort((a,b)=>b.tot-a.tot);
+  const TOPN=7,top=ranked.slice(0,TOPN),rest=ranked.slice(TOPN);
+  const pal=CHART_PALETTE();
+  const ds=top.map((r,i)=>({label:(propById(r.id)||{}).name||r.id,data:r.vals.map(Math.round),backgroundColor:pal[i%pal.length],borderRadius:3,stack:'s'}));
+  if(rest.length)ds.push({label:`Other (${rest.length})`,data:Array.from({length:H},(_,k)=>Math.round(rest.reduce((s,r)=>s+r.vals[k],0))),backgroundColor:cssVar('--ink-300')||'#c5cbd6',borderRadius:3,stack:'s'});
+  CAPCHART=new Chart(el,{type:'bar',data:{labels:Array.from({length:H},(_,k)=>String(y0+k)),datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}},
+      tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${money(c.parsed.y)}`,footer:cs=>'Year total: '+money(cs.reduce((s,c)=>s+c.parsed.y,0))}}},
+      scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>v>=1000?'$'+(v/1000)+'k':'$'+v},grid:{color:cssVar('--line')||'#eee'}}}}});
+}
+
+/* ---------- Components tab pieces ---------- */
+const cEsc=s=>String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+function presenceChip(pid,name,info){
+  if(info&&info.year)return '';
+  const unk=!!(info&&info.unk);
+  const lbl=unk?'Age unknown':'Not at property';
+  const cls=unk?'b-progress':'b-closed';
+  const click=ROLE==='admin'?` style="cursor:pointer;font-size:10.5px" title="Click to switch between: not at this property (ignored) ↔ at this property but install year unknown (flagged as missing data)" onclick="toggleComponentUnknown('${pid}','${cEsc(name)}')"`:' style="font-size:10.5px"';
+  return `<div style="margin-top:4px"><span class="badge ${cls}"${click}>${lbl}</span></div>`;
+}
+function condCell(pid,name,info){
+  if(!info||!(info.year||info.unk))return '<span class="faint">—</span>';
+  const inner=info.cond?condBadge(info.cond):'<span class="faint" style="font-size:12px">+ rate</span>';
+  return ROLE==='admin'?`<span style="cursor:pointer" title="Condition — Poor/Failing pull the replacement date forward" onclick="openCondMenu(event,'${pid}','${cEsc(name)}')">${inner}</span>`:inner;
+}
+function lastReplacedNote(info){
+  const h=info&&info.hist&&info.hist.length?info.hist[info.hist.length-1]:null;
+  return h?`<div class="faint" style="font-size:10.5px;font-weight:400;margin-top:2px">↻ Replaced ${h.year}${h.cost!=null?' · '+money(h.cost):''}</div>`:'';
+}
+function replAction(pid,name,info){
+  if(ROLE!=='admin')return '';
+  return `<a style="cursor:pointer;font-size:12px;color:var(--accent-dark);white-space:nowrap" onclick="openReplacementForm('${pid}','${cEsc(name)}')" title="Record that this was replaced — resets the install year and keeps a history">Replaced…</a>`;
+}
+function openCondMenu(ev,pid,name){
+  ev.stopPropagation();closeChipMenu();
+  const rect=ev.currentTarget.getBoundingClientRect();
+  const m=document.createElement('div');m.id='chipMenu';m.className='chipmenu';
+  m.style.left=Math.min(rect.left,window.innerWidth-170)+'px';m.style.top=(rect.bottom+4)+'px';
+  m.innerHTML=CONDITION_LEVELS.map(c=>`<div class="chipmenu-item" onclick="setComponentCondition('${pid}','${cEsc(name)}','${c}')">${condBadge(c)}</div>`).join('')+`<div class="chipmenu-item faint" style="font-size:12px" onclick="setComponentCondition('${pid}','${cEsc(name)}','')">Clear rating</div>`;
+  document.body.appendChild(m);
+  setTimeout(()=>document.addEventListener('click',closeChipMenu,{once:true}),0);
+}
+function closeChipMenu(){const m=document.getElementById('chipMenu');if(m)m.remove();}
+function capAdminOnly(){if(ROLE!=='admin'){toast('Only Senior Admin can change capital planning data');return false;}return true;}
+function setComponentCondition(pid,name,c){closeChipMenu();if(!capAdminOnly())return;patchComponent(pid,name,{cond:c||undefined});}
+function toggleComponentUnknown(pid,name){if(!capAdminOnly())return;const cur=getComponentAge(pid,name)||{};patchComponent(pid,name,{unk:cur.unk?undefined:true});}
+function rerenderComponents(pid){const p=propById(pid),body=document.getElementById('propTabBody');if(p&&body)body.innerHTML=propComponents(p);}
+function openReplacementForm(pid,name){if(!capAdminOnly())return;CAP_REPL={pid,name};rerenderComponents(pid);const f=document.getElementById('replForm');if(f)f.scrollIntoView({block:'nearest',behavior:'smooth'});}
+function cancelReplacementForm(pid){CAP_REPL=null;rerenderComponents(pid);}
+function replacementFormHtml(p){
+  if(!CAP_REPL||CAP_REPL.pid!==p.id)return '';
+  const name=CAP_REPL.name,info=getComponentAge(p.id,name)||{};
+  const label=OTHER_SLOTS.includes(name)?(info.label||name):name;
+  const est=OTHER_SLOTS.includes(name)?(Number(info.cost)||null):(LIFE_TABLE[name]?LIFE_TABLE[name][1]:null);
+  const tks=TICKETS.filter(t=>t.prop===p.id).sort((a,b)=>new Date(b.created)-new Date(a.created)).slice(0,40);
+  return `<div class="card" id="replForm" style="margin-bottom:14px;border-color:var(--accent)"><div class="body">
+    <div class="b" style="margin-bottom:4px">Record a replacement — ${esc(label)}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Currently installed ${info.year||'(year unknown)'}. Saving sets the install year to the replacement year (tagged Actual), clears the condition rating, and keeps the old year in this component's history.</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="margin:0"><label class="f">Year replaced</label><input type="text" inputmode="numeric" id="replYear" value="${capYearNow()}" style="width:90px"></div>
+      <div class="field" style="margin:0"><label class="f">Actual cost ($)</label><input type="text" inputmode="decimal" id="replCost" placeholder="${est?'est. '+money(est):'amount'}" style="width:120px"></div>
+      <div class="field" style="margin:0;flex:1;min-width:220px"><label class="f">Maintenance ticket (optional)</label><select id="replTicket" style="width:100%" onchange="replTicketPicked(this)"><option value="">— none —</option>${tks.map(t=>`<option value="${t.id}" data-cost="${t.cost||''}">${esc(ticketRef(t))} · ${esc((t.title||t.desc||'').slice(0,40))}${t.cost?' · '+money(t.cost):''}</option>`).join('')}</select></div>
+      <div class="field" style="margin:0;flex:1;min-width:200px"><label class="f">Note</label><input type="text" id="replNote" placeholder="e.g. replaced after leak" style="width:100%"></div>
+    </div>
+    ${RESERVE_FUND[p.id]&&RESERVE_FUND[p.id].balance!=null?`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;margin-top:12px;cursor:pointer"><input type="checkbox" id="replFromFund" checked> Paid from this property's reserve fund — lower the balance (now ${money(RESERVE_FUND[p.id].balance)}) by the actual cost</label>`:''}
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn sm" onclick="saveReplacement('${p.id}','${cEsc(name)}')">Save replacement</button><button class="btn sec sm" onclick="cancelReplacementForm('${p.id}')">Cancel</button></div>
+  </div></div>`;
+}
+function replTicketPicked(sel){const o=sel.options[sel.selectedIndex];const c=document.getElementById('replCost');if(o&&o.dataset.cost&&c&&!c.value)c.value=o.dataset.cost;}
+function saveReplacement(pid,name){
+  if(!capAdminOnly())return;
+  const yNow=capYearNow(),y=parseInt((document.getElementById('replYear').value||'').trim(),10);
+  if(isNaN(y)||y<1900||y>yNow){toast('Enter a valid year (1900–'+yNow+')');return;}
+  const rawCost=(document.getElementById('replCost').value||'').replace(/[$,\s]/g,'');
+  const cost=rawCost===''?null:Number(rawCost);
+  if(cost!=null&&(isNaN(cost)||cost<0)){toast('Enter the actual cost as a number');return;}
+  const info=getComponentAge(pid,name)||{};
+  const est=OTHER_SLOTS.includes(name)?(Number(info.cost)||null):(LIFE_TABLE[name]?LIFE_TABLE[name][1]:null);
+  const entry={year:y,cost,est,prevYear:info.year||null,note:(document.getElementById('replNote').value||'').trim()||undefined,
+    ticket:document.getElementById('replTicket').value||undefined,recorded:toISODate(new Date()),by:MY_NAME||undefined};
+  const fromFund=!!(document.getElementById('replFromFund')||{}).checked;
+  let fundNote='';
+  if(fromFund&&cost!=null&&RESERVE_FUND[pid]&&RESERVE_FUND[pid].balance!=null){
+    const f=Object.assign({},RESERVE_FUND[pid]);const before=Number(f.balance)||0;
+    f.balance=Math.max(0,Math.round((before-cost)*100)/100);f.asOf=toISODate(new Date());
+    RESERVE_FUND[pid]=f;entry.fromFund=true;
+    if(SUPA_CONFIGURED)dbUpsertReferenceList('RESERVE_FUND:'+pid,f);
+    fundNote=' · reserve balance '+money(before)+' → '+money(f.balance)+(cost>before?' (cost was more than the balance)':'');
+  }
+  CAP_REPL=null;
+  patchComponent(pid,name,{year:y,actual:true,unk:undefined,cond:undefined,hist:(info.hist||[]).concat([entry])});
+  toast('Replacement recorded — install year now '+y+fundNote);
+}
+function removeReplacement(pid,name,idx){
+  if(!capAdminOnly())return;
+  const info=getComponentAge(pid,name)||{};const h=(info.hist||[]).slice();h.splice(idx,1);
+  patchComponent(pid,name,{hist:h.length?h:undefined});
+  toast('History entry removed (install year left as is)');
+}
+function historyCardHtml(p){
+  const rows=[];
+  Object.keys(COMPONENT_AGES[p.id]||{}).forEach(n=>{
+    const info=getComponentAge(p.id,n);
+    (info&&info.hist||[]).forEach((h,idx)=>rows.push({c:{name:n,label:OTHER_SLOTS.includes(n)?(info.label||n):n},h,idx}));
+  });
+  if(!rows.length)return '';
+  rows.sort((a,b)=>b.h.year-a.h.year);
+  return `<div class="card" style="margin-top:14px"><div class="body">
+    <div class="b" style="margin-bottom:8px">Replacement history</div>
+    <table><thead><tr><th>Year</th><th>Component</th><th>Was installed</th><th class="right">Estimate</th><th class="right">Actual</th><th>Note</th><th></th></tr></thead><tbody>
+    ${rows.map(({c,h,idx})=>`<tr><td class="mono b">${h.year}</td><td>${esc(c.label)}</td><td class="faint mono">${h.prevYear||'—'}</td><td class="right mono">${h.est!=null?money(h.est):'—'}</td><td class="right mono">${h.cost!=null?money(h.cost):'—'}</td><td class="muted" style="font-size:12px">${esc(h.note||'')}${h.ticket?` <span class="faint">· ${esc(ticketRefById(h.ticket))}</span>`:''}${h.by?` <span class="faint">· ${esc(h.by)}</span>`:''}</td><td class="right">${ROLE==='admin'?`<a class="faint" style="cursor:pointer;font-size:11.5px" onclick="removeReplacement('${p.id}','${cEsc(c.name)}',${idx})">remove</a>`:''}</td></tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+function fundCardHtml(p){
+  const f=RESERVE_FUND[p.id]||{},ffb=fullyFundedBalance(p),bal=f.balance!=null?Number(f.balance):null;
+  const pc=bal!=null&&ffb>0?Math.round(bal/ffb*100):null;
+  const need=capitalCashFlow([p],10).levelNeeded;
+  const ed=ROLE==='admin';
+  const inp=(field,val,ph)=>ed?`<input type="text" inputmode="decimal" value="${val!=null?val:''}" placeholder="${ph}" style="width:120px;font-size:13px;text-align:right" onchange="setReserveFundField('${p.id}','${field}',this.value)">`:`<span class="mono b">${val!=null?money(val):'—'}</span>`;
+  return `<div class="card" style="margin-bottom:14px"><div class="body" style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end">
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px">Reserve balance</div>${inp('balance',bal,'$ set aside')}${f.asOf?`<div class="faint" style="font-size:10.5px;margin-top:3px">as of ${fdate(new Date(f.asOf+'T00:00:00'))}</div>`:''}</div>
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px">Planned contribution / yr</div>${inp('contrib',f.contrib!=null?Number(f.contrib):null,'$ per year')}</div>
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px">Fully funded balance</div><div class="mono b" style="font-size:15px">${money(Math.round(ffb))}</div></div>
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px">% funded</div><div class="mono b" style="font-size:15px;color:${pc==null?'var(--ink-400)':pc>=70?'var(--green)':pc>=30?'var(--amber)':'var(--red)'}">${pc==null?'—':pc+'%'}</div></div>
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px">Needed / yr (10-yr cash flow)</div><div class="mono b" style="font-size:15px">${money(Math.round(need))}</div></div>
+    <div class="faint" style="font-size:11px;flex-basis:100%;line-height:1.5">Optional. Enter what's actually set aside for this property's replacements. <i>Fully funded</i> = what would be saved by now if each component had been set aside for evenly since installed. <i>Needed / yr</i> = equal yearly amount that, with the balance, covers every forecast replacement over the next 10 years.</div>
+  </div></div>`;
+}
+function setReserveFundField(pid,field,val){
+  if(!capAdminOnly())return;
+  const f=Object.assign({},RESERVE_FUND[pid]||{});
+  const raw=String(val).replace(/[$,\s]/g,'');
+  if(raw===''){delete f[field];}
+  else{const n=Number(raw);if(isNaN(n)||n<0){toast('Enter a dollar amount');rerenderComponents(pid);return;}f[field]=n;}
+  if(field==='balance')f.asOf=toISODate(new Date());
+  if(!f.since&&(f.balance!=null||f.contrib!=null))f.since=new Date(today).getFullYear(); // reserve tracking starts (used to credit savings)
+  if(f.balance==null&&f.contrib==null){delete RESERVE_FUND[pid];}else RESERVE_FUND[pid]=f;
+  saveState();
+  if(SUPA_CONFIGURED)dbUpsertReferenceList('RESERVE_FUND:'+pid,RESERVE_FUND[pid]||{});
+  rerenderComponents(pid);
+}
+/* Demo mode only (no Supabase): sample install years, conditions, a replacement and fund balances
+   so the capital planning screens have something to show. Never runs against real data. */
+function seedDemoCapitalData(){
+  if(SUPA_CONFIGURED)return;
+  if(Object.keys(COMPONENT_AGES).some(k=>Object.keys(COMPONENT_AGES[k]||{}).length))return;
+  const y=capYearNow();
+  const S={
+    p3:{'Roof':{year:y-22,actual:true,cond:'Poor'},'HVAC (central heat & AC)':{year:y-12},'Water heater':{year:y-11},'Refrigerator':{year:y-6},'Gas/electric range':{year:y-6},'Dishwasher':{year:y-14},'Washing machine':{year:y-4},'Dryer':{year:y-4},'Carpeting (1200 sq ft)':{year:y-9},'Microwave':{unk:true},'Other 1':{label:'Deck',life:20,cost:9000,year:y-16}},
+    p5:{'Roof':{year:y-8},'Furnace (central heat)':{year:y-17,cond:'Fair'},'Air conditioner (central AC)':{year:y-17},'Water heater':{year:y-1,actual:true,hist:[{year:y-1,cost:2150,est:1800,prevYear:y-14,note:'Replaced after leak',recorded:(y-1)+'-06-12'}]},'Refrigerator':{year:y-3},'Oven':{year:y-10},'Dishwasher':{year:y-10},'Microwave':{year:y-7},'Washing machine':{unk:true},'Dryer':{unk:true}},
+    p6:{'Roof':{year:y-26,cond:'Failing'},'HVAC (central heat & AC)':{year:y-19},'Water heater':{year:y-9},'Refrigerator':{year:y-12},'Gas/electric range':{year:y-12},'Dishwasher':{year:y-5},'Carpeting (1200 sq ft)':{year:y-14},'Washing machine':{year:y-2},'Dryer':{year:y-2}},
+    p7:{'Roof':{year:y-5,actual:true},'Ductless mini-splits (3)':{year:y-5,actual:true},'Water heater':{year:y-5},'Refrigerator':{year:y-5},'Gas/electric range':{year:y-5},'Dishwasher':{year:y-5},'Microwave':{year:y-5},'Washing machine':{year:y-5},'Dryer':{year:y-5}},
+    p8:{'Roof':{year:y-15},'HVAC (central heat & AC)':{year:y-21},'Water heater':{year:y-13},'Refrigerator':{year:y-8},'Oven':{year:y-8},'Carpeting (1200 sq ft)':{year:y-11},'Other 1':{label:'Fence',life:15,cost:5500,year:y-13}},
+    p9:{'Roof':{unk:true},'HVAC (central heat & AC)':{unk:true},'Water heater':{year:y-4}},
+    p11:{'Roof':{year:y-18},'Furnace (central heat)':{year:y-9},'Air conditioner (central AC)':{year:y-9},'Water heater':{year:y-12,cond:'Poor'},'Refrigerator':{year:y-10},'Gas/electric range':{year:y-15},'Dishwasher':{year:y-8},'Washing machine':{year:y-6},'Dryer':{year:y-6},'Generator':{year:y-3}},
+    p12:{'Roof':{year:y-11},'HVAC (central heat & AC)':{year:y-7},'Water heater':{year:y-7},'Refrigerator':{year:y-2},'Gas/electric range':{year:y-2},'Dishwasher':{year:y-2},'Microwave':{year:y-2},'Carpeting (1200 sq ft)':{year:y-2}},
+    p1:{'Refrigerator':{year:y-9},'Washing machine':{year:y-12},'Dryer':{year:y-12}},
   };
-  Object.keys(LIFE_TABLE).forEach(n=>tally(componentReserveCalc(n,getComponentAge(p.id,n))));
-  OTHER_SLOTS.forEach(n=>{const info=getComponentAge(p.id,n);tally(componentReserveCalc(n,info,otherOvr(info)));});
-  return {total,overdueN,agingN};
+  Object.keys(S).forEach(pid=>{if(propById(pid)){COMPONENT_AGES[pid]={};Object.keys(S[pid]).forEach(n=>{if(LIFE_TABLE[n]||OTHER_SLOTS.includes(n))COMPONENT_AGES[pid][n]=S[pid][n];});}});
+  const asOf=toISODate(new Date());
+  RESERVE_FUND={p3:{balance:18000,contrib:6000,asOf},p5:{balance:9500,contrib:4000,asOf},p6:{balance:4000,contrib:3000,asOf},p11:{balance:12000,asOf}};
+  Object.values(RESERVE_FUND).forEach(f=>{f.since=y;});
 }
 let ASSUMPTIONS_TAB='capitalreserves';
 // Additional dropdown lists documented in Scope v0.7 that aren't wired to a live field yet
@@ -3629,7 +4105,7 @@ const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Re
 // capitalReserveInflationPct are captured here so the numbers live in one place and are
 // ready to wire up once Valuation Tracking (§4.5) and inflation-adjusted forecasting
 // (§4.8) get built, but they don't drive any calculation yet. Each section says which is which.
-let ASSUMPTIONS={complianceExpiringDays:90,valuationVariancePct:10,capitalReserveInflationPct:3,sessionTimeoutAdminMin:15,sessionTimeoutOfficeMin:45,sessionTimeoutCaregiverMin:240};
+let ASSUMPTIONS={complianceExpiringDays:90,valuationVariancePct:10,capitalReserveInflationPct:3,costPriceYear:2026,conditionPoorYears:2,conditionFailingYears:0,sessionTimeoutAdminMin:15,sessionTimeoutOfficeMin:45,sessionTimeoutCaregiverMin:240};
 function renderAssumptions(el){
   const tabsHtml=`<div class="tabs">${ASSUMPTIONS_SECTIONS.map(s=>`<button class="tab ${ASSUMPTIONS_TAB===s.id?'active':''}" onclick="ASSUMPTIONS_TAB='${s.id}';renderAssumptions(document.getElementById('view'))">${s.ic} ${s.label}</button>`).join('')}</div>`;
   const body={capitalreserves:capitalReservesSection,valuation:valuationSection,complianceReminders:complianceRemindersSection,reportsAccess:reportsAccessSection,sessionTimeouts:sessionTimeoutsSection,referenceLists:referenceListsSection,financeMapping:financeMappingSection}[ASSUMPTIONS_TAB]?.() || '<div class="card"><div class="body muted">Section coming soon.</div></div>';
@@ -3649,21 +4125,26 @@ function capitalReservesSection(){
   return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">These are the portfolio-wide average lifespan and replacement cost assumptions used on every property's Components tab (Scope §4.8). Edit any value below — changes are saved for your whole team, Senior Admin only.</div>
   <div class="card" style="margin-bottom:12px"><table><thead><tr><th>Assumption</th><th>Value</th></tr></thead><tbody>
   <tr><td class="b">Annual inflation adjustment</td><td><input type="number" min="0" step="0.5" value="${ASSUMPTIONS.capitalReserveInflationPct}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('capitalReserveInflationPct',this.value)"> %</td></tr>
+  <tr><td class="b">Costs below are prices as of<div class="faint" style="font-size:11px;font-weight:400;margin-top:2px">Change this when you refresh the costs (e.g. to 2031), so inflation isn't counted twice.</div></td><td><input type="number" min="1990" max="2200" step="1" value="${capPriceYear()}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('costPriceYear',this.value)"> (year)</td></tr>
+  <tr><td class="b">Condition <span class="badge b-progress" style="margin-left:4px"><span class="dot"></span>Poor</span> — replace within</td><td><input type="number" min="0" step="1" value="${ASSUMPTIONS.conditionPoorYears}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('conditionPoorYears',this.value)"> years</td></tr>
+  <tr><td class="b">Condition <span class="badge b-red" style="margin-left:4px"><span class="dot"></span>Failing</span> — replace within</td><td><input type="number" min="0" step="1" value="${ASSUMPTIONS.conditionFailingYears}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('conditionFailingYears',this.value)"> years <span class="faint" style="font-size:11.5px">(0 = this year)</span></td></tr>
   </tbody></table></div>
   <div class="card" style="margin-bottom:12px"><div class="body">
     <div class="b" style="margin-bottom:8px">How the reserve numbers are calculated</div>
     <div class="muted" style="font-size:12.5px;line-height:1.6">
-      Each row below is a portfolio-wide default — expected life and today's replacement cost for that type of component. Properties &gt; Components uses these, plus an install year you enter per property, to work out that property's own numbers:
+      Each row below is a portfolio-wide default — expected life and replacement cost for that type of component, at prices as of the year set above. Properties &gt; Components uses these, plus an install year you enter per property, to work out that property's own numbers:
       <ol style="margin:8px 0 8px 18px;padding:0">
-        <li style="margin-bottom:6px"><b>Expected replacement year</b> = install year + the expected life from the Life of Appliances table below.</li>
-        <li style="margin-bottom:6px"><b>Inflation-adjusted cost</b> — today's replacement cost from the table below is escalated at the inflation rate above, compounded out to that expected replacement year. Once a component runs past its expected life without being replaced, the same rate keeps compounding for however many years it's now overdue instead — so the estimate keeps rising the longer replacement is delayed, rather than freezing at the original figure.</li>
-        <li style="margin-bottom:6px"><b>Annual reserve</b> = inflation-adjusted cost ÷ years actually remaining before it's due (not the full expected life). The calculation always assumes <b>nothing has been set aside yet</b> — it spreads the entire cost over the years still ahead. A component with 20 years left gets a small, gentle figure; the same component with 1 year left gets a much larger one. Once a component is overdue, the figure is simply the full inflated replacement cost, since it could be needed at any time.</li>
-        <li>Without a year installed, a component is treated as not applicable at that property (e.g. no furnace when there's a heat pump) — it gets no reserve, no flag, and is left out of the totals. Each property also has two <b>Other</b> rows for items outside this table (e.g. a deck), with their own expected life and replacement cost.</li>
+        <li style="margin-bottom:6px"><b>Expected replacement year</b> = install year + the expected life from the table below (sooner if the component is rated Poor or Failing — see the condition rule).</li>
+        <li style="margin-bottom:6px"><b>Cost when due</b> = the table cost grown at the inflation rate above, from the price year to the replacement year. A component still in service past its expected life is priced at this year's cost, so its cost keeps rising every year replacement is put off.</li>
+        <li style="margin-bottom:6px"><b>Already saved</b> — the reserve balance entered on a property's Components tab is credited to that property's components: first in proportion to how far along each one's saving period is (from when reserve tracking started for the property, or from the install year if later), then any extra to the components due soonest. With no balance entered, nothing is assumed saved.</li>
+        <li style="margin-bottom:6px"><b>Annual reserve</b> = (cost when due − already saved) ÷ years left before it's due. It stays level while you save for an item and resets when the item is replaced (use <b>Replaced…</b>). Anything due now or overdue needs its whole remaining gap this year.</li>
+        <li style="margin-bottom:6px"><b>Condition rating</b> (optional, per component) — <b>Poor</b> or <b>Failing</b> moves the expected replacement year earlier, to within the number of years set above, when that is sooner than its age alone suggests. Excellent, Good and Fair don't change the date.</li>
+        <li>Without a year installed, a component is treated as not applicable at that property (e.g. no furnace when there's a heat pump) — it gets no reserve, no flag, and is left out of the totals. Mark it <b>Age unknown</b> instead if it is there but the year isn't known. Each property also has two <b>Other</b> rows for items outside this table (e.g. a deck), with their own expected life and replacement cost.</li>
       </ol>
-      <b>What happens when you change a value below.</b> Every figure is recalculated from scratch each time, using only the current life, cost and inflation rate plus the years remaining. Nothing records what the recommendation used to be or how much you have actually reserved. So if you raise a cost (say HVAC by $2,000), the extra amount (inflated) is spread across the years <i>still remaining</i> and each property's annual reserve rises from now on. Past years are never restated or re-charged, and there is no separate "catch-up" amount. Because money already set aside is not credited, the annual figure is accurate for a component with nothing saved and overstates the need for one you have been funding. This is a forward-looking planning estimate, not a running reserve balance.
+      <b>Keeping it accurate.</b> Update each property's reserve balance when it changes — recording a replacement with <b>Replaced…</b> can lower it for you. If you correct a cost or a life, the difference is spread over the years still left before that item is due: past set-asides are never restated, and everything is back on track by the due date. When you refresh the whole table with new prices, change the price year above to the year of those prices.
     </div>
   </div></div>
-  <div class="card"><table><thead><tr><th>Component</th><th>Avg. life (years)</th><th>Replacement cost (parts &amp; labor, today's dollars)</th></tr></thead><tbody>
+  <div class="card"><table><thead><tr><th>Component</th><th>Avg. life (years)</th><th>Replacement cost (parts &amp; labor, ${capPriceYear()} prices)</th></tr></thead><tbody>
   ${names.map(n=>{const [life,cost]=LIFE_TABLE[n];return `<tr><td class="b">${n}</td><td><input type="number" min="0" step="1" value="${life}" style="width:90px;font-size:13px" onchange="updateLifeTable('${n}',0,this.value)"></td><td><input type="number" min="0" step="50" value="${cost}" style="width:130px;font-size:13px;text-align:right" onchange="updateLifeTable('${n}',1,this.value)"></td></tr>`;}).join('')}
   </tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:10px">Maps to Scope §4.8 Life of Appliances reference table. Per-property reserve detail: Properties → a property → Components. Portfolio rollup: Finance → Capital Reserves.</div>`;
@@ -3957,13 +4438,14 @@ function propComponents(p){
   const names=Object.keys(LIFE_TABLE);
   const yearNow=new Date(today).getFullYear();
   const summary=propertyReserveSummary(p);
+  const alloc=reserveAllocation(p);
   let totalCost=0;
   const esc2=s=>String(s).replace(/'/g,"\\'");
   const yearCell=(n,info,r,isOther)=>{
     const ph=isOther?`e.g. ${yearNow-5}`:`e.g. ${yearNow-Math.round(r.life/2)}`;
     return `<td>
         <input type="number" inputmode="numeric" min="1900" max="${yearNow}" value="${info&&info.year?info.year:''}" placeholder="${ph}" style="width:100px;font-size:12.5px" title="Year installed — exact if known, or an estimate from the purchase inspection report. Leave blank if this item doesn't exist at this property." onchange="setComponentAgeYear('${p.id}','${esc2(n)}',this.value)">
-        ${info&&info.year?`<select style="width:100px;font-size:10.5px;margin-top:3px;color:var(--ink-500)" onchange="setComponentAgeSource('${p.id}','${esc2(n)}',this.value)" title="Is this year from an actual record (invoice/receipt), or an estimate?"><option value="estimated"${!info.actual?' selected':''}>Estimated</option><option value="actual"${info.actual?' selected':''}>Actual</option></select>`:''}
+        ${info&&info.year?`<select style="width:100px;font-size:10.5px;margin-top:3px;color:var(--ink-500)" onchange="setComponentAgeSource('${p.id}','${esc2(n)}',this.value)" title="Is this year from an actual record (invoice/receipt), or an estimate?"><option value="estimated"${!info.actual?' selected':''}>Estimated</option><option value="actual"${info.actual?' selected':''}>Actual</option></select>${ROLE==='admin'?`<div style="margin-top:5px">${replAction(p.id,n,info)}</div>`:''}`:presenceChip(p.id,n,info)}
       </td>`;
   };
   const statusOf=r=>{
@@ -3972,25 +4454,27 @@ function propComponents(p){
     if(r.statusKey==='healthy')return '<span class="badge b-resolved"><span class="dot"></span>Healthy</span>';
     return '<span class="faint">—</span>';
   };
-  const remainingOf=r=>r.remaining==null?'<span class="faint">—</span>':(r.remaining>=0?`${r.remaining} yr`:`<span style="color:var(--red);font-weight:700">${r.overdueYears} yr overdue</span>`);
+  const remainingOf=r=>r.remaining==null?'<span class="faint">—</span>':(r.remaining>=0?`${r.remaining} yr${r.condCapped?'<div class="faint" style="font-size:10.5px">set by condition</div>':''}`:`<span style="color:var(--red);font-weight:700">${r.overdueYears} yr overdue</span>`);
   const costOf=r=>{
     if(r.inflatedCost==null)return '<span class="faint">—</span>';
-    return Math.round(r.inflatedCost)!==r.cost?`${money(Math.round(r.inflatedCost))}<div class="faint" style="font-size:10.5px">today: ${money(r.cost)}</div>`:money(r.cost);
+    return Math.round(r.inflatedCost)!==r.cost?`${money(Math.round(r.inflatedCost))}<div class="faint" style="font-size:10.5px">${capPriceYear()} price: ${money(r.cost)}</div>`:money(r.cost);
   };
+  const reserveOfN=(n,r)=>{const a=alloc.get(n);if(r.annualReserve==null||!a)return '<span class="faint">—</span>';return `${money(Math.round(a.annual))}/yr${a.alloc>=0.5?`<div class="faint" style="font-size:10.5px">saved ${money(Math.round(a.alloc))}</div>`:''}`;};
   const reserveOf=r=>(r.annualReserve==null?'<span class="faint">—</span>':`${money(Math.round(r.annualReserve))}/yr`);
   const stdRows=names.map(n=>{
     const info=getComponentAge(p.id,n);
     const r=componentReserveCalc(n,info);
     if(r.inflatedCost!=null)totalCost+=r.inflatedCost;
     return `<tr>
-      <td class="b">${esc(n)}</td>
+      <td class="b">${esc(n)}${lastReplacedNote(info)}</td>
       ${yearCell(n,info,r,false)}
       <td class="mono">${r.ageYears!=null?r.ageYears+' yr':'<span class="faint">—</span>'}</td>
       <td class="muted mono">${r.life} yr</td>
       <td class="mono">${remainingOf(r)}</td>
+      <td>${condCell(p.id,n,info)}</td>
       <td>${statusOf(r)}</td>
       <td class="right mono">${costOf(r)}</td>
-      <td class="right mono">${reserveOf(r)}</td>
+      <td class="right mono">${reserveOfN(n,r)}</td>
     </tr>`;
   }).join('');
   const otherRows=OTHER_SLOTS.map(n=>{
@@ -3999,31 +4483,33 @@ function propComponents(p){
     if(r.inflatedCost!=null)totalCost+=r.inflatedCost;
     const costInput=`<input type="number" inputmode="decimal" min="0" value="${info.cost||''}" placeholder="today's $" style="width:100px;font-size:12.5px;text-align:right" title="Today's replacement cost for this item at this property" onchange="setOtherField('${p.id}','${n}','cost',this.value)">${r.inflatedCost!=null&&Math.round(r.inflatedCost)!==r.cost?`<div class="mono" style="font-size:12px;margin-top:3px">${money(Math.round(r.inflatedCost))}<span class="faint" style="font-size:10.5px"> inflated</span></div>`:''}`;
     return `<tr>
-      <td><span class="badge b-closed" style="margin-bottom:4px">Other</span><input type="text" value="${esc(info.label||'')}" placeholder="Name, e.g. Deck" style="width:130px;font-size:12.5px;display:block" onchange="setOtherField('${p.id}','${n}','label',this.value)"></td>
+      <td><span class="badge b-closed" style="margin-bottom:4px">Other</span><input type="text" value="${esc(info.label||'')}" placeholder="Name, e.g. Deck" style="width:130px;font-size:12.5px;display:block" onchange="setOtherField('${p.id}','${n}','label',this.value)">${lastReplacedNote(info)}</td>
       ${yearCell(n,info,r,true)}
       <td class="mono">${r.ageYears!=null?r.ageYears+' yr':'<span class="faint">—</span>'}</td>
       <td><input type="number" inputmode="numeric" min="1" value="${info.life||''}" placeholder="yrs" style="width:70px;font-size:12.5px" title="Expected life in years for this item" onchange="setOtherField('${p.id}','${n}','life',this.value)"></td>
       <td class="mono">${remainingOf(r)}</td>
+      <td>${condCell(p.id,n,info)}</td>
       <td>${statusOf(r)}</td>
       <td class="right mono">${costInput}</td>
-      <td class="right mono">${reserveOf(r)}</td>
+      <td class="right mono">${reserveOfN(n,r)}</td>
     </tr>`;
   }).join('');
   return `<div class="card" style="margin-bottom:14px"><div class="body mrow" style="flex-wrap:wrap;gap:12px">
-    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em">Recommended annual reserve</div><div style="font-size:22px;font-weight:800">${money(Math.round(summary.total))}/yr</div><div class="faint" style="font-size:11px;margin-top:2px">Components with a year installed (incl. ${ASSUMPTIONS.capitalReserveInflationPct}%/yr inflation)</div></div>
+    <div><div class="faint" style="font-size:11px;text-transform:uppercase;letter-spacing:.03em">Recommended annual reserve</div><div style="font-size:22px;font-weight:800">${money(Math.round(summary.total))}/yr</div><div class="faint" style="font-size:11px;margin-top:2px">Components with a year installed, after crediting the reserve balance below (incl. ${ASSUMPTIONS.capitalReserveInflationPct}%/yr inflation)</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;align-items:flex-start">
       ${summary.overdueN?`<span class="badge b-red"><span class="dot"></span>${summary.overdueN} overdue</span>`:''}
       ${summary.agingN?`<span class="badge b-progress"><span class="dot"></span>${summary.agingN} plan ahead</span>`:''}
     </div>
   </div></div>
-  <div class="card" style="overflow-x:auto"><table style="min-width:820px"><thead><tr><th>Component</th><th>Year installed</th><th>Age</th><th>Expected life</th><th>Remaining</th><th>Status</th><th class="right">Replacement cost</th><th class="right">Annual reserve</th></tr></thead><tbody>${stdRows}${otherRows}</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)"><td colspan="6" style="text-align:right">Total</td><td class="right mono">${money(Math.round(totalCost))}</td><td class="right mono">${money(Math.round(summary.total))}/yr</td></tr></tfoot></table></div>
+  ${fundCardHtml(p)}${replacementFormHtml(p)}
+  <div class="card" style="overflow-x:auto"><table style="min-width:940px"><thead><tr><th>Component</th><th>Year installed</th><th>Age</th><th>Expected life</th><th>Remaining</th><th>Condition</th><th>Status</th><th class="right">Replacement cost</th><th class="right">Annual reserve</th></tr></thead><tbody>${stdRows}${otherRows}</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)"><td colspan="7" style="text-align:right">Total</td><td class="right mono">${money(Math.round(totalCost))}</td><td class="right mono">${money(Math.round(summary.total))}/yr</td></tr></tfoot></table></div>${historyCardHtml(p)}
   <div class="card" style="margin-top:14px"><div class="body">
     <div class="kv">
       <div class="k">Comments <span class="faint" style="font-size:10.5px;font-weight:400">👥 Visible to other users</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update comments…" onchange="updatePropField('${p.id}','comments',this.value)">${esc(p.comments||'')}</textarea></div>
       <div class="k">User Notes <span class="faint" style="font-size:10.5px;font-weight:400">🔒 Private — only you</span></div><div><textarea style="width:100%;min-height:50px" placeholder="add / update notes…" onchange="updatePropField('${p.id}','userNotes',this.value)">${esc(p.userNotes||'')}</textarea></div>
     </div>
   </div></div>
-  <div class="muted" style="font-size:12px;margin-top:8px">Reserve = inflation-adjusted replacement cost ÷ years remaining before it's due (full inflated cost once overdue) — this rises as a component gets closer to end of life, since a purchased property's components start at whatever age they're already at, with nothing assumed saved for them yet. <b>Leave Year installed blank if the item doesn't exist at this property</b> (e.g. no furnace when there's a heat pump) — it's ignored: no reserve, no flag, and left out of the totals. Enter a year (exact, or an estimate from the purchase inspection report; tag it Actual once you have a real record) to include it. Use the <b>Other</b> rows for anything not in the standard list (e.g. a deck): type a name, then this property's own expected life and today's replacement cost. Standard expected life &amp; cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves.</div>`;
+  <div class="muted" style="font-size:12px;margin-top:8px">Annual reserve = (cost when due − amount already saved for it) ÷ years left; anything due now or overdue needs its whole remaining gap this year. "Already saved" is this property's reserve balance (box above), credited to its components — see Assumptions → Capital Reserves. With no balance entered, nothing is assumed saved. <b>Leave Year installed blank if the item doesn't exist at this property</b> (e.g. no furnace when there's a heat pump) — it's ignored: no reserve, no flag, and left out of the totals. If it <i>is</i> there but you don't know the year, click its <b>Not at property</b> tag to switch it to <b>Age unknown</b>, so reports flag it as missing data. <b>Condition</b>: Poor/Failing pull the replacement date forward. <b>Replaced…</b> records a replacement (actual cost, optional ticket), resets the install year and keeps the history. Enter a year (exact, or an estimate from the purchase inspection report; tag it Actual once you have a real record) to include it. Use the <b>Other</b> rows for anything not in the standard list (e.g. a deck): type a name, then this property's own expected life and today's replacement cost. Standard expected life &amp; cost per Scope §4.8 Life of Appliances reference table (Senior Admin editable in Assumptions); inflation rate from Assumptions → Capital reserves.</div>`;
 }
 /* Merge a patch into one component's saved record; undefined/''/false values are dropped, and an
    empty record is removed entirely so nothing stale lingers. */
@@ -4047,7 +4533,7 @@ function setComponentAgeYear(pid,name,val){
   const yearNow=new Date(today).getFullYear();
   if(isNaN(y)||y<1900||y>yearNow){toast('Enter a valid year (1900–'+yearNow+')');document.getElementById('propTabBody').innerHTML=propComponents(p);return;}
   const existing=getComponentAge(pid,name);
-  patchComponent(pid,name,{year:y,actual:existing?!!existing.actual:false});
+  patchComponent(pid,name,{year:y,actual:existing?!!existing.actual:false,unk:undefined});
 }
 function setComponentAgeSource(pid,name,val){
   const existing=getComponentAge(pid,name);
@@ -4076,21 +4562,25 @@ function renderReserves(el){
     return {p,s};
   });
   el.innerHTML=`${pageHeader('reserves')}
+  ${ROLE==='admin'?`<div style="display:flex;justify-content:flex-end;margin:-4px 0 10px"><button class="btn sec sm" onclick="REPTAB='capital';navigate('reports')">📊 Open capital planning report — forecast, coming due, funding</button></div>`:''}
   <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
     <div class="kpi"><div class="lab">Portfolio annual reserve</div><div class="val">${money(Math.round(portfolioTotal))}</div></div>
     <div class="kpi ${portfolioOverdue?'red':'green'}"><div class="lab">Components overdue</div><div class="val">${portfolioOverdue}</div></div>
     <div class="kpi ${portfolioAging?'amber':'green'}"><div class="lab">Plan ahead soon</div><div class="val">${portfolioAging}</div></div>
   </div>
-  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="right">Annual reserve</th><th>Overdue</th><th>Plan ahead</th></tr></thead><tbody>
+  <div class="card" style="overflow-x:auto"><table><thead><tr><th>Property</th><th class="right">Annual reserve</th><th>Overdue</th><th>Plan ahead</th><th>Next replacement · cost</th><th class="right">% funded</th></tr></thead><tbody>
   ${rows.map(({p,s})=>`<tr class="clickable" onclick="openReservesProperty('${p.id}')">
     <td class="b">${esc(p.name)}</td>
     <td class="right mono">${money(Math.round(s.total))}/yr</td>
     <td>${s.overdueN?`<span class="badge b-red"><span class="dot"></span>${s.overdueN}</span>`:'<span class="faint">—</span>'}</td>
     <td>${s.agingN?`<span class="badge b-progress"><span class="dot"></span>${s.agingN}</span>`:'<span class="faint">—</span>'}</td>
+    <td>${(()=>{const nx=propertyComponents(p).filter(c=>c.r.dueYear!=null).sort((a,b)=>(a.r.dueYear-b.r.dueYear)||(b.r.inflatedCost-a.r.inflatedCost))[0];return nx?`<span class="mono">${nx.r.statusKey==='overdue'?'<span style="color:var(--red)">Overdue</span>':nx.r.dueYear}</span> <span class="muted" style="font-size:12px">${esc(nx.label)} · ${money(Math.round(nx.r.inflatedCost))}</span>`:'<span class="faint">—</span>';})()}</td>
+    <td class="right mono">${(()=>{const f=RESERVE_FUND[p.id];if(!f||f.balance==null)return '<span class="faint">—</span>';const ffb=fullyFundedBalance(p);return ffb>0?Math.round(f.balance/ffb*100)+'%':'—';})()}</td>
   </tr>`).join('')}
   </tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:8px">Per-component detail — including which items are overdue and editable install years (leave blank for items that don't exist at a property) — lives on each property's Components tab. Click a row to jump there.</div>
-  ${soldExcluded.length?`<div class="muted" style="font-size:12px;margin-top:6px">${soldExcluded.length} sold propert${soldExcluded.length===1?'y':'ies'} excluded from the reserve forecast above — no longer accruing cash-flow need. Component history is still on each property's own Components tab.</div>`:''}`;
+  ${soldExcluded.length?`<div class="muted" style="font-size:12px;margin-top:6px">${soldExcluded.length} sold propert${soldExcluded.length===1?'y':'ies'} excluded from the reserve forecast above — no longer accruing cash-flow need. Component history is still on each property's own Components tab.</div>`:''}
+  ${capitalMethodologyHtml()}`;
 }
 function openReservesProperty(id){
   navigate('properties');
@@ -4853,8 +5343,11 @@ function reportExportSpec(tab){
   if(tab==='financial')return {filename:'report_financial_loans.csv',rows:PROPS.filter(p=>p.own==='owned'&&(p.loanLender||p.loanRemaining!=null)),columns:[
     {label:'Property',key:'name'},{label:'Lender',key:'loanLender'},{label:'Balance',key:'loanRemaining'},
     {label:'Payment',key:'loanPayment'},{label:'Maturity',key:'loanMaturity'}]};
-  if(tab==='capital')return {filename:'report_capital_life_of_appliances.csv',rows:Object.keys(LIFE_TABLE).map(n=>({n,life:LIFE_TABLE[n][0],cost:LIFE_TABLE[n][1]})),columns:[
-    {label:'Component',key:'n'},{label:'Avg lifespan (yrs)',key:'life'},{label:'Replacement cost',key:'cost'}]};
+  if(tab==='capital')return {filename:`report_capital_forecast_${CAP_H}yr.csv`,rows:capitalForecast(capitalProps(CAP_OWN),CAP_H).sort((a,b)=>(a.year-b.year)||a.p.name.localeCompare(b.p.name)),columns:[
+    {label:'Year',get:i=>i.year},{label:'Property',get:i=>i.p.name},{label:'Owned/Leased',get:i=>i.p.own},{label:'Component',get:i=>i.c.label},
+    {label:'Type',get:i=>i.kind==='overdue'?'Overdue':i.kind==='repeat'?'Repeat replacement':'Scheduled'},
+    {label:'Install year',get:i=>(i.c.info&&i.c.info.year)||''},{label:'Expected life',get:i=>i.c.r.life},{label:'Condition',get:i=>(i.c.info&&i.c.info.cond)||''},
+    {label:'Estimated cost',get:i=>Math.round(i.cost)}]};
   return {filename:'report_executive_properties.csv',rows:PROPS,columns:[
     {label:'Name',key:'name'},{label:'Status',key:'status'},{label:'Health',key:'health'},{label:'Metro',key:'metro'}]};
 }
@@ -4867,8 +5360,130 @@ function reportExportSpec(tab){
    the tab), reportBody() (so directly setting REPTAB can't render restricted content either),
    and exportCurrentReport() (so the CSV export button can't be used on a restricted tab). */
 const REPORTS_ADMIN_ONLY=['financial','capital','executive'];
+/* ===== Reports → Capital planning: download the WHOLE report (Nov 18 2026) =====
+   Every section on screen, with the same filters (horizon, properties, coming-due window):
+   CSV = sections one under another; Excel = one sheet per section; PDF = chart + every table. */
+function capitalReportSections(){
+  const y0=capYearNow(),H=CAP_H,props=capitalProps(CAP_OWN),items=capitalForecast(props,H);
+  const years=Array.from({length:H},(_,k)=>y0+k),R=v=>Math.round(v||0),sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
+  const plan=capitalPlan(props,H),cf=capitalCashFlow(props,H);
+  const totalSpend=sum(items,i=>i.cost),overdue=items.filter(i=>i.kind==='overdue'),due3=items.filter(i=>i.kind!=='repeat'&&i.year<y0+3);
+  const annualNeed=sum(props,p=>propertyReserveSummary(p).total);
+  const fundProps=props.filter(p=>RESERVE_FUND[p.id]&&(RESERVE_FUND[p.id].balance!=null||RESERVE_FUND[p.id].contrib!=null));
+  const balProps=props.filter(p=>RESERVE_FUND[p.id]&&RESERVE_FUND[p.id].balance!=null);
+  const totalBal=sum(balProps,p=>Number(RESERVE_FUND[p.id].balance)||0);
+  const ffbTotal=sum(balProps,p=>fullyFundedBalance(p));
+  const fundPct=balProps.length&&ffbTotal>0?Math.round(cf.startBalance/ffbTotal*100):null;
+  let known=0,unknown=0;
+  const comp=props.map(p=>{const cs=propertyComponents(p);const k=cs.filter(c=>compPresence(c)==='known').length,u=cs.filter(c=>compPresence(c)==='unknown').length,na=cs.filter(c=>compPresence(c)==='na').length,act=cs.filter(c=>c.info&&c.info.year&&c.info.actual).length;known+=k;unknown+=u;return [p.name,k,act,u,na,!k?'Nothing entered — shows $0':u?'Missing years':'Complete'];}).sort((a,b)=>(a[1]-b[1])||(b[3]-a[3]));
+  const own={all:'All',owned:'Owned',leased:'Leased'}[CAP_OWN]||CAP_OWN;
+  const statusTxt=r=>r.statusKey==='overdue'?'Overdue':r.statusKey==='aging'?'Plan ahead':'Healthy';
+  const S=[];
+  S.push({title:'Summary',sheet:'Summary',cols:['Measure','Value','Note'],money:[1],rows:[
+    ['Report','KodaRE capital planning',''],['Generated',new Date().toLocaleString(),''],
+    ['Horizon',`${H} years (${y0}–${y0+H-1})`,''],['Properties',`${own} — ${props.length} (sold excluded)`,''],
+    ['Inflation',`${ASSUMPTIONS.capitalReserveInflationPct}%/yr from ${capPriceYear()} prices`,''],
+    ['REPLACEMENT COST — money spent','',''],
+    [`Replacement cost — next ${H} yrs`,R(totalSpend),`${items.length} replacements, inflation-adjusted`],
+    ['Replacement cost — average per year',R(totalSpend/H),`over the next ${H} years`],
+    ['Replacement cost — overdue now',R(sum(overdue,i=>i.cost)),`${overdue.length} components past expected life`],
+    ['Replacement cost — next 3 yrs',R(sum(due3,i=>i.cost)),`${due3.length} components incl. overdue`],
+    ['RESERVE — money set aside','',''],
+    ['Annual reserve — this year',R(annualNeed),'to set aside now'],
+    ['Reserve balance — saved today',balProps.length?R(totalBal):'Not tracked',balProps.length?`${balProps.length} properties with a balance entered`:''],
+    ['Reserve funded',fundPct==null?'Not tracked':fundPct+'%',fundPct==null?'':`saved ÷ fully funded (${R(ffbTotal).toLocaleString()})`],
+    ['Properties with install years',`${props.length-comp.filter(r=>r[1]===0).length} of ${props.length}`,`${comp.filter(r=>r[1]===0).length} with none entered (counted as $0) · ${unknown} components marked age unknown`]]});
+  const byProp={};props.forEach(p=>{byProp[p.id]=Array(H).fill(0);});items.forEach(i=>{byProp[i.p.id][i.year-y0]+=i.cost;});
+  const mrows=props.map(p=>({p,vals:byProp[p.id],tot:byProp[p.id].reduce((a,b)=>a+b,0)})).sort((a,b)=>b.tot-a.tot)
+    .map(r=>[r.p.name+(r.p.own==='leased'?' (leased)':''),...r.vals.map(R),R(r.tot)]);
+  mrows.push(['Total replacement cost',...years.map((_,k)=>R(sum(props,p=>byProp[p.id][k]))),R(totalSpend)]);
+  mrows.push(['RESERVE PLAN — money set aside, if each year\'s annual reserve is saved',...years.map(()=>''),'']);
+  mrows.push(['Reserve saved for this year\'s replacements',...plan.map(r=>R(r.savedFor)),R(sum(plan,r=>r.savedFor))]);
+  mrows.push(['Reserve set aside this year (annual reserve)',...plan.map(r=>R(r.setAside)),R(sum(plan,r=>r.setAside))]);
+  mrows.push(['Reserve balance at end of year (accumulated)',...plan.map(r=>R(r.end)),'']);
+  S.push({title:'Replacement cost by property and year, with the reserve plan',sheet:'Replacement cost & reserve',cols:['Property',...years.map(String),'Total'],money:years.map((_,k)=>k+1).concat([H+1]),rows:mrows,wide:true,
+    note:`Reserve plan rows start from the reserve balances entered today (${R(plan.startBalance).toLocaleString()} across ${plan.fundedProps} properties), set aside each year's annual reserve, and pay each replacement in the year it's due.`});
+  const dueRows=items.filter(i=>i.kind!=='repeat'&&i.year<y0+CAP_DUE).sort((a,b)=>((b.kind==='overdue')-(a.kind==='overdue'))||(a.year-b.year)||(b.cost-a.cost));
+  S.push({title:`Coming due — next ${CAP_DUE===1?'year':CAP_DUE+' years'} (replacement cost)`,sheet:'Coming due',cols:['Due','Property','Component','Install year','Age (yrs)','Life (yrs)','Condition','Status','Replacement cost'],money:[8],
+    rows:dueRows.map(i=>[i.kind==='overdue'?'Overdue':i.year,i.p.name,i.c.label,i.c.info.year,i.c.r.ageYears,i.c.r.life,(i.c.info.cond||''),statusTxt(i.c.r),R(i.cost)]).concat(dueRows.length?[['Total','','','','','','','',R(sum(dueRows,i=>i.cost))]]:[])});
+  S.push({title:'Reserve funding by property',sheet:'Reserve funding',cols:['Property','Reserve balance','As of','Reserve set aside / yr (planned)','Fully funded balance','% funded',`Reserve needed / yr to stay positive (${H} yrs)`],money:[1,3,4,6],
+    rows:fundProps.length?fundProps.map(p=>{const f=RESERVE_FUND[p.id],ffb=fullyFundedBalance(p);return [p.name,f.balance!=null?R(f.balance):'',f.asOf||'',f.contrib!=null?R(f.contrib):'',R(ffb),f.balance!=null&&ffb>0?Math.round(f.balance/ffb*100)+'%':'',R(capitalCashFlow([p],H).levelNeeded)];}):[['No reserve balances entered yet','','','','','','']]});
+  S.push({title:'Reserve cash flow (planned contributions)',sheet:'Reserve cash flow',cols:['Year','Reserve balance — start','+ Reserve set aside (planned)','− Replacement cost','Reserve balance — end'],money:[1,2,3,4],
+    rows:cf.hasFund?cf.rows.map(r=>[r.year,R(r.start),R(r.contrib),R(r.spend),R(r.end)]):[['No reserve balances or planned contributions entered yet','','','','']],
+    note:cf.hasFund?`${cf.firstShort?'Runs short in '+cf.firstShort+'. ':'Stays positive for the whole horizon. '}Equal contribution needed to stay above zero: ${R(cf.levelNeeded).toLocaleString()}/yr.`:''});
+  S.push({title:'Data completeness',sheet:'Data completeness',cols:['Property','Year entered','Of which actual','Age unknown','Blank (not at property)','Status'],money:[],rows:comp});
+  const hist=[];PROPS.forEach(p=>Object.keys(COMPONENT_AGES[p.id]||{}).forEach(n=>{const info=getComponentAge(p.id,n);(info&&info.hist||[]).forEach(h=>hist.push([h.year,p.name,OTHER_SLOTS.includes(n)?(info.label||n):n,h.prevYear||'',h.est!=null?R(h.est):'',h.cost!=null?R(h.cost):'',(h.cost!=null&&h.est!=null)?R(h.cost-h.est):'',(h.note||'')+(h.fromFund?' (paid from reserve)':'')]));}));
+  hist.sort((a,b)=>b[0]-a[0]);
+  S.push({title:'Replacement history',sheet:'Replacement history',cols:['Year','Property','Component','Was installed','Replacement cost — estimated','Replacement cost — actual','Difference','Note'],money:[4,5,6],rows:hist.length?hist:[['No replacements recorded yet','','','','','','','']]});
+  S.push({title:`Every forecast replacement — next ${H} years`,sheet:'Forecast detail',cols:['Year','Property','Owned/Leased','Component','Type','Install year','Expected life','Condition','Replacement cost'],money:[8],
+    rows:items.slice().sort((a,b)=>(a.year-b.year)||a.p.name.localeCompare(b.p.name)).map(i=>[i.year,i.p.name,i.p.own,i.c.label,i.kind==='overdue'?'Overdue':i.kind==='repeat'?'Repeat replacement':'Scheduled',i.c.info.year,i.c.r.life,i.c.info.cond||'',R(i.cost)])});
+  S.push({title:'Assumptions used',sheet:'Assumptions',cols:['Component','Avg. life (yrs)',`Replacement cost (${capPriceYear()} prices)`],money:[2],
+    rows:Object.keys(LIFE_TABLE).map(n=>[n,LIFE_TABLE[n][0],LIFE_TABLE[n][1]]).concat([['Inflation per year',`${ASSUMPTIONS.capitalReserveInflationPct}%`,''],['Poor condition — replace within',`${conditionCapYears('Poor')} yrs`,''],['Failing condition — replace within',`${conditionCapYears('Failing')} yrs`,'']])});
+  S.push({title:'How the reserve numbers are calculated',sheet:'Methodology',cols:['#','Item','How it works'],money:[],textWide:true,rows:capitalMethodologyItems().map(([h,t],k)=>[k+1,h,t])});
+  return {sections:S,y0,H};
+}
+function exportCapitalReport(format){
+  const {sections,y0,H}=capitalReportSections();
+  const base=`KodaRE_capital_planning_${y0}-${y0+H-1}`;
+  if(format==='csv'){
+    const out=[];
+    sections.forEach(sec=>{out.push(csvCell(sec.title));out.push(sec.cols.map(csvCell).join(','));sec.rows.forEach(r=>out.push(r.map(csvCell).join(',')));if(sec.note)out.push(csvCell(sec.note));out.push('');});
+    downloadCSV(base+'.csv',out.join('\n'));return;
+  }
+  if(format==='xlsx'){
+    if(typeof XLSX==='undefined'){toast('Excel export failed: spreadsheet library did not load — check your connection and try again');return;}
+    const wb=XLSX.utils.book_new(),used={};
+    sections.forEach(sec=>{
+      const aoa=[[sec.title],[],sec.cols,...sec.rows];if(sec.note)aoa.push([],[sec.note]);
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      sec.rows.forEach((row,ri)=>sec.money.forEach(ci=>{const cell=ws[XLSX.utils.encode_cell({r:ri+3,c:ci})];if(cell&&cell.t==='n')cell.z='$#,##0;-$#,##0;"–"';}));
+      ws['!cols']=sec.cols.map((c,i)=>{let m=String(c).length;sec.rows.forEach(r=>{const l=String(r[i]==null?'':r[i]).length+(sec.money.includes(i)?3:0);if(l>m)m=l;});return {wch:Math.min(Math.max(m+2,i===0?(sec.textWide?4:18):10),sec.textWide&&i===sec.cols.length-1?110:(i===0?48:30))};});
+      let name=sec.sheet.replace(/[\[\]:\\/?*]/g,' ').slice(0,31);while(used[name])name=name.slice(0,29)+'_'+(used[name]++);used[name]=1;
+      XLSX.utils.book_append_sheet(wb,ws,name);
+    });
+    XLSX.writeFile(wb,base+'.xlsx');toast('Downloaded '+base+'.xlsx');return;
+  }
+  if(!window.jspdf){toast('PDF export failed: PDF library did not load — check your connection and try again');return;}
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'letter'});
+  const PW=doc.internal.pageSize.getWidth(),PH=doc.internal.pageSize.getHeight();
+  // The PDF's built-in font only has Latin-1 plus a few typographic marks. One unsupported
+  // character (e.g. an arrow) makes the whole cell render letter-spaced, so map or drop them.
+  const PDF_OK='–—‘’‚“”„•…€™‰‹›ŠšŽžŸŒœƒˆ˜†‡';
+  const pdfTxt=t=>String(t).replace(/−/g,'-').replace(/[→⇒]/g,'>').replace(/←/g,'<').replace(/≤/g,'<=').replace(/≥/g,'>=').replace(/ /g,' ')
+    .replace(/[^\u0000-ÿ]/g,ch=>PDF_OK.includes(ch)?ch:'');
+  doc.setFontSize(15);doc.text('KodaRE — Capital planning report',40,40);
+  doc.setFontSize(9);doc.setTextColor(110);
+  doc.text(pdfTxt(`Generated ${new Date().toLocaleString()} · ${sections[0].rows[2][1]} · ${sections[0].rows[3][1]} · ${sections[0].rows[4][1]}`),40,56);
+  doc.text('Replacement cost = money spent on a replacement in the year it is due (with inflation).  Reserve = money set aside each year, and the balance built up to pay for it.',40,70);
+  doc.setTextColor(0);
+  let y=84;
+  const addChart=()=>{try{ if(typeof CAPCHART!=='undefined'&&CAPCHART){
+      const src=CAPCHART.canvas,c=document.createElement('canvas');c.width=Math.min(src.width,1600);c.height=Math.round(src.height*c.width/src.width);
+      const g=c.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,c.width,c.height);g.drawImage(src,0,0,c.width,c.height);
+      const w=PW-80,h=Math.min(210,w*src.height/src.width);
+      if(y+h+30>PH-30){doc.addPage();y=40;}
+      doc.setFontSize(11);doc.text('Replacement cost by year',40,y+10);doc.addImage(c.toDataURL('image/jpeg',0.85),'JPEG',40,y+16,w,h);y+=h+40;} }catch(e){} };
+  const fmt=(sec,v,ci)=>{if(v==null||v==='')return '';if(sec.money.includes(ci)&&typeof v==='number'){if(Math.round(v)===0)return '–';return v<0?'-'+money(-v):money(v);}return pdfTxt(v);};
+  sections.forEach((sec,si)=>{
+    if(si===1)addChart();
+    const est=(sec.rows.length+1)*(sec.wide?11:sec.textWide?30:15.5)+24;
+    if(y>PH-110||(y+est>PH-40&&est<PH-100)){doc.addPage();y=40;}
+    doc.setFontSize(11);doc.setTextColor(0);doc.text(pdfTxt(sec.title),40,y);
+    doc.autoTable({startY:y+6,head:[sec.cols.map(pdfTxt)],body:sec.rows.map(r=>r.map((v,ci)=>fmt(sec,v,ci))),
+      styles:{fontSize:sec.wide?6.5:8,cellPadding:sec.wide?2.5:3.5,overflow:'linebreak'},headStyles:{fillColor:[30,41,59],fontSize:sec.wide?6.5:8},
+      columnStyles:sec.textWide?{0:{cellWidth:20},1:{cellWidth:130,fontStyle:'bold'}}:Object.fromEntries(sec.money.map(ci=>[ci,{halign:'right'}])),margin:{left:40,right:40},
+      didParseCell:d=>{if(d.section!=='body')return;const first=String(d.row.raw[0]||'');
+        if(/^(Total|REPLACEMENT COST|RESERVE)/.test(first))d.cell.styles.fontStyle='bold';
+        if(/^Reserve (saved|set aside|balance)|^RESERVE PLAN/.test(first)&&sec.wide)d.cell.styles.fillColor=[234,247,238];}});
+    y=doc.lastAutoTable.finalY+(sec.note?14:22);
+    if(sec.note){doc.setFontSize(8);doc.setTextColor(110);const lines=doc.splitTextToSize(pdfTxt(sec.note),PW-80);doc.text(lines,40,y);doc.setTextColor(0);y+=lines.length*10+14;}
+  });
+  doc.save(base+'.pdf');toast('Downloaded '+base+'.pdf');
+}
 function exportCurrentReport(format){
   if(REPORTS_ADMIN_ONLY.includes(REPTAB)&&ROLE!=='admin'){toast('Only Senior Admin can export this report');return;}
+  if(REPTAB==='capital'){exportCapitalReport(format);return;}
   const s=reportExportSpec(REPTAB);
   const labels={operational:'Operational report',maintspend:'Maintenance spend report',compliance:'Compliance report',
     financial:'Financial report',capital:'Capital planning report',executive:'Executive dashboard'};
@@ -4889,6 +5504,7 @@ function renderReports(el){
     </div>`:''}</div>
   <div id="repBody">${reportBody(REPTAB)}</div>`;
   if(REPTAB==='maintspend')renderMaintSpendCharts();
+  if(REPTAB==='capital')renderCapitalCharts();
 }
 function reportBody(tab){
   if(REPORTS_ADMIN_ONLY.includes(tab)&&ROLE!=='admin'){
@@ -4955,11 +5571,7 @@ function reportBody(tab){
     <div class="sectitle">Loans — balance &amp; maturity</div><div class="card"><table><thead><tr><th>Property</th><th>Lender</th><th class="right">Balance</th><th>Maturity</th></tr></thead><tbody>${loaned.map(p=>`<tr class="clickable" onclick="openProperty('${p.id}')"><td class="b">${p.name}</td><td class="muted">${p.loanLender||'—'}</td><td class="right mono">${money(p.loanRemaining)}</td><td class="mono">${p.loanMaturity||'—'}</td></tr>`).join('')||'<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">No loans on file yet — add one from a property\'s Loan tab.</td></tr>'}</tbody></table></div>
     <div class="muted" style="font-size:12px;margin-top:8px">Loan figures above are real, persisted data. Market valuations (AVM/RentCast) aren't built yet — this table reflects loan data only.</div>`;
   }
-  if(tab==='capital'){
-    const names=Object.keys(LIFE_TABLE);
-    return `<div class="sectitle">Life of Appliances — reference assumptions</div><div class="card"><table><thead><tr><th>Component</th><th>Avg. lifespan</th><th class="right">Replacement cost</th></tr></thead><tbody>${names.map(n=>{const [life,cost]=LIFE_TABLE[n];return `<tr><td class="b">${n}</td><td class="mono">${life} yr</td><td class="right mono">${money(cost)}</td></tr>`;}).join('')}</tbody></table></div>
-    <div class="muted" style="font-size:12px;margin-top:8px">Per-property component tracking (actual install dates, real end-of-life flagging, and 5/10-year capital forecasts) isn't built yet — these are portfolio-wide assumptions only (Scope §4.6/§4.9.5), editable by Senior Admin in Assumptions.</div>`;
-  }
+  if(tab==='capital')return capitalReportHtml();
   if(tab==='export'){
     const sets=[
       {kind:'properties',label:'Properties',n:PROPS.length,desc:'Address, ownership, status, metro, loan lender & balance'},
@@ -5925,7 +6537,7 @@ async function mSubmit(){
 
 /* ===== persistence ===== */
 const LSKEY='kodare_proto_v03_r1';
-function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,LIFE_V:2,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES,FINANCE_MAP};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
+function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,LIFE_V:2,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES,RESERVE_FUND,FINANCE_MAP};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
 function mergeById(defaults,saved,idKey){const map={};defaults.forEach(d=>map[d[idKey]]=Object.assign({},d));
   saved.forEach(s=>{const k=s[idKey];if(map[k])Object.assign(map[k],s);else map[k]=s;});
   return Object.values(map);}
@@ -5953,6 +6565,7 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
   // Per-property component install years (Properties > Components reserve tracking) — keyed by
   // property id, so a plain merge is fine; no fixed default keys to protect like LIFE_TABLE above.
   if(s.COMPONENT_AGES)COMPONENT_AGES=Object.assign({},COMPONENT_AGES,s.COMPONENT_AGES);
+  if(s.RESERVE_FUND&&typeof s.RESERVE_FUND==='object')RESERVE_FUND=Object.assign({},RESERVE_FUND,s.RESERVE_FUND);
   migrateComponentNames();
   // Additive merges (same convention as LIFE_TABLE/ASSUMPTIONS above): overlay saved custom
   // values on top of the current hardcoded defaults, never delete a hardcoded default just
@@ -6051,7 +6664,7 @@ async function obCreate(){
 
 /* ===== boot ===== */
 document.getElementById('switch').addEventListener('click',e=>{const b=e.target.closest('button');if(b)setRole(b.dataset.role);});
-loadState();computeHealth();setRole('office');
+loadState();seedDemoCapitalData();computeHealth();setRole('office');
 if(sessionStorage.getItem('koda_idle_signout')){
   sessionStorage.removeItem('koda_idle_signout');
   setTimeout(()=>toast('Signed out due to inactivity — sign back in to continue'),300);
