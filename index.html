@@ -3663,17 +3663,19 @@ function capitalPlan(props,H){
     const f=RESERVE_FUND[p.id]||{},S=Number(f.since)||y0;
     let B=Number(f.balance)||0;startBal+=B;if(f.balance!=null)funded++;
     const st=propertyComponents(p).filter(c=>c.r.dueYear!=null).map(c=>({key:c.name,cost:c.r.cost,life:c.r.life,install:c.info.year,D:c.r.dueYear}));
-    const at=Y=>st.map(x=>({key:x.key,C:costAtYear(x.cost,Math.max(x.D,Y)),D:Math.max(x.D,Y),install:x.install}));
+    const at=Y=>st.map(x=>({key:x.key,C:costAtYear(x.cost,Math.max(x.D,Y)),D:Math.max(x.D,Y),install:x.saveFrom||x.install}));
     for(let k=0;k<H;k++){
       const Y=y0+k,row=rows[k];row.start+=B;
       const due=st.filter(x=>x.D<=Y);
-      let gapDue=0;
+      let gapDue=0;const replaced=new Set(due.map(x=>x.key));
       if(due.length){
         const pre=reserveSplit(at(Y),B,Y,S);
         due.forEach(x=>{const a=pre.get(x.key);row.savedFor+=a.alloc;row.spend+=a.C;gapDue+=Math.max(a.C-a.alloc,0);B-=a.alloc;});
-        due.forEach(x=>{x.install=Y;x.D=Y+x.life;});
+        due.forEach(x=>{x.install=Y;x.saveFrom=Y+1;x.D=Y+x.life;});
       }
-      let rest=0;const post=reserveSplit(at(Y),B,Y,S);post.forEach(a=>{rest+=a.annual;});
+      // Saving for the NEXT replacement of an item replaced this year starts the following year,
+      // so year 1 of the plan equals "Annual reserve · this year" (best practice: one year-1 figure).
+      let rest=0;const post=reserveSplit(at(Y),B,Y,S);post.forEach((a,k)=>{if(!replaced.has(k))rest+=a.annual;});
       B+=rest;
       row.setAside+=gapDue+rest;row.end+=B;
     }
@@ -3731,7 +3733,7 @@ function fullyFundedBalance(p){
   propertyComponents(p).forEach(c=>{
     const r=c.r;if(r.ageYears==null)return;
     const effLife=r.ageYears+Math.max(r.remaining,0);
-    s+=r.cost*(effLife>0?Math.min(Math.max(r.ageYears,0)/effLife,1):1);
+    s+=costAtYear(r.cost,capYearNow())*(effLife>0?Math.min(Math.max(r.ageYears,0)/effLife,1):1); // today's cost
   });
   return s;
 }
@@ -3878,19 +3880,24 @@ function capitalReportHtml(){
 function capitalMethodologyItems(){
   const P=capPriceYear(),i=ASSUMPTIONS.capitalReserveInflationPct,poor=conditionCapYears('Poor'),fail=conditionCapYears('Failing');
   return [
-    ['Replacement year','install year + expected life (Assumptions → Capital Reserves). A Poor condition rating brings it forward to within '+poor+' year'+(poor===1?'':'s')+', and Failing to '+(fail?'within '+fail+' year'+(fail===1?'':'s'):'this year')+' — never later than its age alone suggests.'],
-    ['Replacement cost (money spent)','the table cost, at '+P+' prices, grown at '+i+'% a year to the replacement year. A component still in service past its expected life is priced at the current year\'s cost, so its cost keeps rising each year it is not replaced.'],
-    ['Already saved','the property\'s reserve balance (entered on its Components tab) is credited to its components: first in proportion to how far along each one\'s saving period is (from when reserve tracking started for the property, or the install year if later, to its replacement year), then any extra to the components due soonest. With no balance entered, nothing is assumed saved.'],
-    ['Annual reserve (money set aside)','(replacement cost − already saved) ÷ years left until the replacement year. Anything due now or overdue needs its whole remaining gap this year. The amount stays level while saving for an item and resets when the item is replaced ("Replaced…" on the Components tab).'],
-    ['Reserve plan','assumes each year\'s annual reserve is set aside, starting from the reserve balances entered today; each replacement is paid from the reserve in its replacement year and saving restarts for the next one (a new expected life). "Reserve saved for this year\'s replacements" therefore equals that year\'s replacement cost, except for items already overdue or underfunded.'],
-    ['Fully funded and % funded','fully funded = today\'s cost × the share of each component\'s (condition-adjusted) life already used — what would be saved by now if it had been set aside evenly since installation; % funded = reserve balance ÷ fully funded.'],
-    ['Not included','components with no install year (blank = not at the property; "Age unknown" is flagged in Data completeness but not counted), sold properties, and interest earned on the reserve.']
+    [`Replacement year`,`install year + expected life (Assumptions → Capital Reserves). A Poor condition rating brings it forward to within ${poor} year${poor===1?'':'s'}, and Failing to ${fail?'within '+fail+' year'+(fail===1?'':'s'):'this year'} — never later than its age alone suggests.`],
+    [`Replacement cost (money spent)`,`the table cost at ${P} prices ("Other" rows use the cost and life entered for that property), grown at ${i}% a year to the replacement year. A component still in service past its expected life is priced at the current year's cost, so its cost keeps rising each year it is not replaced. The forecast repeats each replacement every expected life, at that year's cost.`],
+    [`Status`,`Overdue = past its replacement year; Plan ahead = due within 2 years or 20% of its expected life, whichever is longer; Healthy = otherwise.`],
+    [`Already saved`,`the property's reserve balance (entered on its Components tab) is credited to its components: first in proportion to how far along each one's saving period is (from when reserve tracking started for the property, or the install year if later, to its replacement year), then any extra to the components due soonest. With no balance entered, nothing is assumed saved.`],
+    [`Annual reserve (money set aside)`,`(replacement cost − already saved) ÷ years left until the replacement year. Anything due now or overdue needs its whole remaining gap this year, so the money is ready whenever it fails. As long as the reserve balance is kept up to date, the amount stays level while saving for an item and resets when the item is replaced ("Replaced…" on the Components tab). This is "Annual reserve · this year" in the report and the annual reserve on Finance → Capital Reserves.`],
+    [`Reserve plan`,`assumes each year's annual reserve is set aside, starting from the reserve balances entered today. Each replacement is paid from the reserve in its replacement year (items already overdue are shown as paid this year, even if they keep running), and saving for the next one starts the following year — so the plan's first year equals "Annual reserve · this year". "Reserve saved for this year's replacements" equals that year's replacement cost, except where an item is overdue or underfunded; the gap is then set aside in that same year.`],
+    [`Reserve cash flow`,`uses the planned yearly contribution entered for each property, not the annual reserve: balance at start + planned contribution − replacement cost = balance at end. "Reserve needed per year to stay positive" is the smallest equal yearly amount that keeps that combined balance above zero over the horizon.`],
+    [`Fully funded and % funded`,`fully funded = today's cost × the share of each component's (condition-adjusted) life already used — what would be saved by now if it had been set aside evenly since installation; % funded = reserve balance ÷ fully funded.`],
+    [`Not included`,`components with no install year (blank = not at the property; "Age unknown" is flagged in Data completeness but not counted), sold properties, and interest earned on the reserve.`]
   ];
+}
+function capitalMethodologyList(){
+  return `<ol class="muted" style="font-size:12px;line-height:1.6;margin:0 0 0 18px;padding:0">${capitalMethodologyItems().map(([h,t])=>`<li style="margin-bottom:4px"><b>${esc(h)}</b> — ${esc(t)}</li>`).join('')}</ol>`;
 }
 function capitalMethodologyHtml(){
   return `<div class="card" style="margin-top:18px"><div class="body">
     <div class="b" style="margin-bottom:6px">How the reserve numbers are calculated</div>
-    <ol class="muted" style="font-size:12px;line-height:1.6;margin:0 0 0 18px;padding:0">${capitalMethodologyItems().map(([h,t])=>`<li style="margin-bottom:4px"><b>${esc(h)}</b> — ${esc(t)}</li>`).join('')}</ol>
+    ${capitalMethodologyList()}
   </div></div>`;
 }
 function ticketRefById(id){const t=TICKETS.find(x=>x.id===id);return t?ticketRef(t):'ticket';}
@@ -4133,14 +4140,7 @@ function capitalReservesSection(){
     <div class="b" style="margin-bottom:8px">How the reserve numbers are calculated</div>
     <div class="muted" style="font-size:12.5px;line-height:1.6">
       Each row below is a portfolio-wide default — expected life and replacement cost for that type of component, at prices as of the year set above. Properties &gt; Components uses these, plus an install year you enter per property, to work out that property's own numbers:
-      <ol style="margin:8px 0 8px 18px;padding:0">
-        <li style="margin-bottom:6px"><b>Expected replacement year</b> = install year + the expected life from the table below (sooner if the component is rated Poor or Failing — see the condition rule).</li>
-        <li style="margin-bottom:6px"><b>Cost when due</b> = the table cost grown at the inflation rate above, from the price year to the replacement year. A component still in service past its expected life is priced at this year's cost, so its cost keeps rising every year replacement is put off.</li>
-        <li style="margin-bottom:6px"><b>Already saved</b> — the reserve balance entered on a property's Components tab is credited to that property's components: first in proportion to how far along each one's saving period is (from when reserve tracking started for the property, or from the install year if later), then any extra to the components due soonest. With no balance entered, nothing is assumed saved.</li>
-        <li style="margin-bottom:6px"><b>Annual reserve</b> = (cost when due − already saved) ÷ years left before it's due. It stays level while you save for an item and resets when the item is replaced (use <b>Replaced…</b>). Anything due now or overdue needs its whole remaining gap this year.</li>
-        <li style="margin-bottom:6px"><b>Condition rating</b> (optional, per component) — <b>Poor</b> or <b>Failing</b> moves the expected replacement year earlier, to within the number of years set above, when that is sooner than its age alone suggests. Excellent, Good and Fair don't change the date.</li>
-        <li>Without a year installed, a component is treated as not applicable at that property (e.g. no furnace when there's a heat pump) — it gets no reserve, no flag, and is left out of the totals. Mark it <b>Age unknown</b> instead if it is there but the year isn't known. Each property also has two <b>Other</b> rows for items outside this table (e.g. a deck), with their own expected life and replacement cost.</li>
-      </ol>
+      <div style="margin:8px 0">${capitalMethodologyList()}</div>
       <b>Keeping it accurate.</b> Update each property's reserve balance when it changes — recording a replacement with <b>Replaced…</b> can lower it for you. If you correct a cost or a life, the difference is spread over the years still left before that item is due: past set-asides are never restated, and everything is back on track by the due date. When you refresh the whole table with new prices, change the price year above to the year of those prices.
     </div>
   </div></div>
