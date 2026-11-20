@@ -1288,7 +1288,7 @@ async function loadRealReferenceLists(){
 // only in this browser's saved state is copied up once (admin only) so nothing already entered is lost.
 async function loadRealComponentsAndAssumptions(){
   if(!SUPA_CONFIGURED)return;
-  const {data,error}=await sb.from('reference_lists').select('key,data').or('key.eq.ASSUMPTIONS,key.like.COMPONENTS:*,key.like.RESERVE_FUND:*');
+  const {data,error}=await sb.from('reference_lists').select('key,data').or('key.eq.ASSUMPTIONS,key.eq.CAP_PRICE_LOG,key.like.COMPONENTS:*,key.like.RESERVE_FUND:*');
   if(error){toast('Could not load capital reserve data: '+error.message);return;}
   const rows=data||[];
   const aRow=rows.find(r=>r.key==='ASSUMPTIONS');
@@ -1298,6 +1298,7 @@ async function loadRealComponentsAndAssumptions(){
   const inDb={};
   rows.forEach(r=>{
     if(r.key.indexOf('RESERVE_FUND:')===0&&r.data&&typeof r.data==='object'){const pid=r.key.slice('RESERVE_FUND:'.length);if(Object.keys(r.data).length)RESERVE_FUND[pid]=r.data;else delete RESERVE_FUND[pid];return;}
+    if(r.key==='CAP_PRICE_LOG'){CAP_PRICE_LOG=(r.data&&Array.isArray(r.data.entries))?r.data.entries:[];return;}
     if(r.key.indexOf('COMPONENTS:')!==0||!r.data||typeof r.data!=='object')return;
     const pid=r.key.slice('COMPONENTS:'.length);
     inDb[pid]=true;COMPONENT_AGES[pid]=r.data;
@@ -4112,6 +4113,7 @@ const ASSUMPTIONS_SECTIONS=[{id:'capitalreserves',ic:'🏗️',label:'Capital Re
 // capitalReserveInflationPct are captured here so the numbers live in one place and are
 // ready to wire up once Valuation Tracking (§4.5) and inflation-adjusted forecasting
 // (§4.8) get built, but they don't drive any calculation yet. Each section says which is which.
+let CAP_PRICE_LOG=[]; // Nov 20 2026: price & rate change history (newest first), reference_lists key CAP_PRICE_LOG
 let ASSUMPTIONS={complianceExpiringDays:90,valuationVariancePct:10,capitalReserveInflationPct:3,costPriceYear:2026,conditionPoorYears:2,conditionFailingYears:0,sessionTimeoutAdminMin:15,sessionTimeoutOfficeMin:45,sessionTimeoutCaregiverMin:240};
 function renderAssumptions(el){
   const tabsHtml=`<div class="tabs">${ASSUMPTIONS_SECTIONS.map(s=>`<button class="tab ${ASSUMPTIONS_TAB===s.id?'active':''}" onclick="ASSUMPTIONS_TAB='${s.id}';renderAssumptions(document.getElementById('view'))">${s.ic} ${s.label}</button>`).join('')}</div>`;
@@ -4121,9 +4123,15 @@ function renderAssumptions(el){
 function updateAssumption(key,val){
   const n=Number(val);
   if(isNaN(n)||n<0){toast('Enter a valid number');renderAssumptions(document.getElementById('view'));return;}
+  const prev=ASSUMPTIONS[key];
   ASSUMPTIONS[key]=n;
   saveState();
   if(SUPA_CONFIGURED)dbUpsertReferenceList('ASSUMPTIONS',ASSUMPTIONS);
+  if((key==='capitalReserveInflationPct'||key==='costPriceYear')&&Number(prev)!==n){
+    const e=key==='capitalReserveInflationPct'?{kind:'rate',from:Number(prev),to:n,py:capPriceYear()}:{kind:'priceYear',from:Number(prev),to:n};
+    if(e.kind==='rate'&&capPricesStale())e.fromPriceYear=true;
+    capLogPush(e);logAudit(key==='capitalReserveInflationPct'?'Changed inflation rate':'Changed prices-as-of year','capital_assumptions','Capital Reserves',key,prev,n);
+  }
   toast('Assumption updated');
   renderAssumptions(document.getElementById('view'));
 }
@@ -4160,6 +4168,77 @@ function changeInflationRate(val){
   }
   CAP_PRICE_PANEL=null;updateAssumption('capitalReserveInflationPct',n);
 }
+/* Price & rate change history + undo (Nov 20 2026). Every roll-forward saves the costs, price year
+   and rate from just before it ("before") and the costs just after it ("after", to detect later edits),
+   so the latest roll-forward can be undone exactly. Snapshots are kept on the 3 most recent roll-forwards. */
+function capCostSnapshot(){
+  const life={};Object.keys(LIFE_TABLE).forEach(n=>{life[n]=Number(LIFE_TABLE[n][1])||0;});
+  const other={};Object.keys(COMPONENT_AGES).forEach(pid=>{const a=COMPONENT_AGES[pid]||{};OTHER_SLOTS.forEach(k=>{const i=a[k];if(i&&typeof i==='object'&&Number(i.cost)>0){(other[pid]=other[pid]||{})[k]=Number(i.cost);}});});
+  return {life,other};
+}
+async function capLogSave(){saveState();if(SUPA_CONFIGURED)return await dbUpsertReferenceList('CAP_PRICE_LOG',{entries:CAP_PRICE_LOG});return true;}
+function capLogPush(e){
+  e.at=new Date().toISOString();e.by=currentUserDisplayName()||(STAFF[ROLE]?STAFF[ROLE].name:'');
+  CAP_PRICE_LOG.unshift(e);
+  let rolls=0;CAP_PRICE_LOG.forEach(x=>{if(x.kind==='roll'){rolls++;if(rolls>3){delete x.before;delete x.after;}}});
+  if(CAP_PRICE_LOG.length>50)CAP_PRICE_LOG.length=50;
+  capLogSave();
+}
+function capUndoableRoll(){const r=CAP_PRICE_LOG.find(x=>x.kind==='roll');return r&&!r.undone&&r.before?r:null;}
+function capEditedSince(r){
+  const now=capCostSnapshot(),out=[];if(!r||!r.after)return out;
+  Object.keys(r.after.life||{}).forEach(n=>{if(now.life[n]!=null&&now.life[n]!==r.after.life[n])out.push(n);});
+  Object.keys(r.after.other||{}).forEach(pid=>Object.keys(r.after.other[pid]).forEach(k=>{const v=now.other[pid]&&now.other[pid][k];if(v!=null&&v!==r.after.other[pid][k]){const info=getComponentAge(pid,k)||{};out.push(`${propById(pid).name} – ${info.label||k}`);}}));
+  return out;
+}
+function capLogText(e){
+  if(e.kind==='roll')return `Rolled prices forward ${e.from} → ${e.to} at ${e.rate}% (costs +${e.pct}%)`+(e.newRate!=null&&e.newRate!==e.rate?`, then set inflation to ${e.newRate}% from ${e.to} on`:'')+(e.undone?' · undone':'');
+  if(e.kind==='rate')return `Inflation rate ${e.from}% → ${e.to}%`+(e.fromPriceYear?` (applied from ${e.py} prices)`:'');
+  if(e.kind==='priceYear')return `“Prices as of” year typed in: ${e.from} → ${e.to} (costs not changed)`;
+  if(e.kind==='undo')return `Undid the roll-forward of ${mdyy(new Date(e.rollAt))}: costs back to ${e.py} prices, inflation ${e.rate}%`;
+  return '';
+}
+function capHistoryHtml(){
+  const u=capUndoableRoll(),rows=CAP_PRICE_LOG.slice(0,10);
+  return `<div class="card" style="margin-bottom:12px"><div class="body" style="padding-bottom:6px"><div class="b">Price &amp; rate changes</div><div class="faint" style="font-size:11.5px;margin-top:2px">Roll-forwards, inflation-rate changes and undos, newest first. The latest roll-forward can be undone exactly.</div></div>
+  ${rows.length?`<table><thead><tr><th>When</th><th>Who</th><th>Change</th><th></th></tr></thead><tbody>${rows.map(e=>`<tr><td class="mono" style="white-space:nowrap">${mdyy(new Date(e.at))}</td><td style="white-space:nowrap">${esc(e.by||'—')}</td><td>${esc(capLogText(e))}</td><td class="right">${u&&e===u&&ROLE==='admin'?`<button class="btn sec sm" onclick="openCapPricePanel('undo')">Undo</button>`:''}</td></tr>`).join('')}</tbody></table>`:`<div class="body faint" style="font-size:12px;padding-top:0">No changes recorded yet.</div>`}</div>`;
+}
+function capUndoPanelBody(){
+  const r=capUndoableRoll();
+  if(!r)return `<div class="b" style="margin-bottom:6px">Nothing to undo</div><div style="display:flex;gap:8px"><button class="btn sec sm" onclick="closeCapPricePanel()">Close</button></div>`;
+  const b=r.before,curRate=Number(ASSUMPTIONS.capitalReserveInflationPct)||0,ex=LIFE_TABLE['Roof']?'Roof':Object.keys(b.life)[0];
+  const edited=capEditedSince(r);
+  const lines=[`Every cost goes back to its ${b.py} price${ex&&b.life[ex]!=null&&LIFE_TABLE[ex]?` (e.g. ${esc(ex)} ${money(Number(LIFE_TABLE[ex][1])||0)} → ${money(b.life[ex])})`:''}.`,
+    `“Costs below are prices as of” goes back to ${b.py}${capPriceYear()!==r.to?` (now ${capPriceYear()})`:''}.`,
+    `Inflation rate goes back to ${b.rate}%${curRate!==b.rate?` (now ${curRate}%)`:' (unchanged)'}.`,
+    `Reserve balances are not affected.`];
+  return `<div class="b" style="margin-bottom:6px">Undo the roll-forward of ${mdyy(new Date(r.at))} (${r.from} → ${r.to} prices)?</div>
+    <div class="muted" style="font-size:12.5px;line-height:1.6;margin-bottom:10px">${lines.map(l=>'• '+l).join('<br>')}
+    ${edited.length?`<div style="margin-top:8px;color:var(--tone-warn-text)"><b>${edited.length} cost${edited.length===1?' was':'s were'} edited after the roll-forward</b> (${esc(edited.slice(0,5).join(', '))}${edited.length>5?', …':''}). Undoing puts ${edited.length===1?'it':'them'} back to the ${b.py} value too; re-enter any real quotes afterwards.</div>`:''}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="undoLastRoll()">Undo roll-forward</button><button class="btn sec sm" onclick="closeCapPricePanel()">Cancel</button></div>`;
+}
+async function undoLastRoll(){
+  if(!capAdminOnly())return;
+  const r=capUndoableRoll();if(!r){closeCapPricePanel();return;}
+  const b=r.before,touched=new Set();
+  Object.keys(b.life).forEach(n=>{if(LIFE_TABLE[n])LIFE_TABLE[n][1]=b.life[n];});
+  Object.keys(b.other||{}).forEach(pid=>Object.keys(b.other[pid]).forEach(k=>{const i=COMPONENT_AGES[pid]&&COMPONENT_AGES[pid][k];if(i&&typeof i==='object'){i.cost=b.other[pid][k];touched.add(pid);}}));
+  const prevPy=capPriceYear(),prevRate=ASSUMPTIONS.capitalReserveInflationPct;
+  ASSUMPTIONS.costPriceYear=b.py;ASSUMPTIONS.capitalReserveInflationPct=b.rate;
+  r.undone=true;r.undoneAt=new Date().toISOString();
+  CAP_PRICE_PANEL=null;
+  let ok=true;
+  if(SUPA_CONFIGURED){
+    ok=(await dbUpsertReferenceList('LIFE_TABLE_V2',LIFE_TABLE))&&ok;
+    for(const pid of touched)ok=(await dbUpsertReferenceList('COMPONENTS:'+pid,COMPONENT_AGES[pid]))&&ok;
+    ok=(await dbUpsertReferenceList('ASSUMPTIONS',ASSUMPTIONS))&&ok;
+  }
+  capLogPush({kind:'undo',rollAt:r.at,py:b.py,rate:b.rate});
+  logAudit('Undid price roll-forward','capital_assumptions','Capital Reserves','costPriceYear / inflation',`${prevPy} prices, ${prevRate}%`,`${b.py} prices, ${b.rate}%`);
+  if(ok)toast(`Roll-forward undone: costs back to ${b.py} prices, inflation ${b.rate}%`);
+  else toast('Some changes did not save. Reload the page and check the costs and price year before going on.','error');
+  renderAssumptions(document.getElementById('view'));
+}
 function applyRateFromPriceYear(){
   if(!capAdminOnly()||!CAP_PRICE_PANEL)return;
   const n=CAP_PRICE_PANEL.rate;CAP_PRICE_PANEL=null;updateAssumption('capitalReserveInflationPct',n);
@@ -4172,7 +4251,9 @@ function capPricePanelHtml(){
   const span=Y-P===1?`${P}`:`${P}–${Y-1}`;
   const rollTxt=`Every replacement cost (the ${nDef} defaults below${nOther?` and ${nOther} “Other” row${nOther===1?'':'s'} on property Components tabs`:''}) is grown from ${P} to ${Y} at ${old}% a year (+${((f-1)*100).toFixed(1)}% in total${exCost?`, e.g. ${esc(exName)} ${money(exCost)} → ${money(Math.round(exCost*f))}`:''}), and “Costs below are prices as of” becomes ${Y}. Reserve balances already saved don't change. Afterwards, overwrite any cost you have a real quote for.`;
   let body;
-  if(CAP_PRICE_PANEL.mode==='rate'){
+  if(CAP_PRICE_PANEL.mode==='undo'){
+    body=capUndoPanelBody();
+  }else if(CAP_PRICE_PANEL.mode==='rate'){
     const n=CAP_PRICE_PANEL.rate;
     body=`<div class="b" style="margin-bottom:6px">Costs are still ${P} prices. How should ${n}% apply?</div>
       <div class="muted" style="font-size:12.5px;line-height:1.6;margin-bottom:10px">If you change the rate now, ${n}% is applied from ${P}, so ${span} ${Y-P===1?'is':'are'} re-priced at ${n}% instead of the ${old}% that applied, and the annual reserve catches up for ${Y-P===1?'that year':'those years'}.<br>
@@ -4191,6 +4272,7 @@ async function rollPricesForward(newRate){
   const P=capPriceYear(),Y=capYearNow();
   if(!(Y>P)){CAP_PRICE_PANEL=null;toast(`Costs are already ${Y} prices`);renderAssumptions(document.getElementById('view'));return;}
   const f=capRollFactor(),old=Number(ASSUMPTIONS.capitalReserveInflationPct)||0,up=x=>Math.round(x*f);
+  const before=Object.assign(capCostSnapshot(),{py:P,rate:old});
   Object.keys(LIFE_TABLE).forEach(n=>{const c=Number(LIFE_TABLE[n][1]);if(c>0)LIFE_TABLE[n][1]=up(c);});
   const touched=[];
   Object.keys(COMPONENT_AGES).forEach(pid=>{const a=COMPONENT_AGES[pid]||{};let ch=false;
@@ -4204,6 +4286,8 @@ async function rollPricesForward(newRate){
     for(const pid of touched)ok=(await dbUpsertReferenceList('COMPONENTS:'+pid,COMPONENT_AGES[pid]))&&ok;
     ok=(await dbUpsertReferenceList('ASSUMPTIONS',ASSUMPTIONS))&&ok;
   }
+  capLogPush({kind:'roll',from:P,to:Y,rate:old,pct:((f-1)*100).toFixed(1),newRate:newRate!=null?newRate:null,before,after:capCostSnapshot()});
+  logAudit('Rolled prices forward','capital_assumptions','Capital Reserves','costPriceYear',`${P} prices, ${old}%`,`${Y} prices, ${newRate!=null?newRate:old}%`);
   if(ok)toast(`Costs rolled forward from ${P} to ${Y} prices at ${old}%`+(newRate!=null?` — inflation now ${newRate}% from ${Y} on`:''));
   else toast('Some changes did not save. Reload the page and check the costs and price year before going on.','error');
   renderAssumptions(document.getElementById('view'));
@@ -4214,11 +4298,12 @@ function capitalReservesSection(){
   <div class="card" style="margin-bottom:12px"><table><thead><tr><th>Assumption</th><th>Value</th></tr></thead><tbody>
   <tr><td class="b">Annual inflation adjustment<div class="faint" style="font-size:11px;font-weight:400;margin-top:2px;line-height:1.45">Changing the rate? Roll prices forward first, so the new rate applies only from this year on and past years keep the rate that applied. If the old rate was simply wrong from the start, change it directly.</div></td><td><input type="number" min="0" step="0.5" value="${ASSUMPTIONS.capitalReserveInflationPct}" style="width:80px;font-size:13px;text-align:right" onchange="changeInflationRate(this.value)"> %${CAP_PRICE_PANEL&&CAP_PRICE_PANEL.mode==='rate'?`<div style="font-size:11px;color:var(--tone-warn-text);margin-top:3px">${CAP_PRICE_PANEL.rate}% pending — see below</div>`:''}</td></tr>
   <tr><td class="b">Costs below are prices as of<div class="faint" style="font-size:11px;font-weight:400;margin-top:2px">Change this when you refresh the costs (e.g. to 2031), so inflation isn't counted twice.</div></td><td><input type="number" min="1990" max="2200" step="1" value="${capPriceYear()}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('costPriceYear',this.value)"> (year)</td></tr>
-  <tr><td class="b">Roll prices forward<div class="faint" style="font-size:11px;font-weight:400;margin-top:2px;line-height:1.45">Grows every cost to this year's prices at the rate above and updates the year. Do it once a year, and before changing the rate.</div></td><td>${capPriceYear()<Ynow?`<button class="btn sm" onclick="openCapPricePanel('roll')">Roll forward to ${Ynow}</button>`:`<span class="faint" style="font-size:12px">Up to date (${Ynow} prices)</span>`}</td></tr>
+  <tr><td class="b">Roll prices forward<div class="faint" style="font-size:11px;font-weight:400;margin-top:2px;line-height:1.45">Grows every cost to this year's prices at the rate above and updates the year. Do it once a year, and before changing the rate.</div></td><td>${capPriceYear()<Ynow?`<button class="btn sm" onclick="openCapPricePanel('roll')">Roll forward to ${Ynow}</button>`:`<span class="faint" style="font-size:12px">Up to date (${Ynow} prices)</span>`}${capUndoableRoll()&&ROLE==='admin'?` <button class="btn sec sm" style="margin-left:6px" onclick="openCapPricePanel('undo')">Undo last roll-forward</button>`:''}</td></tr>
   <tr><td class="b">Condition <span class="badge b-progress" style="margin-left:4px"><span class="dot"></span>Poor</span> — replace within</td><td><input type="number" min="0" step="1" value="${ASSUMPTIONS.conditionPoorYears}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('conditionPoorYears',this.value)"> years</td></tr>
   <tr><td class="b">Condition <span class="badge b-red" style="margin-left:4px"><span class="dot"></span>Failing</span> — replace within</td><td><input type="number" min="0" step="1" value="${ASSUMPTIONS.conditionFailingYears}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('conditionFailingYears',this.value)"> years <span class="faint" style="font-size:11.5px">(0 = this year)</span></td></tr>
   </tbody></table></div>
   ${capPricePanelHtml()}
+  ${capHistoryHtml()}
   <div class="card" style="margin-bottom:12px"><div class="body">
     <div class="b" style="margin-bottom:8px">How the reserve numbers are calculated</div>
     <div class="muted" style="font-size:12.5px;line-height:1.6">
@@ -6621,7 +6706,7 @@ async function mSubmit(){
 
 /* ===== persistence ===== */
 const LSKEY='kodare_proto_v03_r1';
-function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,LIFE_V:2,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES,RESERVE_FUND,FINANCE_MAP};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
+function saveState(){try{const snap={PROPS,VENDORS,LEASES,RECON,TID,NOTES,NOTEID,DOCS,DOC_ID,LIFE_TABLE,LIFE_V:2,ASSUMPTIONS,CAT,SVC_TYPES,REF_LISTS,COMPONENT_AGES,RESERVE_FUND,FINANCE_MAP,CAP_PRICE_LOG};if(!SUPA_CONFIGURED){snap.TICKETS=TICKETS;snap.TRASH=TRASH;snap.TICKET_USER_NOTES=TICKET_USER_NOTES;}localStorage.setItem(LSKEY,JSON.stringify(snap));}catch(e){}}
 function mergeById(defaults,saved,idKey){const map={};defaults.forEach(d=>map[d[idKey]]=Object.assign({},d));
   saved.forEach(s=>{const k=s[idKey];if(map[k])Object.assign(map[k],s);else map[k]=s;});
   return Object.values(map);}
@@ -6650,6 +6735,7 @@ function loadState(){try{const raw=localStorage.getItem(LSKEY);if(!raw)return fa
   // property id, so a plain merge is fine; no fixed default keys to protect like LIFE_TABLE above.
   if(s.COMPONENT_AGES)COMPONENT_AGES=Object.assign({},COMPONENT_AGES,s.COMPONENT_AGES);
   if(s.RESERVE_FUND&&typeof s.RESERVE_FUND==='object')RESERVE_FUND=Object.assign({},RESERVE_FUND,s.RESERVE_FUND);
+  if(Array.isArray(s.CAP_PRICE_LOG))CAP_PRICE_LOG=s.CAP_PRICE_LOG;
   migrateComponentNames();
   // Additive merges (same convention as LIFE_TABLE/ASSUMPTIONS above): overlay saved custom
   // values on top of the current hardcoded defaults, never delete a hardcoded default just
