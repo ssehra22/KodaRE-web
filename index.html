@@ -3873,7 +3873,7 @@ function capitalReportHtml(){
   <div class="card" style="overflow-x:auto"><table><thead><tr><th>Component</th><th>Avg. lifespan</th><th class="right">Replacement cost (${capPriceYear()} prices)</th></tr></thead><tbody>${Object.keys(LIFE_TABLE).map(n=>{const [life,cost]=LIFE_TABLE[n];return `<tr><td class="b">${esc(n)}</td><td class="mono">${life} yr</td><td class="right mono">${money(cost)}</td></tr>`;}).join('')}</tbody></table></div>
   <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.55">Inflation ${ASSUMPTIONS.capitalReserveInflationPct}%/yr, applied from ${capPriceYear()} prices; an item still in service past its expected life is priced at each year's cost. Condition rules: <b>Poor</b> → replace within ${conditionCapYears('Poor')} yr${conditionCapYears('Poor')===1?'':'s'}, <b>Failing</b> → ${conditionCapYears('Failing')?'within '+conditionCapYears('Failing')+' yrs':'this year'}; other ratings don't change the date. Senior Admin edits all of these in Assumptions → Capital Reserves.</div>`;
 
-  return controls+legend+kpis+chart+matrix+comingDue+funding+completeness+history+assumptions+capitalMethodologyHtml();
+  return capPriceStaleBanner('report')+controls+legend+kpis+chart+matrix+comingDue+funding+completeness+history+assumptions+capitalMethodologyHtml();
 }
 /* Reserve calculation methodology — one wording, shown at the end of Reports → Capital planning,
    at the end of Finance → Capital Reserves, and in the report's PDF / Excel / CSV downloads. */
@@ -4127,21 +4127,104 @@ function updateAssumption(key,val){
   toast('Assumption updated');
   renderAssumptions(document.getElementById('view'));
 }
+/* Nov 20 2026: rolling prices forward. Costs (life table + each property's Other rows) are prices as of
+   ASSUMPTIONS.costPriceYear. "Roll prices forward" grows every cost to this year at the rate in force and
+   sets the price year to this year, so a later change of rate applies only from this year on and the
+   years already past keep the rate that applied. Money already saved (reserve balances) is never touched. */
+let CAP_PRICE_PANEL=null; // {mode:'roll'} | {mode:'rate',rate:n}
+function capPricesStale(){return capPriceYear()<capYearNow();}
+function capRollFactor(){const P=capPriceYear(),Y=capYearNow();return Y>P?Math.pow(1+(Number(ASSUMPTIONS.capitalReserveInflationPct)||0)/100,Y-P):1;}
+function capOtherCostCount(){let n=0;Object.keys(COMPONENT_AGES).forEach(pid=>{const a=COMPONENT_AGES[pid]||{};OTHER_SLOTS.forEach(k=>{const i=a[k];if(i&&typeof i==='object'&&Number(i.cost)>0)n++;});});return n;}
+function capPriceStaleBanner(where){
+  if(!capPricesStale())return '';
+  const P=capPriceYear(),Y=capYearNow();
+  const act=where==='assumptions'
+    ?(ROLE==='admin'?`<button class="btn sm" onclick="openCapPricePanel('roll')">Roll prices forward to ${Y}</button>`:`<span class="faint" style="font-size:12px">Ask a Senior Admin to update them.</span>`)
+    :(ROLE==='admin'?`<button class="btn sec sm" onclick="ASSUMPTIONS_TAB='capitalreserves';navigate('assumptions')">Update in Assumptions → Capital Reserves</button>`:`<span class="faint" style="font-size:12px">A Senior Admin can update them in Assumptions.</span>`);
+  return `<div class="card" style="margin:0 0 14px;background:var(--tone-warn-soft-bg);border-color:var(--tone-warn-soft-border)"><div class="body" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:space-between">
+    <div style="font-size:12.5px;line-height:1.5;color:var(--tone-warn-soft-text);flex:1;min-width:260px"><b>Replacement costs were last updated for ${P}.</b> Roll them forward to ${Y} prices, or refresh them with current quotes. Do this once a year, and always before changing the inflation rate, so a new rate applies only from ${Y} on.</div>${act}</div></div>`;
+}
+function openCapPricePanel(mode,rate){
+  if(!capAdminOnly())return;
+  CAP_PRICE_PANEL={mode,rate};renderAssumptions(document.getElementById('view'));
+  const el=document.getElementById('capPricePanel');if(el)el.scrollIntoView({block:'center',behavior:'smooth'});
+}
+function closeCapPricePanel(){CAP_PRICE_PANEL=null;renderAssumptions(document.getElementById('view'));}
+function changeInflationRate(val){
+  const n=Number(val);
+  if(val===''||isNaN(n)||n<0){toast('Enter a valid number');renderAssumptions(document.getElementById('view'));return;}
+  if(n===Number(ASSUMPTIONS.capitalReserveInflationPct)){CAP_PRICE_PANEL=null;renderAssumptions(document.getElementById('view'));return;}
+  if(capPricesStale()){
+    if(!capAdminOnly()){renderAssumptions(document.getElementById('view'));return;}
+    openCapPricePanel('rate',n);return;
+  }
+  CAP_PRICE_PANEL=null;updateAssumption('capitalReserveInflationPct',n);
+}
+function applyRateFromPriceYear(){
+  if(!capAdminOnly()||!CAP_PRICE_PANEL)return;
+  const n=CAP_PRICE_PANEL.rate;CAP_PRICE_PANEL=null;updateAssumption('capitalReserveInflationPct',n);
+}
+function capPricePanelHtml(){
+  if(!CAP_PRICE_PANEL)return '';
+  const P=capPriceYear(),Y=capYearNow(),old=Number(ASSUMPTIONS.capitalReserveInflationPct)||0,f=capRollFactor();
+  const exName=LIFE_TABLE['Roof']?'Roof':Object.keys(LIFE_TABLE)[0],exCost=exName?Number(LIFE_TABLE[exName][1])||0:0;
+  const nOther=capOtherCostCount(),nDef=Object.keys(LIFE_TABLE).length;
+  const span=Y-P===1?`${P}`:`${P}–${Y-1}`;
+  const rollTxt=`Every replacement cost (the ${nDef} defaults below${nOther?` and ${nOther} “Other” row${nOther===1?'':'s'} on property Components tabs`:''}) is grown from ${P} to ${Y} at ${old}% a year (+${((f-1)*100).toFixed(1)}% in total${exCost?`, e.g. ${esc(exName)} ${money(exCost)} → ${money(Math.round(exCost*f))}`:''}), and “Costs below are prices as of” becomes ${Y}. Reserve balances already saved don't change. Afterwards, overwrite any cost you have a real quote for.`;
+  let body;
+  if(CAP_PRICE_PANEL.mode==='rate'){
+    const n=CAP_PRICE_PANEL.rate;
+    body=`<div class="b" style="margin-bottom:6px">Costs are still ${P} prices. How should ${n}% apply?</div>
+      <div class="muted" style="font-size:12.5px;line-height:1.6;margin-bottom:10px">If you change the rate now, ${n}% is applied from ${P}, so ${span} ${Y-P===1?'is':'are'} re-priced at ${n}% instead of the ${old}% that applied, and the annual reserve catches up for ${Y-P===1?'that year':'those years'}.<br>
+      • <b>The rate is changing from ${Y} on</b> (${span} really ${Y-P===1?'was':'were'} ${old}%): roll prices forward first. ${rollTxt}<br>
+      • <b>${old}% was simply wrong from the start:</b> apply ${n}% from ${P}. The catch-up is then correct.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="rollPricesForward(${n})">Roll prices forward to ${Y}, then use ${n}%</button><button class="btn sec sm" onclick="applyRateFromPriceYear()">Apply ${n}% from ${P}: ${old}% was wrong from the start</button><button class="btn sec sm" onclick="closeCapPricePanel()">Cancel</button></div>`;
+  }else{
+    body=`<div class="b" style="margin-bottom:6px">Roll prices forward to ${Y}?</div>
+      <div class="muted" style="font-size:12.5px;line-height:1.6;margin-bottom:10px">${rollTxt}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" onclick="rollPricesForward(null)">Roll forward to ${Y}</button><button class="btn sec sm" onclick="closeCapPricePanel()">Cancel</button></div>`;
+  }
+  return `<div id="capPricePanel" class="card" style="margin-bottom:12px;border:1.5px solid var(--tone-warn-solid-bg)"><div class="body">${body}</div></div>`;
+}
+async function rollPricesForward(newRate){
+  if(!capAdminOnly())return;
+  const P=capPriceYear(),Y=capYearNow();
+  if(!(Y>P)){CAP_PRICE_PANEL=null;toast(`Costs are already ${Y} prices`);renderAssumptions(document.getElementById('view'));return;}
+  const f=capRollFactor(),old=Number(ASSUMPTIONS.capitalReserveInflationPct)||0,up=x=>Math.round(x*f);
+  Object.keys(LIFE_TABLE).forEach(n=>{const c=Number(LIFE_TABLE[n][1]);if(c>0)LIFE_TABLE[n][1]=up(c);});
+  const touched=[];
+  Object.keys(COMPONENT_AGES).forEach(pid=>{const a=COMPONENT_AGES[pid]||{};let ch=false;
+    OTHER_SLOTS.forEach(k=>{const i=a[k];if(i&&typeof i==='object'&&Number(i.cost)>0){i.cost=up(Number(i.cost));ch=true;}});
+    if(ch)touched.push(pid);});
+  ASSUMPTIONS.costPriceYear=Y;if(newRate!=null)ASSUMPTIONS.capitalReserveInflationPct=newRate;
+  CAP_PRICE_PANEL=null;saveState();
+  let ok=true;
+  if(SUPA_CONFIGURED){
+    ok=(await dbUpsertReferenceList('LIFE_TABLE_V2',LIFE_TABLE))&&ok;
+    for(const pid of touched)ok=(await dbUpsertReferenceList('COMPONENTS:'+pid,COMPONENT_AGES[pid]))&&ok;
+    ok=(await dbUpsertReferenceList('ASSUMPTIONS',ASSUMPTIONS))&&ok;
+  }
+  if(ok)toast(`Costs rolled forward from ${P} to ${Y} prices at ${old}%`+(newRate!=null?` — inflation now ${newRate}% from ${Y} on`:''));
+  else toast('Some changes did not save. Reload the page and check the costs and price year before going on.','error');
+  renderAssumptions(document.getElementById('view'));
+}
 function capitalReservesSection(){
-  const names=Object.keys(LIFE_TABLE);
-  return `<div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">These are the portfolio-wide average lifespan and replacement cost assumptions used on every property's Components tab (Scope §4.8). Edit any value below — changes are saved for your whole team, Senior Admin only.</div>
+  const names=Object.keys(LIFE_TABLE),Ynow=capYearNow();
+  return `<div style="margin-top:14px">${capPriceStaleBanner('assumptions')}</div><div class="muted" style="font-size:12.5px;margin:14px 0;line-height:1.5">These are the portfolio-wide average lifespan and replacement cost assumptions used on every property's Components tab (Scope §4.8). Edit any value below — changes are saved for your whole team, Senior Admin only.</div>
   <div class="card" style="margin-bottom:12px"><table><thead><tr><th>Assumption</th><th>Value</th></tr></thead><tbody>
-  <tr><td class="b">Annual inflation adjustment</td><td><input type="number" min="0" step="0.5" value="${ASSUMPTIONS.capitalReserveInflationPct}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('capitalReserveInflationPct',this.value)"> %</td></tr>
+  <tr><td class="b">Annual inflation adjustment<div class="faint" style="font-size:11px;font-weight:400;margin-top:2px;line-height:1.45">Changing the rate? Roll prices forward first, so the new rate applies only from this year on and past years keep the rate that applied. If the old rate was simply wrong from the start, change it directly.</div></td><td><input type="number" min="0" step="0.5" value="${ASSUMPTIONS.capitalReserveInflationPct}" style="width:80px;font-size:13px;text-align:right" onchange="changeInflationRate(this.value)"> %${CAP_PRICE_PANEL&&CAP_PRICE_PANEL.mode==='rate'?`<div style="font-size:11px;color:var(--tone-warn-text);margin-top:3px">${CAP_PRICE_PANEL.rate}% pending — see below</div>`:''}</td></tr>
   <tr><td class="b">Costs below are prices as of<div class="faint" style="font-size:11px;font-weight:400;margin-top:2px">Change this when you refresh the costs (e.g. to 2031), so inflation isn't counted twice.</div></td><td><input type="number" min="1990" max="2200" step="1" value="${capPriceYear()}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('costPriceYear',this.value)"> (year)</td></tr>
+  <tr><td class="b">Roll prices forward<div class="faint" style="font-size:11px;font-weight:400;margin-top:2px;line-height:1.45">Grows every cost to this year's prices at the rate above and updates the year. Do it once a year, and before changing the rate.</div></td><td>${capPriceYear()<Ynow?`<button class="btn sm" onclick="openCapPricePanel('roll')">Roll forward to ${Ynow}</button>`:`<span class="faint" style="font-size:12px">Up to date (${Ynow} prices)</span>`}</td></tr>
   <tr><td class="b">Condition <span class="badge b-progress" style="margin-left:4px"><span class="dot"></span>Poor</span> — replace within</td><td><input type="number" min="0" step="1" value="${ASSUMPTIONS.conditionPoorYears}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('conditionPoorYears',this.value)"> years</td></tr>
   <tr><td class="b">Condition <span class="badge b-red" style="margin-left:4px"><span class="dot"></span>Failing</span> — replace within</td><td><input type="number" min="0" step="1" value="${ASSUMPTIONS.conditionFailingYears}" style="width:80px;font-size:13px;text-align:right" onchange="updateAssumption('conditionFailingYears',this.value)"> years <span class="faint" style="font-size:11.5px">(0 = this year)</span></td></tr>
   </tbody></table></div>
+  ${capPricePanelHtml()}
   <div class="card" style="margin-bottom:12px"><div class="body">
     <div class="b" style="margin-bottom:8px">How the reserve numbers are calculated</div>
     <div class="muted" style="font-size:12.5px;line-height:1.6">
       Each row below is a portfolio-wide default — expected life and replacement cost for that type of component, at prices as of the year set above. Properties &gt; Components uses these, plus an install year you enter per property, to work out that property's own numbers:
       <div style="margin:8px 0">${capitalMethodologyList()}</div>
-      <b>Keeping it accurate.</b> Update each property's reserve balance when it changes — recording a replacement with <b>Replaced…</b> can lower it for you. If you correct a cost or a life, the difference is spread over the years still left before that item is due: past set-asides are never restated, and everything is back on track by the due date. When you refresh the whole table with new prices, change the price year above to the year of those prices.
+      <b>Keeping it accurate.</b> Update each property's reserve balance when it changes — recording a replacement with <b>Replaced…</b> can lower it for you. If you correct a cost or a life, the difference is spread over the years still left before that item is due: past set-asides are never restated, and everything is back on track by the due date. When you refresh the whole table with new prices, change the price year above to the year of those prices. Once a year, and always before changing the inflation rate, use <b>Roll prices forward</b>: the new rate then applies only from this year on, and past years keep the rate that applied. If the old rate was simply wrong from the start, change it directly; the difference is then caught up over each item's remaining years.
     </div>
   </div></div>
   <div class="card"><table><thead><tr><th>Component</th><th>Avg. life (years)</th><th>Replacement cost (parts &amp; labor, ${capPriceYear()} prices)</th></tr></thead><tbody>
@@ -4562,6 +4645,7 @@ function renderReserves(el){
     return {p,s};
   });
   el.innerHTML=`${pageHeader('reserves')}
+  ${capPriceStaleBanner('reserves')}
   ${ROLE==='admin'?`<div style="display:flex;justify-content:flex-end;margin:-4px 0 10px"><button class="btn sec sm" onclick="REPTAB='capital';navigate('reports')">📊 Open capital planning report — forecast, coming due, funding</button></div>`:''}
   <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
     <div class="kpi"><div class="lab">Portfolio annual reserve</div><div class="val">${money(Math.round(portfolioTotal))}</div></div>
